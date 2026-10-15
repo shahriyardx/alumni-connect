@@ -55,4 +55,20 @@ describe("cross-tenant reads are impossible", () => {
         tags: [],
       }),
     ).rejects.toThrow(/NOT_FOUND/));
+  test("social.vote B post", () =>
+    expect(
+      asA.social.vote({ targetType: "POST", targetId: bIds.postId, value: 1 }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("social.bookmark B post", () =>
+    expect(
+      asA.social.bookmark({ postId: bIds.postId, on: true }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("social.followUser B user", () =>
+    expect(
+      asA.social.followUser({ userId: bIds.userId, on: true }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("profile.get B user", () =>
+    expect(asA.profile.get({ id: bIds.userId })).rejects.toThrow(/NOT_FOUND/));
+  test("notification.list has nothing from B", async () =>
+    expect((await asA.notification.list({})).items).toEqual([]));
 });
