@@ -61,66 +61,104 @@ export const filesRouter = router({
         });
       }
 
-      // `input.key` is a *staging* key: it's where the presigned PUT landed,
-      // and that presigned URL stays valid for 300s after this call returns
-      // (minio can't scope a presign to "one PUT only"). If we validated and
-      // then kept serving that same key, the uploader could silently PUT
-      // different bytes to it afterwards (TOCTOU) and have them served as
-      // the already-"confirmed" attachment. So: validate the staging
-      // object, copy it to a FINAL key that was never the target of any
-      // presigned URL, store *that* key, and delete the staging object.
-      //
-      // Idempotency: NOT idempotent once the staging object is consumed.
-      // The first successful call copies+deletes the staging object and
-      // inserts the attachment row; any later call with the same staging
-      // key hits `stat()` on a now-missing object and gets the same
-      // "Upload not found" error as a key that was never uploaded to. Two
-      // concurrent calls racing on the same still-present staging key both
-      // copy identical source bytes to the same deterministic final key
-      // (harmless) and race on the insert, which `onConflictDoNothing` +
-      // re-select (below) already resolves.
-      const info = await stat(input.key);
-      if (!info) {
+      const ext = input.key.slice(input.key.lastIndexOf(".") + 1);
+      const mime = EXT_TO_MIME[ext];
+      if (!mime) {
+        // Unreachable given shapeRe's extension group — keeps `mime` typed
+        // as non-optional below without a cast.
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Upload not found",
         });
       }
-      if (info.size > MAX_BYTES) {
-        await remove(input.key);
-        throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
+
+      // `input.key` is a *staging* key: it's where the presigned PUT landed,
+      // and that presigned URL stays valid for 300s after this call returns
+      // (minio can't scope a presign to "one PUT only"). Two separate
+      // attacks follow from that, both closed below:
+      //
+      // 1. TOCTOU on validation: if we validated the staging object and
+      //    *then* copied it, the bytes could be swapped in between. So we
+      //    copy FIRST, into a FINAL key that no presigned URL ever targets,
+      //    and validate (size, magic bytes, stored content-type) only the
+      //    immutable final copy. The staging object itself gets no content
+      //    validation — only an existence check — since nothing it says
+      //    about itself can be trusted to still be true a moment later.
+      // 2. Overwriting an already-confirmed final: the same staging key can
+      //    be confirmed, re-PUT with different bytes, and confirmed again
+      //    inside the 300s window. So before copying, check whether this
+      //    staging key's final key already has an attachment row; if so,
+      //    hand back that existing attachment untouched and never copy
+      //    over it.
+      //
+      // Idempotency, chosen and documented here: NOT idempotent once the
+      // staging object has been consumed by a *first* successful confirm
+      // that hasn't been immediately re-confirmed — i.e. once the final
+      // object has no row AND the staging object is gone, a later confirm
+      // call for that staging key fails with "Upload not found" (same as a
+      // key that was never uploaded to). While an attachment row DOES exist
+      // for the final key, every later confirm call for that staging key is
+      // idempotent and returns the same attachment.
+      const segments = input.key.split("/");
+      const finalKey = [segments[0], segments[1], "f", segments[2]].join("/");
+
+      const [existingRow] = await ctx.db
+        .select({ id: attachment.id, objectKey: attachment.objectKey })
+        .from(attachment)
+        .where(eq(attachment.objectKey, finalKey));
+      if (existingRow) {
+        await remove(input.key).catch(() => {});
+        return { id: existingRow.id, key: existingRow.objectKey };
+      }
+      // A final object without a row can only mean a previous confirm
+      // crashed between the copy and the insert (or is racing concurrently,
+      // see below). Either way, never re-copy over it.
+      if (await stat(finalKey)) {
+        await remove(input.key).catch(() => {});
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Upload already confirmed",
+        });
       }
 
-      const ext = input.key.slice(input.key.lastIndexOf(".") + 1);
-      const mime = EXT_TO_MIME[ext];
+      if (!(await stat(input.key))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Upload not found",
+        });
+      }
 
+      await copy(input.key, finalKey);
+      await remove(input.key).catch(() => {});
+
+      const finalInfo = await stat(finalKey);
+      if (!finalInfo) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Upload not found",
+        });
+      }
+      if (finalInfo.size > MAX_BYTES) {
+        await remove(finalKey);
+        throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
+      }
       // Don't trust the Content-Type the uploader sent with the PUT, or the
       // extension in the key: sniff the real bytes so a .png key can't be
-      // used to serve e.g. HTML/script content back out of /api/files.
-      const head = await readHead(input.key, 16);
-      if (!mime || !MAGIC[mime](head) || info.contentType !== mime) {
-        await remove(input.key);
+      // used to serve e.g. HTML/script content back out of /api/files. Both
+      // checks run against the FINAL (immutable) object, not the staging one.
+      const head = await readHead(finalKey, 16);
+      if (!MAGIC[mime](head) || finalInfo.contentType !== mime) {
+        await remove(finalKey);
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "File is not a valid image",
         });
       }
 
-      const segments = input.key.split("/");
-      const finalKey = [segments[0], segments[1], "f", segments[2]].join("/");
-
-      await copy(input.key, finalKey, mime);
-      const finalInfo = await stat(finalKey);
-      if (!finalInfo || finalInfo.size > MAX_BYTES) {
-        await remove(finalKey);
-        await remove(input.key);
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Upload not found",
-        });
-      }
-      await remove(input.key);
-
+      // Two concurrent confirms racing on the same still-present staging
+      // key both get here, both copy identical source bytes to the same
+      // deterministic final key (harmless), and race on this insert —
+      // resolved by `onConflictDoNothing` + re-select, same as before.
       const [row] = await ctx.db
         .insert(attachment)
         .values({

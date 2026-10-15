@@ -66,22 +66,17 @@ export function remove(key: string): Promise<void> {
 /**
  * Server-side copy into a key that was never the target of a presigned PUT,
  * so nothing (not even the original uploader) can mutate it after it's been
- * validated. `contentType` is written with `MetadataDirective: "REPLACE"` —
- * the destination's metadata is never inherited from whatever the client
- * claimed on the original PUT.
+ * copied. Metadata (including whatever Content-Type the uploader sent with
+ * the PUT) is preserved from the source on purpose: `files.confirm` reads it
+ * straight back off this copy as part of validating the *immutable* object,
+ * rather than trusting a value that could otherwise have been swapped out
+ * between validation and copying. The GET route never relies on this stored
+ * value either way — it always overrides the served Content-Type from the
+ * validated `attachment.mime` DB column via `presignGet`.
  */
-export async function copy(
-  sourceKey: string,
-  destKey: string,
-  contentType: string,
-): Promise<void> {
+export async function copy(sourceKey: string, destKey: string): Promise<void> {
   await minio.copyObject(
     new CopySourceOptions({ Bucket: env.S3_BUCKET, Object: sourceKey }),
-    new CopyDestinationOptions({
-      Bucket: env.S3_BUCKET,
-      Object: destKey,
-      MetadataDirective: "REPLACE",
-      Headers: { "Content-Type": contentType },
-    }),
+    new CopyDestinationOptions({ Bucket: env.S3_BUCKET, Object: destKey }),
   );
 }

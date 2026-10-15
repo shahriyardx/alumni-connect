@@ -187,4 +187,11 @@ test("TOCTOU: replaying the staging presigned PUT after confirm doesn't touch th
 
   const access = await resolveFileAccess(a.id, att.key.split("/"));
   expect(access.ok).toBe(true);
+
+  // Re-confirming the same staging key (now holding the replayed garbage)
+  // must never re-copy over the already-confirmed final object — it just
+  // hands back the same attachment, untouched.
+  const reconfirm = await c.files.confirm({ key: stagingKey });
+  expect(reconfirm).toEqual(att);
+  expect(await stat(att.key)).toEqual(before);
 });
