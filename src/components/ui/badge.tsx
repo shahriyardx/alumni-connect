@@ -4,22 +4,12 @@ import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
 import { Tip } from "./icon-button";
 
+const neutral = "bg-muted text-muted-foreground";
 const roles: Record<Role, { label: string; icon?: string; tone: string }> = {
-  ALUMNUS: {
-    label: "Alumnus",
-    icon: "school",
-    tone: "bg-tertiary-container text-on-tertiary-container",
-  },
-  STUDENT: {
-    label: "Student",
-    tone: "bg-secondary-container text-on-secondary-container",
-  },
-  MODERATOR: {
-    label: "Mod",
-    icon: "shield",
-    tone: "bg-surface-container-highest text-on-surface",
-  },
-  ADMIN: { label: "Admin", tone: "bg-primary text-on-primary" },
+  ALUMNUS: { label: "Alumnus", icon: "school", tone: "bg-tonal text-tonal-fg" },
+  STUDENT: { label: "Student", tone: neutral },
+  MODERATOR: { label: "Mod", icon: "shield", tone: neutral },
+  ADMIN: { label: "Admin", icon: "admin_panel_settings", tone: neutral },
 };
 
 export function RoleBadge({
@@ -33,13 +23,13 @@ export function RoleBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs font-semibold tracking-wide",
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-xs font-medium whitespace-nowrap",
         r.icon && "pl-1.5",
         r.tone,
         className,
       )}
     >
-      {r.icon && <Icon name={r.icon} filled size={16} />}
+      {r.icon && <Icon name={r.icon} size={12} />}
       {r.label}
     </span>
   );
@@ -53,7 +43,7 @@ export function VerifiedMark({ className }: { className?: string }) {
         aria-label="Verified by university roster"
         className={cn("inline-flex cursor-help text-primary", className)}
       >
-        <Icon name="verified" filled size={18} />
+        <Icon name="verified" filled size={16} />
       </span>
     </Tip>
   );

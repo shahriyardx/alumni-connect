@@ -17,7 +17,7 @@ import { Tab, TabsList, TabsPanel, TabsRoot } from "@/components/ui/tabs";
 import { TextField } from "@/components/ui/text-field";
 import { useToast } from "@/components/ui/toast";
 
-const variants = ["filled", "tonal", "outlined", "text", "elevated"] as const;
+const variants = ["filled", "tonal", "ghost", "destructive", "link"] as const;
 const sorts = [
   { value: "new", label: "Newest" },
   { value: "top", label: "Top this week" },
@@ -33,7 +33,7 @@ function Section({
 }) {
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-[22px] font-[650] tracking-tight">{title}</h2>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
       {children}
     </section>
   );
@@ -47,23 +47,11 @@ export function Kit() {
   const [loading, setLoading] = useState(false);
 
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-14 px-5 py-12 sm:px-8">
-      <header className="relative overflow-hidden rounded-[32px] bg-primary-container px-8 py-12 text-on-primary-container sm:px-12">
-        <div className="absolute -top-16 -right-16 size-64 rounded-full bg-tertiary-container opacity-70" />
-        <div className="absolute right-24 -bottom-20 size-40 rounded-[40px] bg-secondary-container opacity-80 rotate-12" />
-        <p className="relative text-sm font-semibold tracking-[0.2em] uppercase">
-          Material 3 Expressive
-        </p>
-        <h1
-          className="relative mt-3 text-[clamp(40px,7vw,57px)] leading-[1.05] font-[650] tracking-tight"
-          style={{ fontVariationSettings: "'wdth' 125" }}
-        >
-          Alumni Connect
-          <br />
-          UI kit
-        </h1>
-        <p className="relative mt-4 max-w-md text-base opacity-80">
-          Every component, every variant. Press things — the shapes morph.
+    <main className="mx-auto flex max-w-4xl flex-col gap-12 px-4 py-10 sm:px-8">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">UI kit</h1>
+        <p className="text-sm text-muted-foreground">
+          Every component and variant in the minimal system.
         </p>
       </header>
 
@@ -75,7 +63,7 @@ export function Kit() {
                 key={v}
                 variant={v}
                 size={size}
-                icon={size === "md" ? "add" : undefined}
+                icon={size === "md" && v !== "link" ? "add" : undefined}
               >
                 {v[0].toUpperCase() + v.slice(1)}
               </Button>
@@ -100,7 +88,7 @@ export function Kit() {
       </Section>
 
       <Section title="Icon buttons & FAB">
-        <div className="grid w-fit grid-cols-[auto_repeat(4,auto)] items-center gap-x-4 gap-y-3 text-sm text-on-surface-variant">
+        <div className="grid w-fit grid-cols-[auto_repeat(4,auto)] items-center gap-x-4 gap-y-3 text-sm text-muted-foreground">
           <span />
           <span>Standard</span>
           <span>Filled</span>
@@ -145,19 +133,27 @@ export function Kit() {
           <Fab icon="edit" label="New post" />
           <Fab icon="add" href="/kit" />
           <Fab icon="edit" size="lg" aria-label="Compose (large)" />
+          <span className="text-sm text-muted-foreground">
+            FAB is phone-only in the app shell.
+          </span>
         </div>
       </Section>
 
       <Section title="Cards">
-        <div className="grid gap-4 sm:grid-cols-3">
-          {(["filled", "elevated", "outlined"] as const).map((v) => (
-            <Card key={v} variant={v} className="flex flex-col gap-2 p-5">
-              <span className="text-sm font-semibold text-on-surface-variant">
-                {v}
-              </span>
-              <p className="text-base">Static card surface.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card className="flex flex-col gap-3 p-5">
+            <span className="text-sm font-semibold">Card</span>
+            <p className="text-sm text-muted-foreground">
+              White on the tinted page. No border, no shadow.
+            </p>
+            <Card className="p-4 text-sm">
+              Nested box steps toward the tint.
             </Card>
-          ))}
+          </Card>
+          <Card className="flex flex-col gap-3 p-5">
+            <span className="text-sm font-semibold">Field on a card</span>
+            <TextField label="Name" placeholder="Nusrat Jahan" />
+          </Card>
         </div>
         <Card
           variant="elevated"
@@ -171,13 +167,13 @@ export function Kit() {
               <span className="font-semibold">Nusrat Jahan</span>
               <VerifiedMark />
               <RoleBadge role="ALUMNUS" />
-              <span className="text-sm text-on-surface-variant">· 2h</span>
+              <span className="text-sm text-muted-foreground">· 2h</span>
             </div>
-            <p className="text-lg font-[650] tracking-tight">
+            <p className="text-base font-semibold tracking-tight">
               Hiring two CSE interns for summer — referrals welcome
             </p>
-            <p className="text-sm text-on-surface-variant">
-              Interactive card: hover for elevation, press for the shape morph.
+            <p className="text-sm text-muted-foreground">
+              Interactive card: a faint shadow on hover.
             </p>
           </div>
         </Card>
@@ -245,11 +241,11 @@ export function Kit() {
               description="It will be removed from the feed for everyone. This can't be undone."
             >
               <div className="flex justify-end gap-2">
-                <Dialog.Close render={<Button variant="text" />}>
+                <Dialog.Close render={<Button variant="ghost" />}>
                   Cancel
                 </Dialog.Close>
                 <Dialog.Close
-                  render={<Button />}
+                  render={<Button variant="destructive" />}
                   onClick={() => toast.success("Post deleted")}
                 >
                   Delete
@@ -258,9 +254,7 @@ export function Kit() {
             </DialogContent>
           </Dialog.Root>
           <Menu.Root>
-            <Menu.Trigger
-              render={<Button variant="outlined" icon="more_horiz" />}
-            >
+            <Menu.Trigger render={<Button variant="tonal" icon="more_horiz" />}>
               Post actions
             </Menu.Trigger>
             <MenuContent align="start">
@@ -290,7 +284,7 @@ export function Kit() {
             Success toast
           </Button>
           <Button
-            variant="elevated"
+            variant="tonal"
             icon="error"
             onClick={() => toast.error("Couldn't reach the server")}
           >
@@ -341,9 +335,9 @@ export function Kit() {
         <div className="flex items-center gap-6">
           <Spinner />
           <Spinner size={24} />
-          <Icon name="hourglass_top" className="text-on-surface-variant" />
+          <Icon name="hourglass_top" className="text-muted-foreground" />
         </div>
-        <Card variant="outlined">
+        <Card>
           <EmptyState
             icon="forum"
             title="No posts yet"

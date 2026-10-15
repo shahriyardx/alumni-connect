@@ -5,12 +5,12 @@ import { useEffect } from "react";
 import type { Role } from "@/db/schema";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
-import { Button } from "./ui/button";
+import { Button, ButtonLink } from "./ui/button";
 import { EmptyState } from "./ui/empty-state";
 import { Fab } from "./ui/fab";
 import { Icon } from "./ui/icon";
 import { Spinner } from "./ui/spinner";
-import { stateLayer } from "./ui/styles";
+import { focusRing } from "./ui/styles";
 import { UserMenu, useMe, useSignOut } from "./user-menu";
 
 type Dest = {
@@ -62,44 +62,89 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
   ];
 }
 
-function NavItem({ d, active }: { d: Dest; active: boolean }) {
+function Badge({ n, className }: { n?: number; className?: string }) {
+  if (!n) return null;
+  return (
+    <span
+      className={cn(
+        "grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white",
+        className,
+      )}
+    >
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
+/** Desktop sidebar row: icon + label, active row is a tonal pill. */
+function SideItem({ d, active }: { d: Dest; active: boolean }) {
   return (
     <Link
       href={d.href}
       aria-current={active ? "page" : undefined}
-      className="group flex min-w-0 flex-1 flex-col items-center gap-1 py-1.5 outline-none min-[840px]:flex-none min-[840px]:py-0"
+      className={cn(
+        focusRing,
+        "flex h-10 items-center gap-3 rounded-full px-3.5 text-sm font-medium transition-colors duration-150",
+        active
+          ? "bg-primary/12 font-semibold text-primary"
+          : "text-foreground/80 hover:bg-primary/6 hover:text-foreground",
+      )}
+    >
+      <Icon
+        name={d.icon}
+        filled={active}
+        size={20}
+        className={active ? undefined : "text-muted-foreground"}
+      />
+      <span className="flex-1 truncate">{d.label}</span>
+      <Badge n={d.badge} />
+    </Link>
+  );
+}
+
+/** Phone bottom-bar destination. */
+function BarItem({ d, active }: { d: Dest; active: boolean }) {
+  return (
+    <Link
+      href={d.href}
+      aria-current={active ? "page" : undefined}
+      className="group flex min-w-0 flex-1 flex-col items-center gap-0.5 py-1.5 outline-none"
     >
       <span
         className={cn(
-          stateLayer,
-          "relative grid h-8 w-14 place-items-center rounded-full",
-          active ? "text-on-secondary-container" : "text-on-surface-variant",
+          "relative grid h-7 w-12 place-items-center rounded-full transition-colors duration-150 group-focus-visible:ring-3 group-focus-visible:ring-ring/50",
+          active ? "bg-primary/12 text-primary" : "text-muted-foreground",
         )}
       >
-        {/* Active pill: stretches in from the centre with spring easing. */}
-        <span
-          aria-hidden
-          className={cn(
-            "absolute inset-0 -z-10 rounded-full bg-secondary-container transition-[scale,opacity] duration-500 ease-[var(--ease-spring)]",
-            active ? "scale-x-100 opacity-100" : "scale-x-25 opacity-0",
-          )}
-        />
-        <Icon name={d.icon} filled={active} />
-        {/* Unread badge slot (wired in Task 10). */}
-        {!!d.badge && (
-          <span className="absolute top-0.5 left-[30px] grid h-4 min-w-4 place-items-center rounded-full bg-error px-1 text-[11px] leading-none font-semibold text-on-error">
-            {d.badge > 99 ? "99+" : d.badge}
-          </span>
-        )}
+        <Icon name={d.icon} filled={active} size={20} />
+        <Badge n={d.badge} className="absolute -top-0.5 left-7" />
       </span>
       <span
         className={cn(
-          "max-w-full truncate text-xs font-medium",
-          active ? "text-on-surface" : "text-on-surface-variant",
+          "max-w-full truncate text-[11px] font-medium",
+          active ? "text-foreground" : "text-muted-foreground",
         )}
       >
         {d.label}
       </span>
+    </Link>
+  );
+}
+
+function Logo({ className }: { className?: string }) {
+  return (
+    <Link
+      href="/feed"
+      className={cn(
+        focusRing,
+        "flex items-center gap-2 rounded-full text-[15px] font-semibold tracking-tight",
+        className,
+      )}
+    >
+      <span className="grid size-8 place-items-center rounded-xl bg-primary text-primary-foreground">
+        <Icon name="school" filled size={18} />
+      </span>
+      Alumni Connect
     </Link>
   );
 }
@@ -115,64 +160,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname === d.match || pathname.startsWith(d.match.replace(/\/?$/, "/"));
 
   return (
-    <div className="min-h-dvh bg-surface">
-      {/* Navigation rail (≥ 840px) */}
-      <nav
-        aria-label="Primary"
-        className="fixed inset-y-0 left-0 z-30 hidden w-24 flex-col items-center gap-3 bg-surface pt-6 min-[840px]:flex"
-      >
-        <Link
-          href="/feed"
-          aria-label="Alumni Connect home"
-          className="mb-2 grid size-12 place-items-center rounded-[16px] bg-tertiary-container text-on-tertiary-container"
-        >
-          <Icon name="school" filled />
-        </Link>
-        <Fab href="/new" icon="edit" aria-label="Ask a question" />
-        <span className="mb-4 -mt-1 text-xs font-semibold text-on-surface-variant">
+    <div className="min-h-dvh bg-background">
+      {/* Sidebar (≥ 840px) */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-6 px-3 py-4 min-[840px]:flex">
+        <Logo className="px-2 py-1" />
+        <ButtonLink href="/new" icon="edit" className="mx-1">
           Ask
-        </span>
-        <div className="flex flex-col gap-3">
+        </ButtonLink>
+        <nav aria-label="Primary" className="flex flex-col gap-0.5">
           {items.map((d) => (
-            <NavItem key={d.label} d={d} active={isActive(d)} />
+            <SideItem key={d.label} d={d} active={isActive(d)} />
           ))}
-        </div>
-      </nav>
+        </nav>
+        {me?.universityName && (
+          <p className="mt-auto truncate px-3.5 text-xs text-muted-foreground">
+            {me.universityName}
+          </p>
+        )}
+      </aside>
 
-      <div className="min-[840px]:pl-24">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 bg-surface/90 px-4 backdrop-blur min-[840px]:px-6">
-          <Link
-            href="/feed"
-            className="flex items-center gap-2 text-[22px] font-[650] tracking-tight min-[840px]:hidden"
-            style={{ fontVariationSettings: "'wdth' 115" }}
-          >
-            <Icon name="school" filled className="text-tertiary" />
-            Alumni Connect
-          </Link>
-          <span className="hidden truncate text-sm font-medium text-on-surface-variant min-[840px]:block">
-            {me?.universityName}
-          </span>
+      <div className="min-[840px]:pl-60">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 bg-background/85 px-4 backdrop-blur-xl min-[840px]:px-8">
+          <Logo className="min-[840px]:hidden" />
           <div className="ml-auto">
             <UserMenu />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-3xl px-4 pb-32 min-[840px]:px-6 min-[840px]:pb-12">
+        <main className="mx-auto w-full max-w-3xl px-4 pb-32 min-[840px]:px-8 min-[840px]:pb-16">
           <StatusGate>{children}</StatusGate>
         </main>
       </div>
 
-      {/* Phone: FAB + bottom navigation bar */}
-      <div className="fixed right-4 bottom-24 z-30 min-[840px]:hidden">
+      {/* Phone: small FAB + bottom bar */}
+      <div className="fixed right-4 bottom-20 z-30 min-[840px]:hidden">
         <Fab href="/new" icon="edit" aria-label="Ask a question" />
       </div>
       <nav
         aria-label="Primary"
-        className="fixed inset-x-0 bottom-0 z-30 flex h-20 items-center bg-surface-container px-2 pb-[env(safe-area-inset-bottom)] min-[840px]:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center bg-surface/95 px-1 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] backdrop-blur-xl min-[840px]:hidden"
       >
         {items
           .filter((d) => !d.roles)
           .map((d) => (
-            <NavItem key={d.label} d={d} active={isActive(d)} />
+            <BarItem key={d.label} d={d} active={isActive(d)} />
           ))}
       </nav>
     </div>
@@ -213,7 +243,7 @@ function StatusGate({ children }: { children: React.ReactNode }) {
         </div>
       )}
       {me && blocked && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-surface p-6">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-background p-6">
           <EmptyState
             icon={me.status === "BANNED" ? "block" : "pause_circle"}
             title={

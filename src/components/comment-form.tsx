@@ -55,11 +55,11 @@ export function CommentForm({
         placeholder={
           parentId ? "Write a reply…" : "Add to the discussion (Markdown works)"
         }
-        className="block w-full resize-y rounded-[16px] bg-surface-container-highest px-4 py-3 text-[15px] leading-relaxed text-on-surface caret-primary outline-none transition-shadow duration-200 placeholder:text-on-surface-variant focus:shadow-[inset_0_0_0_2px_var(--md-primary)]"
+        className="block w-full resize-y rounded-xl border border-transparent bg-surface-high px-3.5 py-2.5 text-sm leading-relaxed outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50"
       />
       <div className="flex justify-end gap-2">
         {onDone && (
-          <Button variant="text" size="sm" onClick={onDone}>
+          <Button variant="ghost" size="sm" onClick={onDone}>
             Cancel
           </Button>
         )}

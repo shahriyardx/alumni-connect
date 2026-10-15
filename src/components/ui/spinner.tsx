@@ -1,8 +1,8 @@
 import { cn } from "@/lib/cn";
 
-/** M3 Expressive circular indeterminate indicator — pure SVG + CSS keyframes. */
+/** Thin indeterminate ring. */
 export function Spinner({
-  size = 40,
+  size = 24,
   className,
 }: {
   size?: number;
@@ -12,29 +12,26 @@ export function Spinner({
     <svg
       role="progressbar"
       aria-label="Loading"
-      viewBox="0 0 40 40"
+      viewBox="0 0 24 24"
       width={size}
       height={size}
-      className={cn("animate-spinner-rotate text-primary", className)}
+      className={cn("animate-spin-slow text-primary", className)}
     >
       <circle
-        cx="20"
-        cy="20"
-        r="16"
+        cx="12"
+        cy="12"
+        r="9.5"
         fill="none"
         stroke="currentColor"
-        strokeOpacity={0.18}
-        strokeWidth="4"
+        strokeOpacity={0.2}
+        strokeWidth="2.5"
       />
-      <circle
-        cx="20"
-        cy="20"
-        r="16"
+      <path
+        d="M12 2.5a9.5 9.5 0 0 1 9.5 9.5"
         fill="none"
         stroke="currentColor"
-        strokeWidth="4"
+        strokeWidth="2.5"
         strokeLinecap="round"
-        className="origin-center -rotate-90 animate-spinner-arc"
       />
     </svg>
   );

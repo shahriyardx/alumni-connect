@@ -9,6 +9,7 @@ import { AuthorLine } from "./author-line";
 import { CommentForm } from "./comment-form";
 import { Markdown } from "./markdown";
 import { Button } from "./ui/button";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { useToast } from "./ui/toast";
 
 const MAX_DEPTH = 6;
@@ -46,6 +47,7 @@ function Comment({
   const qc = useQueryClient();
   const toast = useToast();
   const [mode, setMode] = useState<"idle" | "reply" | "edit">("idle");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = useMutation(
     trpc.comment.remove.mutationOptions({
       onSuccess: () => {
@@ -74,21 +76,19 @@ function Comment({
       <article
         id={`c-${node.id}`}
         className={cn(
-          "flex flex-col gap-2 rounded-[20px] py-3 pr-2 pl-3",
-          alumnus && "border-l-4 border-tertiary-container",
+          "flex flex-col gap-2 rounded-2xl py-3 pr-2 pl-3",
+          alumnus && "bg-tonal/40",
         )}
       >
         {replyingTo && (
-          <span className="text-xs font-medium text-on-surface-variant">
+          <span className="text-xs font-medium text-muted-foreground">
             ↳ replying to {replyingTo}
           </span>
         )}
         {node.author ? (
           <AuthorLine author={node.author} at={node.createdAt} size={32} />
         ) : (
-          <span className="text-sm text-on-surface-variant">
-            Removed comment
-          </span>
+          <span className="text-sm text-muted-foreground">Removed comment</span>
         )}
         {mode === "edit" ? (
           <CommentForm
@@ -100,24 +100,24 @@ function Comment({
         ) : (
           <Markdown
             className={cn(
-              "text-[15px]",
-              node.deleted && "text-on-surface-variant italic",
+              "text-sm",
+              node.deleted && "text-muted-foreground italic",
             )}
           >
             {node.body}
           </Markdown>
         )}
         {!node.deleted && mode !== "edit" && (
-          <div className="-ml-3 flex flex-wrap items-center gap-1 text-sm">
+          <div className="-ml-2 flex flex-wrap items-center gap-0.5 text-sm">
             {/* Votes land in Task 10. */}
             <span
               data-slot="comment-actions"
-              className="px-3 font-medium text-on-surface-variant"
+              className="px-2 text-xs font-medium text-muted-foreground"
             >
               {node.score} pts
             </span>
             <Button
-              variant="text"
+              variant="ghost"
               size="sm"
               icon="reply"
               onClick={() => setMode(mode === "reply" ? "idle" : "reply")}
@@ -127,7 +127,7 @@ function Comment({
             {node.canEdit && (
               <>
                 <Button
-                  variant="text"
+                  variant="ghost"
                   size="sm"
                   icon="edit"
                   onClick={() => setMode("edit")}
@@ -135,18 +135,41 @@ function Comment({
                   Edit
                 </Button>
                 <Button
-                  variant="text"
+                  variant="ghost"
                   size="sm"
                   icon="delete"
-                  loading={remove.isPending}
-                  className="text-error!"
-                  onClick={() => {
-                    if (confirm("Delete this comment?"))
-                      remove.mutate({ id: node.id });
-                  }}
+                  className="text-destructive hover:bg-destructive/10"
+                  onClick={() => setConfirmDelete(true)}
                 >
                   Delete
                 </Button>
+                <Dialog.Root
+                  open={confirmDelete}
+                  onOpenChange={setConfirmDelete}
+                >
+                  <DialogContent
+                    title="Delete this comment?"
+                    description="Replies stay visible under a removed placeholder. This can't be undone."
+                  >
+                    <div className="flex justify-end gap-2">
+                      <Dialog.Close render={<Button variant="ghost" />}>
+                        Cancel
+                      </Dialog.Close>
+                      <Button
+                        variant="destructive"
+                        loading={remove.isPending}
+                        onClick={() =>
+                          remove.mutate(
+                            { id: node.id },
+                            { onSettled: () => setConfirmDelete(false) },
+                          )
+                        }
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog.Root>
               </>
             )}
           </div>
@@ -162,7 +185,7 @@ function Comment({
       </article>
       {children.length > 0 &&
         (nested ? (
-          <div className="ml-2 flex flex-col gap-1 border-l border-outline-variant pl-1 sm:ml-5 sm:pl-3">
+          <div className="ml-2 flex flex-col gap-1 border-l border-border pl-1 sm:ml-5 sm:pl-3">
             {children}
           </div>
         ) : (

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
-import { stateLayer } from "./styles";
+import { focusRing } from "./styles";
 
 export function Chip({
   label,
@@ -20,18 +20,18 @@ export function Chip({
   className?: string;
 }) {
   const classes = cn(
-    stateLayer,
-    "inline-flex h-8 shrink-0 cursor-pointer items-center gap-2 px-3 text-sm font-medium",
-    "transition-[border-radius,scale,background-color] duration-200 ease-[var(--ease-spring)] active:scale-95",
+    focusRing,
+    "inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full px-3 text-xs font-medium",
+    "transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.97]",
     selected
-      ? "rounded-[12px] bg-secondary-container text-on-secondary-container"
-      : "rounded-[8px] border border-outline-variant text-on-surface-variant",
+      ? "bg-tonal text-tonal-fg hover:bg-tonal-hover"
+      : "bg-muted text-muted-foreground hover:text-foreground",
+    icon && "pl-2",
     className,
   );
-  const shownIcon = selected ? "check" : icon;
   const content = (
     <>
-      {shownIcon && <Icon name={shownIcon} size={18} className="-ml-1" />}
+      {icon && <Icon name={icon} filled={selected} size={14} />}
       {label}
     </>
   );

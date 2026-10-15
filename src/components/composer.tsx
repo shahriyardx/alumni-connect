@@ -27,7 +27,7 @@ export function Composer({ postId }: { postId?: string }) {
   if (postId) {
     if (existing.isError)
       return (
-        <p className="py-16 text-center text-sm text-error">
+        <p className="py-16 text-center text-sm text-destructive">
           This post doesn't exist or was removed.
         </p>
       );
@@ -80,7 +80,7 @@ function ComposerForm({ initial }: { initial?: Initial }) {
   const preview = normalizeTag(draftTag);
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-6 py-4">
+    <form onSubmit={submit} className="flex flex-col gap-5 pt-4">
       <h1 className="text-2xl font-semibold tracking-tight">
         {initial ? "Edit post" : "Ask a question"}
       </h1>
@@ -94,9 +94,9 @@ function ComposerForm({ initial }: { initial?: Initial }) {
         maxLength={200}
       />
 
-      <Card variant="filled" className="overflow-hidden">
+      <Card className="overflow-hidden p-2">
         <TabsRoot defaultValue="write">
-          <TabsList className="px-2">
+          <TabsList>
             <Tab value="write" icon="edit">
               Write
             </Tab>
@@ -104,7 +104,7 @@ function ComposerForm({ initial }: { initial?: Initial }) {
               Preview
             </Tab>
           </TabsList>
-          <TabsPanel value="write" className="p-0">
+          <TabsPanel value="write" className="pt-2">
             <textarea
               aria-label="Body"
               value={body}
@@ -113,14 +113,14 @@ function ComposerForm({ initial }: { initial?: Initial }) {
               maxLength={20000}
               rows={12}
               placeholder="Details (Markdown supported)"
-              className="block min-h-64 w-full resize-y bg-transparent px-5 py-4 font-mono text-[15px] leading-relaxed text-on-surface caret-primary outline-none placeholder:font-sans placeholder:text-on-surface-variant"
+              className="block min-h-64 w-full resize-y rounded-xl bg-transparent px-3 py-2 font-mono text-sm leading-relaxed outline-none placeholder:font-sans placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </TabsPanel>
-          <TabsPanel value="preview" className="min-h-64 px-5 py-4">
+          <TabsPanel value="preview" className="min-h-64 px-3 pt-4 pb-2">
             {body.trim() ? (
               <Markdown>{body}</Markdown>
             ) : (
-              <p className="text-sm text-on-surface-variant">
+              <p className="text-sm text-muted-foreground">
                 Nothing to preview yet.
               </p>
             )}
@@ -153,20 +153,20 @@ function ComposerForm({ initial }: { initial?: Initial }) {
           }
         />
         {tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {tags.map((t) => (
               <span
                 key={t}
-                className="inline-flex h-8 items-center gap-1 rounded-[12px] bg-secondary-container pr-1 pl-3 text-sm font-medium text-on-secondary-container"
+                className="inline-flex h-7 items-center gap-0.5 rounded-full bg-tonal pr-1 pl-3 text-xs font-medium text-tonal-fg"
               >
                 #{t}
                 <button
                   type="button"
                   aria-label={`Remove tag ${t}`}
                   onClick={() => setTags(tags.filter((x) => x !== t))}
-                  className="grid size-6 cursor-pointer place-items-center rounded-full hover:bg-on-secondary-container/10"
+                  className="grid size-5 cursor-pointer place-items-center rounded-full outline-none hover:bg-tonal-hover focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  <Icon name="close" size={16} />
+                  <Icon name="close" size={14} />
                 </button>
               </span>
             ))}
@@ -178,7 +178,7 @@ function ComposerForm({ initial }: { initial?: Initial }) {
       <div data-slot="attachments" />
 
       <div className="flex justify-end gap-2">
-        <Button variant="text" onClick={() => router.back()}>
+        <Button variant="ghost" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" icon="send" loading={pending}>

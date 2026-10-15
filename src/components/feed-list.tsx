@@ -57,7 +57,7 @@ export function FeedList({
     );
   if (isError)
     return (
-      <p className="py-16 text-center text-sm text-error">
+      <p className="py-16 text-center text-sm text-destructive">
         Couldn't load posts. Try again in a moment.
       </p>
     );

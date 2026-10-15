@@ -34,7 +34,7 @@ export function AuthorLine({
   size?: number;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 items-center gap-2.5">
       <Avatar
         name={author.name}
         src={author.avatarKey ? `/api/files/${author.avatarKey}` : null}
@@ -44,14 +44,14 @@ export function AuthorLine({
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <Link
             href={`/u/${author.id}`}
-            className="relative z-10 truncate font-semibold hover:underline"
+            className="relative z-10 truncate text-sm font-semibold hover:underline"
           >
             {author.name}
           </Link>
           <VerifiedMark />
           <RoleBadge role={author.role} />
         </div>
-        <span className="truncate text-xs text-on-surface-variant">
+        <span className="truncate text-xs text-muted-foreground">
           Batch {author.batchYear} · {author.department} ·{" "}
           <time dateTime={new Date(at).toISOString()}>{timeAgo(at)}</time>
         </span>

@@ -11,7 +11,7 @@ type TextFieldProps = React.InputHTMLAttributes<HTMLInputElement> & {
   rows?: number;
 };
 
-/** M3 filled text field with floating label. */
+/** Label above a soft filled field; error or hint below. */
 export function TextField({
   label,
   error,
@@ -19,63 +19,43 @@ export function TextField({
   multiline,
   rows = 4,
   className,
-  placeholder,
   ...props
 }: TextFieldProps) {
   const id = useId();
   const control = cn(
-    "peer block w-full rounded-t-[12px] bg-surface-container-highest px-4 pt-6 pb-2 text-base text-on-surface caret-primary outline-none",
-    "shadow-[inset_0_-1px_0_var(--md-on-surface-variant)] transition-[box-shadow,background-color] duration-200 ease-[var(--ease-emphasized)]",
-    "hover:bg-[color-mix(in_srgb,var(--md-surface-container-highest),var(--md-on-surface)_8%)]",
-    "focus:shadow-[inset_0_-3px_0_var(--md-primary)]",
-    "data-[invalid]:shadow-[inset_0_-2px_0_var(--md-error)] data-[invalid]:focus:shadow-[inset_0_-3px_0_var(--md-error)]",
-    "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
-    "placeholder:text-on-surface-variant",
-    multiline ? "min-h-14 resize-y" : "h-14",
+    "block w-full rounded-xl border border-transparent bg-surface-high px-3.5 text-base text-foreground outline-none md:text-sm",
+    "transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground",
+    "focus:border-ring focus:ring-3 focus:ring-ring/50",
+    "data-[invalid]:border-destructive data-[invalid]:focus:ring-destructive/20",
+    "data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
+    multiline ? "min-h-20 resize-y py-2.5 leading-relaxed" : "h-10",
   );
   return (
     <Field.Root
       invalid={!!error}
       disabled={props.disabled}
-      className={cn("flex flex-col gap-1", className)}
+      className={cn("flex flex-col gap-1.5", className)}
     >
-      <div className="relative rounded-t-[12px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary">
-        {multiline ? (
-          <Field.Control
-            {...props}
-            id={id}
-            placeholder={placeholder}
-            className={control}
-            render={<textarea rows={rows} />}
-          />
-        ) : (
-          <Field.Control
-            {...props}
-            id={id}
-            placeholder={placeholder}
-            className={control}
-          />
-        )}
-        <Field.Label
-          htmlFor={id}
-          className={cn(
-            "pointer-events-none absolute top-4 left-4 origin-left text-base text-on-surface-variant",
-            "transition-[translate,scale,color] duration-200 ease-[var(--ease-emphasized)]",
-            "data-[filled]:-translate-y-2.5 data-[filled]:scale-75 data-[focused]:-translate-y-2.5 data-[focused]:scale-75 data-[focused]:text-primary",
-            "data-[invalid]:text-error",
-            placeholder && "-translate-y-2.5 scale-75",
-          )}
-        >
-          {label}
-        </Field.Label>
-      </div>
+      <Field.Label htmlFor={id} className="text-sm font-medium">
+        {label}
+      </Field.Label>
+      {multiline ? (
+        <Field.Control
+          {...props}
+          id={id}
+          className={control}
+          render={<textarea rows={rows} />}
+        />
+      ) : (
+        <Field.Control {...props} id={id} className={control} />
+      )}
       {error ? (
-        <Field.Error match className="px-4 text-xs text-error">
+        <Field.Error match className="text-xs text-destructive">
           {error}
         </Field.Error>
       ) : (
         description && (
-          <Field.Description className="px-4 text-xs text-on-surface-variant">
+          <Field.Description className="text-xs text-muted-foreground">
             {description}
           </Field.Description>
         )

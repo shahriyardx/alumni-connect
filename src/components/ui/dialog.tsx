@@ -1,7 +1,7 @@
 "use client";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/cn";
-import { popupMotion } from "./styles";
+import { popupMotion, popupSurface } from "./styles";
 
 export const Dialog = {
   Root: BaseDialog.Root,
@@ -22,20 +22,21 @@ export function DialogContent({
 }) {
   return (
     <BaseDialog.Portal>
-      <BaseDialog.Backdrop className="fixed inset-0 z-40 bg-scrim/40 transition-opacity duration-300 ease-[var(--ease-emphasized)] data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+      <BaseDialog.Backdrop className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] transition-opacity duration-150 ease-out data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
       <BaseDialog.Popup
         className={cn(
           popupMotion,
-          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-48px)] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-[28px] bg-surface-container-high p-6 text-on-surface shadow-elevation-3 outline-none",
+          popupSurface,
+          "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-48px)] w-[min(448px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col gap-6 overflow-y-auto rounded-3xl p-6 text-sm outline-none",
           className,
         )}
       >
         <div className="flex flex-col gap-2">
-          <BaseDialog.Title className="text-2xl font-[650] tracking-tight">
+          <BaseDialog.Title className="text-lg leading-tight font-semibold tracking-tight">
             {title}
           </BaseDialog.Title>
           {description && (
-            <BaseDialog.Description className="text-sm text-on-surface-variant">
+            <BaseDialog.Description className="text-sm text-muted-foreground">
               {description}
             </BaseDialog.Description>
           )}

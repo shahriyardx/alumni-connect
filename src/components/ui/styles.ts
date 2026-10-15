@@ -1,7 +1,11 @@
-/** Shared M3 state layer + focus ring for every interactive surface. */
-export const stateLayer =
-  "relative isolate overflow-hidden before:absolute before:inset-0 before:-z-10 before:bg-current before:opacity-0 before:transition-opacity before:duration-150 hover:before:opacity-[.08] active:before:opacity-[.12] focus-visible:before:opacity-[.10] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+/** Shared focus ring for every interactive element. */
+export const focusRing =
+  "outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
-/** Popup enter/exit: springy scale+fade from data-starting-style / data-ending-style. */
+/** Popup enter/exit: short ease-out fade + scale from Base UI's starting/ending styles. */
 export const popupMotion =
-  "origin-[var(--transform-origin)] transition-[opacity,scale] duration-300 ease-[var(--ease-spring)] data-[ending-style]:scale-90 data-[ending-style]:opacity-0 data-[ending-style]:duration-150 data-[ending-style]:ease-[var(--ease-emphasized)] data-[starting-style]:scale-90 data-[starting-style]:opacity-0";
+  "origin-[var(--transform-origin)] transition-[opacity,scale] duration-150 ease-out data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0";
+
+/** Floating surface for menus, selects, dialogs. */
+export const popupSurface =
+  "bg-popover text-foreground shadow-lg shadow-black/10 ring-1 ring-foreground/5";

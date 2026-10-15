@@ -15,40 +15,36 @@ export function FeedView() {
   const tags = useQuery(trpc.post.tags.queryOptions());
 
   return (
-    <div className="flex flex-col gap-5 pt-2">
-      <h1 className="text-2xl font-semibold tracking-tight">Feed</h1>
+    <div className="flex flex-col gap-5 pt-4">
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Feed</h1>
+        <TabsRoot
+          value={sort}
+          onValueChange={(v) =>
+            router.replace(v === "top" ? "/feed?sort=top" : "/feed")
+          }
+        >
+          <TabsList>
+            <Tab value="new">New</Tab>
+            <Tab value="top">Top</Tab>
+          </TabsList>
+        </TabsRoot>
+      </header>
 
       {!!tags.data?.length && (
         <nav
           aria-label="Trending tags"
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] min-[840px]:mx-0 min-[840px]:flex-wrap min-[840px]:px-0"
+          className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] min-[840px]:mx-0 min-[840px]:flex-wrap min-[840px]:px-0"
         >
           {tags.data.slice(0, 12).map((t) => (
             <Chip
               key={t.name}
-              icon="tag"
-              label={`${t.name} · ${t.count}`}
+              label={`#${t.name} · ${t.count}`}
               href={`/t/${t.name}`}
             />
           ))}
         </nav>
       )}
-
-      <TabsRoot
-        value={sort}
-        onValueChange={(v) =>
-          router.replace(v === "top" ? "/feed?sort=top" : "/feed")
-        }
-      >
-        <TabsList>
-          <Tab value="new" icon="schedule">
-            New
-          </Tab>
-          <Tab value="top" icon="trending_up">
-            Top
-          </Tab>
-        </TabsList>
-      </TabsRoot>
 
       <FeedList
         key={sort}

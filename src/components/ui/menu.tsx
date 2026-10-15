@@ -2,7 +2,7 @@
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
-import { popupMotion } from "./styles";
+import { popupMotion, popupSurface } from "./styles";
 
 export const Menu = { Root: BaseMenu.Root, Trigger: BaseMenu.Trigger };
 
@@ -25,7 +25,8 @@ export function MenuContent({
         <BaseMenu.Popup
           className={cn(
             popupMotion,
-            "min-w-48 rounded-[16px] bg-surface-container py-2 text-on-surface shadow-elevation-2 outline-none",
+            popupSurface,
+            "min-w-44 rounded-2xl p-1 outline-none",
             className,
           )}
         >
@@ -53,17 +54,18 @@ export function MenuItem({
     <BaseMenu.Item
       onClick={onClick}
       className={cn(
-        "mx-2 flex h-12 cursor-pointer items-center gap-3 rounded-[12px] px-3 text-sm font-medium outline-none select-none",
-        "data-[highlighted]:bg-[color-mix(in_srgb,transparent,currentColor_10%)] data-[disabled]:opacity-40",
-        destructive ? "text-error" : "text-on-surface",
+        "flex h-9 cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm outline-none select-none data-[disabled]:opacity-50",
+        destructive
+          ? "text-destructive data-[highlighted]:bg-destructive/10"
+          : "text-foreground data-[highlighted]:bg-muted",
         className,
       )}
     >
       {icon && (
         <Icon
           name={icon}
-          size={20}
-          className={destructive ? undefined : "text-on-surface-variant"}
+          size={18}
+          className={destructive ? undefined : "text-muted-foreground"}
         />
       )}
       {children}

@@ -24,9 +24,10 @@ export function SearchView() {
   }, [value, q, router]);
 
   return (
-    <div className="flex flex-col gap-5 pt-2">
-      <label className="flex h-14 items-center gap-3 rounded-full bg-surface-container-high px-5 text-on-surface-variant transition-shadow duration-200 focus-within:shadow-[inset_0_0_0_2px_var(--md-primary)]">
-        <Icon name="search" />
+    <div className="flex flex-col gap-5 pt-4">
+      <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
+      <label className="flex h-11 items-center gap-2.5 rounded-full border border-input bg-surface px-4 text-muted-foreground transition-[box-shadow,border-color] duration-150 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+        <Icon name="search" size={20} />
         <input
           type="search"
           aria-label="Search posts"
@@ -35,7 +36,7 @@ export function SearchView() {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Search posts"
-          className="h-full min-w-0 flex-1 bg-transparent text-base text-on-surface outline-none placeholder:text-on-surface-variant"
+          className="h-full min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
         />
       </label>
       {q ? (

@@ -33,7 +33,7 @@ export function OtpField({
     <div className="flex flex-col gap-2">
       <fieldset
         aria-label="Verification code"
-        className="flex justify-center gap-1.5 sm:gap-3"
+        className="flex justify-center gap-1.5 sm:gap-2"
       >
         {Array.from({ length: LEN }, (_, i) => (
           <input
@@ -73,23 +73,20 @@ export function OtpField({
               else if (e.key === "ArrowRight") focus(i + 1);
             }}
             className={cn(
-              "h-14 w-10 rounded-[16px] bg-surface-container-highest text-center text-2xl font-semibold text-on-surface caret-primary outline-none sm:h-16 sm:w-13",
-              "transition-[border-radius,box-shadow,scale] duration-300 ease-[var(--ease-spring)]",
-              "focus:scale-105 focus:rounded-[12px] focus:shadow-[inset_0_0_0_2px_var(--md-primary)]",
-              value[i]?.trim() &&
-                "bg-primary-container text-on-primary-container",
-              error && "shadow-[inset_0_0_0_2px_var(--md-error)]",
+              "h-12 w-10 rounded-xl border border-transparent bg-surface-high text-center text-xl font-medium tabular-nums outline-none sm:w-11",
+              "transition-[box-shadow,border-color] duration-150 focus:border-ring focus:ring-3 focus:ring-ring/50",
+              error && "border-destructive focus:ring-destructive/20",
             )}
           />
         ))}
       </fieldset>
       {error && (
-        <p role="alert" className="text-center text-xs text-error">
+        <p role="alert" className="text-center text-xs text-destructive">
           {error}
         </p>
       )}
       {process.env.NODE_ENV !== "production" && (
-        <p className="text-center text-xs text-on-surface-variant">
+        <p className="text-center text-xs text-muted-foreground">
           Dev mode: the code is printed in the server terminal.
         </p>
       )}
@@ -110,7 +107,7 @@ export function ResendButton({ onResend }: { onResend(): Promise<unknown> }) {
   }, [left]);
   return (
     <Button
-      variant="text"
+      variant="ghost"
       size="sm"
       icon="refresh"
       loading={busy}

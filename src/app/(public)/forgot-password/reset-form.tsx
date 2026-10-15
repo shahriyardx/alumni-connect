@@ -58,7 +58,7 @@ export function ResetForm() {
           : "We'll email you a code to reset it."
       }
     >
-      <Card variant="elevated" className="p-6 sm:p-8">
+      <Card className="p-6">
         {sent ? (
           <form onSubmit={reset} className="flex flex-col gap-6">
             <OtpField value={otp} onChange={setOtp} />
@@ -73,7 +73,7 @@ export function ResetForm() {
               onChange={(e) => setPassword(e.target.value)}
             />
             {error && (
-              <p role="alert" className="text-sm text-error">
+              <p role="alert" className="text-sm text-destructive">
                 {error}
               </p>
             )}
@@ -99,14 +99,14 @@ export function ResetForm() {
               onChange={(e) => setEmail(e.target.value)}
               error={error}
             />
-            <Button type="submit" size="lg" loading={busy} className="mt-2">
+            <Button type="submit" loading={busy} className="mt-1 w-full">
               Send code
             </Button>
           </form>
         )}
       </Card>
       <div className="mt-6 flex justify-center">
-        <ButtonLink href="/sign-in" variant="text" size="sm" icon="arrow_back">
+        <ButtonLink href="/sign-in" variant="ghost" size="sm" icon="arrow_back">
           Back to sign in
         </ButtonLink>
       </div>

@@ -1,197 +1,147 @@
 @import "tailwindcss";
 
-/* Material 3 color roles (refs/m3-tokens.css) */
+/* Modern minimal tokens (docs/superpowers/plans/refs/design-minimal.md).
+   Neutral oklch greys + one blue primary; tinted surfaces mixed in srgb
+   (an oklch mix of two greys has no hue and drifts red). */
 :root {
   color-scheme: light;
-  --md-primary: #1242ff;
-  --md-on-primary: #ffffff;
-  --md-primary-container: #dee0ff;
-  --md-on-primary-container: #002eca;
-  --md-secondary: #605a7d;
-  --md-on-secondary: #ffffff;
-  --md-secondary-container: #e6deff;
-  --md-on-secondary-container: #484264;
-  --md-tertiary: #6b5485;
-  --md-on-tertiary: #ffffff;
-  --md-tertiary-container: #efdbff;
-  --md-on-tertiary-container: #533d6c;
-  --md-error: #ba1a1a;
-  --md-on-error: #ffffff;
-  --md-error-container: #ffdad6;
-  --md-on-error-container: #93000a;
-  --md-surface: #fbf8ff;
-  --md-on-surface: #1a1b25;
-  --md-surface-variant: #e1e1f3;
-  --md-on-surface-variant: #444654;
-  --md-surface-container-lowest: #ffffff;
-  --md-surface-container-low: #f4f2ff;
-  --md-surface-container: #eeecfb;
-  --md-surface-container-high: #e8e7f5;
-  --md-surface-container-highest: #e2e1ef;
-  --md-inverse-surface: #2f303a;
-  --md-inverse-on-surface: #f0effe;
-  --md-inverse-primary: #bac3ff;
-  --md-outline: #757685;
-  --md-outline-variant: #c5c5d6;
-  --md-scrim: #000000;
-  --md-shadow: #000000;
+  --foreground: oklch(0.145 0 0);
+  --primary: oklch(0.55 0.1736 259.66);
+  --primary-foreground: oklch(0.985 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --ring: var(--primary);
+
+  --surface-tint: color-mix(in srgb, var(--primary) 55%, var(--foreground));
+  /* Page = faint tinted grey, cards white, fields step back toward the tint. */
+  --background: color-mix(in srgb, var(--surface-tint) 5%, #fff);
+  --surface-1: #fff;
+  --surface-2: color-mix(in srgb, var(--surface-tint) 9%, #fff);
+  --surface-box: color-mix(in srgb, var(--surface-tint) 7%, #fff);
+  --field-card: color-mix(in srgb, var(--surface-tint) 10%, #fff);
+  --popover: #fff;
+  --muted: var(--surface-2);
+  --border: color-mix(in srgb, var(--surface-tint) 16%, #fff);
+  --input: color-mix(in srgb, var(--surface-tint) 20%, #fff);
+  --tonal: color-mix(in srgb, var(--primary) 14%, #fff);
+  --tonal-hover: color-mix(in srgb, var(--primary) 22%, #fff);
+  --tonal-fg: color-mix(in srgb, var(--primary) 55%, #000);
+  /* Toasts/tooltips: the inverse of the page. */
+  --inverse: #2b2d33;
+  --inverse-fg: #f2f3f7;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --md-primary: #bac3ff;
-    --md-on-primary: #001e91;
-    --md-primary-container: #002eca;
-    --md-on-primary-container: #dee0ff;
-    --md-secondary: #c9c1ea;
-    --md-on-secondary: #312c4c;
-    --md-secondary-container: #484264;
-    --md-on-secondary-container: #e6deff;
-    --md-tertiary: #d7bbf3;
-    --md-on-tertiary: #3b2654;
-    --md-tertiary-container: #533d6c;
-    --md-on-tertiary-container: #efdbff;
-    --md-error: #ffb4ab;
-    --md-on-error: #690005;
-    --md-error-container: #93000a;
-    --md-on-error-container: #ffdad6;
-    --md-surface: #11131c;
-    --md-on-surface: #e2e1ef;
-    --md-surface-variant: #444654;
-    --md-on-surface-variant: #c5c5d6;
-    --md-surface-container-lowest: #0c0e17;
-    --md-surface-container-low: #1a1b25;
-    --md-surface-container: #1e1f29;
-    --md-surface-container-high: #282934;
-    --md-surface-container-highest: #33343f;
-    --md-inverse-surface: #e2e1ef;
-    --md-inverse-on-surface: #2f303a;
-    --md-inverse-primary: #1242ff;
-    --md-outline: #8f8f9f;
-    --md-outline-variant: #444654;
-    --md-scrim: #000000;
-    --md-shadow: #000000;
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    /* Light enough for text-primary on near-black; buttons get a dark label. */
+    --primary: oklch(0.62 0.1736 259.66);
+    --primary-foreground: oklch(0.145 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+
+    --surface-tint: var(--foreground);
+    --surface-1: color-mix(in srgb, var(--surface-tint) 5%, var(--background));
+    --surface-2: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+    --surface-box: color-mix(
+      in srgb,
+      var(--surface-tint) 9%,
+      var(--background)
+    );
+    --field-card: color-mix(
+      in srgb,
+      var(--surface-tint) 11%,
+      var(--background)
+    );
+    --popover: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+    --muted: oklch(0.269 0 0);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --tonal: color-mix(in srgb, var(--foreground) 11%, var(--background));
+    --tonal-hover: color-mix(in srgb, var(--foreground) 16%, var(--background));
+    --tonal-fg: var(--foreground);
+    --inverse: #e8eaf0;
+    --inverse-fg: #1d1f24;
   }
 }
 
 @theme inline {
-  --color-primary: var(--md-primary);
-  --color-on-primary: var(--md-on-primary);
-  --color-primary-container: var(--md-primary-container);
-  --color-on-primary-container: var(--md-on-primary-container);
-  --color-secondary: var(--md-secondary);
-  --color-on-secondary: var(--md-on-secondary);
-  --color-secondary-container: var(--md-secondary-container);
-  --color-on-secondary-container: var(--md-on-secondary-container);
-  --color-tertiary: var(--md-tertiary);
-  --color-on-tertiary: var(--md-on-tertiary);
-  --color-tertiary-container: var(--md-tertiary-container);
-  --color-on-tertiary-container: var(--md-on-tertiary-container);
-  --color-error: var(--md-error);
-  --color-on-error: var(--md-on-error);
-  --color-error-container: var(--md-error-container);
-  --color-on-error-container: var(--md-on-error-container);
-  --color-surface: var(--md-surface);
-  --color-on-surface: var(--md-on-surface);
-  --color-surface-variant: var(--md-surface-variant);
-  --color-on-surface-variant: var(--md-on-surface-variant);
-  --color-surface-container-lowest: var(--md-surface-container-lowest);
-  --color-surface-container-low: var(--md-surface-container-low);
-  --color-surface-container: var(--md-surface-container);
-  --color-surface-container-high: var(--md-surface-container-high);
-  --color-surface-container-highest: var(--md-surface-container-highest);
-  --color-inverse-surface: var(--md-inverse-surface);
-  --color-inverse-on-surface: var(--md-inverse-on-surface);
-  --color-inverse-primary: var(--md-inverse-primary);
-  --color-outline: var(--md-outline);
-  --color-outline-variant: var(--md-outline-variant);
-  --color-scrim: var(--md-scrim);
-  --color-shadow: var(--md-shadow);
-  --font-sans: var(--font-roboto-flex), ui-sans-serif, system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-popover: var(--popover);
+  --color-tonal: var(--tonal);
+  --color-tonal-hover: var(--tonal-hover);
+  --color-tonal-fg: var(--tonal-fg);
+  --color-inverse: var(--inverse);
+  --color-inverse-fg: var(--inverse-fg);
+  --font-sans: var(--font-google-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 @theme {
-  /* M3 shape scale */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 28px;
-  --radius-2xl: 32px;
-  --radius-full: 9999px;
+  --tracking-tight: -0.015em;
+  --tracking-tighter: -0.03em;
+  --animate-spin-slow: spin 0.8s linear infinite;
+}
 
-  /* M3 Expressive motion */
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
-
-  /* M3 elevation */
-  --shadow-elevation-1:
-    0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
-  --shadow-elevation-2:
-    0 1px 2px 0 rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
-  --shadow-elevation-3:
-    0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px 0 rgb(0 0 0 / 0.3);
-
-  --animate-blob: blob-morph 16s ease-in-out infinite alternate;
-  --animate-spinner-rotate: spinner-rotate 1.6s linear infinite;
-  --animate-spinner-arc: spinner-arc 1.4s var(--ease-emphasized) infinite;
-
-  /* Expressive shape-morphing decorative blob (border-radius only). */
-  @keyframes blob-morph {
-    0% {
-      border-radius: 62% 38% 46% 54% / 48% 60% 40% 52%;
-      rotate: 0deg;
-    }
-    33% {
-      border-radius: 40% 60% 70% 30% / 50% 30% 70% 50%;
-    }
-    66% {
-      border-radius: 70% 30% 35% 65% / 35% 55% 45% 65%;
-    }
-    100% {
-      border-radius: 45% 55% 60% 40% / 65% 40% 60% 35%;
-      rotate: 40deg;
-    }
+/* Cards and fields. A card nested in a card, or a field on a card, steps
+   toward the tint so it never vanishes into what it sits on. :where keeps the
+   ancestor test at plain-utility specificity. */
+@layer utilities {
+  .bg-surface {
+    background-color: var(--surface-1);
   }
-  @keyframes spinner-rotate {
-    to {
-      rotate: 360deg;
-    }
+  .bg-surface-high {
+    background-color: var(--surface-2);
   }
-  @keyframes spinner-arc {
-    0% {
-      stroke-dasharray: 2 200;
-      stroke-dashoffset: 0;
-    }
-    50% {
-      stroke-dasharray: 80 200;
-      stroke-dashoffset: -16;
-    }
-    100% {
-      stroke-dasharray: 2 200;
-      stroke-dashoffset: -98;
+  .bg-surface:where(.bg-surface *) {
+    background-color: var(--surface-box);
+  }
+  .bg-surface-high:where(.bg-surface *) {
+    background-color: var(--field-card);
+  }
+}
+
+/* Light mode: a field straight on the tinted page is a tint on a tint and
+   barely shows; off a card it turns white with a hairline (not while
+   focused or invalid, so those borders show). */
+@media (prefers-color-scheme: light) {
+  @layer utilities {
+    :is(input, textarea, [role="combobox"]).bg-surface-high:where(
+        :not(.bg-surface *, :focus, [data-invalid], [aria-invalid="true"])
+      ) {
+      background-color: #fff;
+      border-color: var(--input);
     }
   }
 }
 
 body {
-  @apply bg-surface text-on-surface font-sans antialiased;
+  @apply bg-background text-foreground font-sans antialiased;
 }
 
 ::selection {
-  background: var(--md-primary-container);
-  color: var(--md-on-primary-container);
+  background: var(--tonal-hover);
+  color: var(--tonal-fg);
 }
 
-/* Icon size helper: size via font-size (set by <Icon size>), optical size follows. */
+/* Icon size helper: size via font-size (set by <Icon size>). */
 .material-symbols-rounded {
   width: 1em;
   height: 1em;
   overflow: hidden;
   user-select: none;
   flex-shrink: 0;
-  transition: font-variation-settings 200ms var(--ease-emphasized);
+  transition: font-variation-settings 150ms ease-out;
 }
 
 /* biome-ignore-start lint/complexity/noImportantStyles: reduced-motion must beat utility classes */
@@ -201,13 +151,6 @@ body {
   *::after {
     scale: none !important;
     transition-duration: 0s !important;
-    animation-duration: 0s !important;
-    animation-iteration-count: 1 !important;
-  }
-  .animate-spinner-rotate,
-  .animate-spinner-rotate * {
-    animation-duration: 2.4s !important;
-    animation-iteration-count: infinite !important;
   }
 }
 /* biome-ignore-end lint/complexity/noImportantStyles: - */

@@ -2,7 +2,7 @@
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
-import { popupMotion, stateLayer } from "./styles";
+import { popupMotion, popupSurface } from "./styles";
 
 export function Select<T extends string>({
   label,
@@ -23,33 +23,36 @@ export function Select<T extends string>({
       value={value}
       onValueChange={(v) => v !== null && onValueChange(v)}
     >
-      <div className={cn("relative flex flex-col", className)}>
+      <div className={cn("flex flex-col gap-1.5", className)}>
+        <BaseSelect.Label className="text-sm font-medium">
+          {label}
+        </BaseSelect.Label>
         <BaseSelect.Trigger
           className={cn(
-            stateLayer,
-            "flex h-14 w-full min-w-48 cursor-pointer items-center justify-between gap-3 rounded-t-[12px] bg-surface-container-highest pt-5 pr-3 pb-1 pl-4 text-left text-base text-on-surface",
-            "shadow-[inset_0_-1px_0_var(--md-on-surface-variant)] data-[popup-open]:shadow-[inset_0_-3px_0_var(--md-primary)] focus-visible:outline-offset-0",
+            "flex h-10 w-full min-w-48 cursor-pointer items-center justify-between gap-2 rounded-xl border border-transparent bg-surface-high pr-2.5 pl-3.5 text-left text-sm outline-none",
+            "transition-[box-shadow,border-color] duration-150 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
           )}
         >
-          <span className="pointer-events-none absolute top-2 left-4 text-xs text-on-surface-variant">
-            {label}
-          </span>
-          <BaseSelect.Value />
-          <BaseSelect.Icon className="flex transition-transform duration-300 ease-[var(--ease-spring)] in-data-[popup-open]:rotate-180">
-            <Icon name="arrow_drop_down" />
+          <BaseSelect.Value
+            placeholder="Select…"
+            className="truncate data-[placeholder]:text-muted-foreground"
+          />
+          <BaseSelect.Icon className="flex text-muted-foreground transition-transform duration-150 in-data-[popup-open]:rotate-180">
+            <Icon name="expand_more" size={18} />
           </BaseSelect.Icon>
         </BaseSelect.Trigger>
       </div>
       <BaseSelect.Portal>
         <BaseSelect.Positioner
-          sideOffset={4}
+          sideOffset={6}
           alignItemWithTrigger={false}
           className="z-50 outline-none"
         >
           <BaseSelect.Popup
             className={cn(
               popupMotion,
-              "min-w-[var(--anchor-width)] rounded-[16px] bg-surface-container py-2 text-on-surface shadow-elevation-2 outline-none",
+              popupSurface,
+              "min-w-[var(--anchor-width)] rounded-2xl p-1 outline-none",
             )}
           >
             <BaseSelect.List className="max-h-[var(--available-height)] overflow-y-auto">
@@ -57,13 +60,13 @@ export function Select<T extends string>({
                 <BaseSelect.Item
                   key={it.value}
                   value={it.value}
-                  className="mx-2 flex h-12 cursor-pointer items-center gap-3 rounded-[12px] px-3 text-sm outline-none select-none data-[highlighted]:bg-[color-mix(in_srgb,transparent,var(--md-on-surface)_10%)] data-[selected]:bg-secondary-container data-[selected]:text-on-secondary-container"
+                  className="flex h-9 cursor-pointer items-center gap-2 rounded-xl px-2.5 text-sm outline-none select-none data-[highlighted]:bg-muted data-[selected]:font-medium"
                 >
                   <BaseSelect.ItemText className="flex-1">
                     {it.label}
                   </BaseSelect.ItemText>
-                  <BaseSelect.ItemIndicator className="flex">
-                    <Icon name="check" size={20} />
+                  <BaseSelect.ItemIndicator className="flex text-primary">
+                    <Icon name="check" size={18} />
                   </BaseSelect.ItemIndicator>
                 </BaseSelect.Item>
               ))}

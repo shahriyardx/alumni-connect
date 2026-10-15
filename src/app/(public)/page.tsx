@@ -1,98 +1,57 @@
 import { ButtonLink } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/cn";
 
 const features = [
   {
     icon: "verified",
     title: "Verified alumni",
-    body: "Every account is checked against your university's roster. The graduate answering you really graduated.",
-    tone: "bg-primary-container text-on-primary-container",
-    shape: "rounded-[28px_28px_28px_8px]",
+    body: "Every account is checked against your university's roster.",
   },
   {
     icon: "manage_search",
-    title: "Searchable archive",
-    body: "Answers don't vanish into a group chat. Every question becomes something the next batch can find.",
-    tone: "bg-secondary-container text-on-secondary-container",
-    shape: "rounded-[48px]",
+    title: "Searchable answers",
+    body: "Questions don't vanish into a group chat; the next batch finds them.",
   },
   {
     icon: "lock",
-    title: "Your university only",
-    body: "No strangers, no recruiters. You only ever see people from your own campus.",
-    tone: "bg-tertiary-container text-on-tertiary-container",
-    shape: "rounded-[8px_28px_28px_28px]",
+    title: "Your campus only",
+    body: "No strangers, no recruiters. Only people from your university.",
   },
 ];
 
 export default function LandingPage() {
   return (
-    <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-20 px-4 pt-8 pb-24 sm:px-8 sm:pt-16">
-      <section className="relative grid items-center gap-10 lg:grid-cols-[1.25fr_1fr]">
-        <div className="relative z-10 flex flex-col gap-8">
-          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-container-high px-4 py-1.5 text-sm font-medium text-on-surface-variant">
-            <Icon name="school" filled size={18} className="text-tertiary" />
-            The forum for your campus, past and present
-          </p>
-          <h1
-            className="text-[clamp(44px,8vw,84px)] leading-[0.95] font-[750] tracking-[-0.03em]"
-            style={{ fontVariationSettings: "'wdth' 130, 'opsz' 144" }}
-          >
-            Ask the people who{" "}
-            <span className="text-primary">walked the path</span> before you
-          </h1>
-          <p className="max-w-xl text-lg text-on-surface-variant sm:text-xl">
-            Course choices, internships, first jobs, that one professor — get
-            answers from verified alumni of your own university.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <ButtonLink href="/sign-up" size="lg" icon="arrow_forward">
-              Sign up
-            </ButtonLink>
-            <ButtonLink href="/sign-in" size="lg" variant="tonal">
-              Sign in
-            </ButtonLink>
-          </div>
-        </div>
-
-        {/* Shape-morphing decorative composition */}
-        <div
-          aria-hidden
-          className="relative mx-auto aspect-square w-full max-w-[460px] lg:max-w-none"
-        >
-          <div className="absolute inset-[4%] animate-blob bg-primary-container" />
-          <div className="absolute inset-[22%] animate-blob bg-tertiary-container [animation-delay:-5s] [animation-direction:alternate-reverse]" />
-          <div className="absolute inset-[38%] grid animate-blob place-items-center bg-primary text-on-primary [animation-delay:-10s]">
-            <Icon name="forum" filled size={56} />
-          </div>
-          <span className="absolute top-[12%] left-[2%] flex items-center gap-2 rounded-full bg-surface-container-lowest px-4 py-2 text-sm font-semibold shadow-elevation-2">
-            <Icon name="school" filled size={18} className="text-tertiary" />
-            Class of 2019
-          </span>
-          <span className="absolute right-[0%] bottom-[16%] flex items-center gap-2 rounded-full bg-surface-container-lowest px-4 py-2 text-sm font-semibold shadow-elevation-2">
-            <Icon name="verified" filled size={18} className="text-primary" />
-            Roster verified
-          </span>
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-4 pt-12 pb-20 sm:px-8 sm:pt-24">
+      <section className="flex max-w-2xl flex-col gap-4">
+        <h1 className="text-4xl leading-tight font-semibold tracking-tighter sm:text-5xl">
+          Ask the people who walked the path before you.
+        </h1>
+        <p className="text-base text-muted-foreground sm:text-lg">
+          A verified forum for students and alumni of your university.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <ButtonLink href="/sign-up" size="lg">
+            Get started
+          </ButtonLink>
+          <ButtonLink href="/sign-in" size="lg" variant="tonal">
+            Sign in
+          </ButtonLink>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-3">
         {features.map((f) => (
           <article
             key={f.title}
-            className={cn("flex flex-col gap-4 p-7", f.tone, f.shape)}
+            className="flex gap-3 rounded-3xl bg-surface p-5 sm:flex-col"
           >
-            <span className="grid size-14 place-items-center rounded-[18px] bg-surface/60">
-              <Icon name={f.icon} filled size={30} />
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-tonal text-tonal-fg">
+              <Icon name={f.icon} size={20} />
             </span>
-            <h2
-              className="text-2xl font-[700] tracking-tight"
-              style={{ fontVariationSettings: "'wdth' 115" }}
-            >
-              {f.title}
-            </h2>
-            <p className="opacity-85">{f.body}</p>
+            <div className="flex flex-col gap-1">
+              <h2 className="text-sm font-semibold">{f.title}</h2>
+              <p className="text-sm text-muted-foreground">{f.body}</p>
+            </div>
           </article>
         ))}
       </section>

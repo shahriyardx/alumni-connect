@@ -1,3 +1,4 @@
-// ponytail: plain join, no tailwind-merge — callers must not pass conflicting utilities.
-export const cn = (...c: (string | false | null | undefined)[]) =>
-  c.filter(Boolean).join(" ");
+import { type ClassNameValue, twMerge } from "tailwind-merge";
+
+/** Joins classes; later Tailwind utilities override earlier conflicting ones. */
+export const cn = (...c: ClassNameValue[]) => twMerge(c);

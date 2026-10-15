@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
-import { stateLayer } from "./styles";
+import { focusRing } from "./styles";
 
 export function Fab({
   icon,
@@ -22,20 +22,18 @@ export function Fab({
   size?: "md" | "lg";
 }) {
   const classes = cn(
-    stateLayer,
-    "inline-flex shrink-0 cursor-pointer items-center justify-center gap-3 bg-primary-container text-on-primary-container shadow-elevation-3 hover:shadow-elevation-2",
-    "transition-[border-radius,scale,box-shadow] duration-200 ease-[var(--ease-spring)] active:scale-95 active:rounded-[16px]",
-    size === "lg"
-      ? "h-24 min-w-24 rounded-[28px]"
-      : "h-14 min-w-14 rounded-[20px]",
-    label && (size === "lg" ? "px-7 text-xl" : "px-5"),
-    "font-semibold disabled:pointer-events-none disabled:opacity-40",
+    focusRing,
+    "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full bg-primary font-medium text-primary-foreground shadow-lg shadow-primary/25",
+    "transition-[background-color,scale] duration-150 ease-out hover:bg-primary/90 active:scale-[0.97]",
+    size === "lg" ? "h-14 min-w-14" : "h-12 min-w-12",
+    label && (size === "lg" ? "px-6 text-base" : "px-5 text-sm"),
+    "disabled:pointer-events-none disabled:opacity-50",
     className,
   );
   const ariaLabel = label ? undefined : (props["aria-label"] ?? icon);
   const content = (
     <>
-      <Icon name={icon} size={size === "lg" ? 36 : 24} />
+      <Icon name={icon} size={size === "lg" ? 26 : 22} />
       {label}
     </>
   );

@@ -6,7 +6,7 @@ import { useTRPC } from "@/lib/trpc";
 import { Avatar } from "./ui/avatar";
 import { RoleBadge } from "./ui/badge";
 import { Menu, MenuContent, MenuItem } from "./ui/menu";
-import { stateLayer } from "./ui/styles";
+import { focusRing } from "./ui/styles";
 
 export function useMe() {
   const trpc = useTRPC();
@@ -28,22 +28,22 @@ export function UserMenu() {
   const { me } = useMe();
   const router = useRouter();
   const signOut = useSignOut();
-  if (!me) return <div className="size-10" />;
+  if (!me) return <div className="size-8" />;
   return (
     <Menu.Root>
       <Menu.Trigger
         aria-label="Account"
-        className={`${stateLayer} cursor-pointer rounded-full`}
+        className={`${focusRing} cursor-pointer rounded-full transition-opacity hover:opacity-85`}
       >
-        <Avatar name={me.name} />
+        <Avatar name={me.name} size={32} />
       </Menu.Trigger>
       <MenuContent className="w-64">
-        <div className="flex flex-col gap-1 px-4 pt-2 pb-3">
-          <span className="truncate font-semibold">{me.name}</span>
-          <span className="truncate text-xs text-on-surface-variant">
+        <div className="mb-1 flex flex-col gap-0.5 px-2.5 pt-2 pb-2.5">
+          <span className="truncate text-sm font-semibold">{me.name}</span>
+          <span className="truncate text-xs text-muted-foreground">
             {me.email}
           </span>
-          <span className="mt-1 flex items-center gap-2 text-xs text-on-surface-variant">
+          <span className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
             <RoleBadge role={me.role} />
             <span className="truncate">{me.universityName}</span>
           </span>

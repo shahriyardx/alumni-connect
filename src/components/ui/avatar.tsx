@@ -2,20 +2,6 @@
 import { Avatar as BaseAvatar } from "@base-ui/react/avatar";
 import { cn } from "@/lib/cn";
 
-const tones = [
-  "bg-primary-container text-on-primary-container",
-  "bg-secondary-container text-on-secondary-container",
-  "bg-tertiary-container text-on-tertiary-container",
-  "bg-error-container text-on-error-container",
-  "bg-inverse-primary text-on-primary-container",
-];
-
-function hash(s: string) {
-  let h = 0;
-  for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0;
-  return Math.abs(h);
-}
-
 export function Avatar({
   name,
   src,
@@ -36,11 +22,10 @@ export function Avatar({
   return (
     <BaseAvatar.Root
       className={cn(
-        "inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full align-middle font-semibold",
-        tones[hash(name) % tones.length],
+        "inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-tonal align-middle font-medium text-tonal-fg",
         className,
       )}
-      style={{ width: size, height: size, fontSize: size * 0.4 }}
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
     >
       {src && (
         <BaseAvatar.Image src={src} alt="" className="size-full object-cover" />

@@ -2,32 +2,35 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
-import { popupMotion, stateLayer } from "./styles";
+import { focusRing, popupMotion } from "./styles";
 
 type Variant = "standard" | "filled" | "tonal" | "outlined";
 
 const variants: Record<Variant, [on: string, off: string]> = {
-  standard: ["text-primary", "text-on-surface-variant"],
+  standard: [
+    "text-primary hover:bg-muted",
+    "text-muted-foreground hover:bg-muted hover:text-foreground",
+  ],
   filled: [
-    "bg-primary text-on-primary",
-    "bg-surface-container-highest text-primary",
+    "bg-primary text-primary-foreground hover:bg-primary/85",
+    "bg-muted text-foreground hover:bg-tonal",
   ],
   tonal: [
-    "bg-secondary-container text-on-secondary-container",
-    "bg-surface-container-highest text-on-surface-variant",
+    "bg-tonal text-tonal-fg hover:bg-tonal-hover",
+    "bg-muted text-muted-foreground hover:text-foreground",
   ],
   outlined: [
-    "bg-inverse-surface text-inverse-on-surface",
-    "border border-outline-variant text-on-surface-variant",
+    "bg-foreground text-background",
+    "border border-border text-muted-foreground hover:bg-muted hover:text-foreground",
   ],
 };
 
 export const tooltipPopup = cn(
   popupMotion,
-  "rounded-[8px] bg-inverse-surface px-2.5 py-1.5 text-xs font-medium text-inverse-on-surface shadow-elevation-2 data-[instant]:transition-none",
+  "rounded-lg bg-inverse px-2 py-1 text-xs font-medium text-inverse-fg shadow-md data-[instant]:transition-none",
 );
 
-/** Plain M3 tooltip wrapped around any element passed as `render`. */
+/** Small inverse tooltip wrapped around any element passed as `render`. */
 export function Tip({
   label,
   children,
@@ -70,11 +73,10 @@ export function IconButton({
         aria-label={label}
         aria-pressed={selected}
         className={cn(
-          stateLayer,
-          "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center",
-          "transition-[border-radius,scale,background-color] duration-200 ease-[var(--ease-spring)] active:scale-90 active:rounded-[12px]",
-          "disabled:pointer-events-none disabled:opacity-40",
-          selected ? "rounded-[14px]" : "rounded-full",
+          focusRing,
+          "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full",
+          "transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.97]",
+          "disabled:pointer-events-none disabled:opacity-50",
           // Resting (non-toggle) look: filled/tonal use their container, standard/outlined don't.
           (selected ?? (variant === "filled" || variant === "tonal"))
             ? on
@@ -82,7 +84,7 @@ export function IconButton({
           className,
         )}
       >
-        <Icon name={icon} filled={selected} />
+        <Icon name={icon} filled={selected} size={20} />
       </button>
     </Tip>
   );

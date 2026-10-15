@@ -112,8 +112,8 @@ export function SignUpWizard() {
       title="Join your university"
       subtitle="Verified students and alumni only — it takes a minute."
     >
-      {/* M3 linear progress + step labels */}
-      <div className="mb-5 flex flex-col gap-3">
+      {/* Step progress */}
+      <div className="mb-4 flex flex-col gap-2.5">
         <div
           role="progressbar"
           aria-label="Sign-up progress"
@@ -122,14 +122,15 @@ export function SignUpWizard() {
           aria-valuenow={step + 1}
           className="flex h-1 gap-1"
         >
-          <div
-            className="h-full rounded-full bg-primary transition-[flex-grow] duration-700 ease-[var(--ease-spring)]"
-            style={{ flexGrow: step + 1 }}
-          />
-          <div
-            className="h-full rounded-full bg-secondary-container transition-[flex-grow] duration-700 ease-[var(--ease-spring)]"
-            style={{ flexGrow: STEPS.length - step - 1 }}
-          />
+          {STEPS.map((s, i) => (
+            <div
+              key={s}
+              className={cn(
+                "h-full flex-1 rounded-full transition-colors duration-200",
+                i <= step ? "bg-primary" : "bg-muted",
+              )}
+            />
+          ))}
         </div>
         <ol className="flex justify-between text-xs font-medium">
           {STEPS.map((s, i) => (
@@ -137,26 +138,23 @@ export function SignUpWizard() {
               key={s}
               aria-current={i === step ? "step" : undefined}
               className={cn(
-                "flex items-center gap-1.5",
-                i <= step ? "text-primary" : "text-on-surface-variant",
+                "flex items-center gap-1",
+                i <= step ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              <Icon
-                name={i < step ? "check_circle" : `counter_${i + 1}`}
-                filled={i <= step}
-                size={18}
-              />
+              {i < step && (
+                <Icon name="check" size={14} className="text-primary" />
+              )}
               {s}
             </li>
           ))}
         </ol>
       </div>
 
-      {/* Keyed so each step's card mounts fresh and slides in via @starting-style. */}
+      {/* Keyed so each step's card mounts fresh and fades in via @starting-style. */}
       <Card
-        variant="elevated"
         key={step}
-        className="p-6 transition-[opacity,translate] duration-500 ease-[var(--ease-spring)] starting:translate-x-10 starting:opacity-0 sm:p-8"
+        className="p-6 transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0"
       >
         {step === 0 && (
           <form
@@ -166,7 +164,7 @@ export function SignUpWizard() {
               if (uni) setStep(1);
             }}
           >
-            <h2 className="text-xl font-semibold">Where do you study?</h2>
+            <h2 className="text-base font-semibold">Where do you study?</h2>
             {unis.isLoading ? (
               <Spinner className="self-center" />
             ) : (
@@ -182,29 +180,24 @@ export function SignUpWizard() {
             )}
             <p
               className={cn(
-                "flex items-center gap-2 rounded-[16px] bg-secondary-container px-4 py-3 text-sm text-on-secondary-container transition-opacity duration-300",
+                "flex items-center gap-2 rounded-xl bg-tonal px-3.5 py-2.5 text-sm text-tonal-fg transition-opacity duration-150",
                 !uni && "opacity-0",
               )}
               aria-live="polite"
             >
-              <Icon name="alternate_email" size={20} />
+              <Icon name="alternate_email" size={18} />
               {uni ? `Use your @${uni.emailDomain} email` : " "}
             </p>
-            <Button
-              type="submit"
-              size="lg"
-              disabled={!uni}
-              className="self-end"
-            >
+            <Button type="submit" disabled={!uni} className="self-end">
               Continue
-              <Icon name="arrow_forward" size={20} />
+              <Icon name="arrow_forward" size={18} />
             </Button>
           </form>
         )}
 
         {step === 1 && uni && (
           <form className="flex flex-col gap-4" onSubmit={submitIdentity}>
-            <h2 className="text-xl font-semibold">Tell us who you are</h2>
+            <h2 className="text-base font-semibold">Tell us who you are</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField
                 label="Student ID"
@@ -261,19 +254,19 @@ export function SignUpWizard() {
               />
             </div>
             {errors.form && (
-              <p role="alert" className="text-sm text-error">
+              <p role="alert" className="text-sm text-destructive">
                 {errors.form}
               </p>
             )}
             <div className="mt-2 flex items-center justify-between gap-2">
               <Button
-                variant="text"
+                variant="ghost"
                 icon="arrow_back"
                 onClick={() => setStep(0)}
               >
                 Back
               </Button>
-              <Button type="submit" size="lg" loading={busy}>
+              <Button type="submit" loading={busy}>
                 Create account
               </Button>
             </div>
@@ -283,10 +276,10 @@ export function SignUpWizard() {
         {step === 2 && (
           <form className="flex flex-col gap-6" onSubmit={verify}>
             <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold">Verify your email</h2>
-              <p className="text-sm text-on-surface-variant">
+              <h2 className="text-base font-semibold">Verify your email</h2>
+              <p className="text-sm text-muted-foreground">
                 Enter the 6-digit code we sent to{" "}
-                <b className="text-on-surface">{form.email}</b>.
+                <b className="font-medium text-foreground">{form.email}</b>.
               </p>
             </div>
             <OtpField
@@ -308,7 +301,6 @@ export function SignUpWizard() {
               />
               <Button
                 type="submit"
-                size="lg"
                 loading={busy}
                 disabled={!isOtpComplete(otp)}
               >
@@ -320,9 +312,9 @@ export function SignUpWizard() {
       </Card>
 
       {step < 2 && (
-        <p className="mt-6 flex items-center justify-center gap-2 text-sm text-on-surface-variant">
+        <p className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
           Already have an account?
-          <ButtonLink href="/sign-in" variant="text" size="sm">
+          <ButtonLink href="/sign-in" variant="link">
             Sign in
           </ButtonLink>
         </p>
@@ -347,30 +339,19 @@ function mapSignupError(err: unknown): Errors {
 
 function AlumnusWelcome({ name, href }: { name: string; href: string }) {
   return (
-    <main className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-16">
-      <div
-        aria-hidden
-        className="absolute size-[min(640px,140vw)] animate-blob bg-tertiary-container"
-      />
-      <div
-        aria-hidden
-        className="absolute size-[min(420px,90vw)] animate-blob bg-primary-container opacity-70 [animation-delay:-8s]"
-      />
-      <div className="relative flex max-w-md flex-col items-center gap-5 text-center transition-[opacity,scale] duration-700 ease-[var(--ease-spring)] starting:scale-75 starting:opacity-0">
-        <span className="grid size-24 place-items-center rounded-[32px] bg-tertiary text-on-tertiary shadow-elevation-3">
-          <Icon name="school" filled size={52} />
+    <main className="flex flex-1 items-center justify-center px-4 py-16">
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center transition-[opacity,translate] duration-300 ease-out starting:translate-y-2 starting:opacity-0">
+        <span className="mb-2 grid size-12 place-items-center rounded-2xl bg-tonal text-tonal-fg">
+          <Icon name="school" filled size={26} />
         </span>
-        <h1
-          className="text-[clamp(36px,8vw,57px)] leading-[1.02] font-[700] tracking-tight text-on-tertiary-container"
-          style={{ fontVariationSettings: "'wdth' 125" }}
-        >
+        <h1 className="text-2xl font-semibold tracking-tight">
           Welcome back, alumnus
         </h1>
-        <p className="text-lg text-on-tertiary-container">
+        <p className="text-sm text-muted-foreground">
           {name.split(" ")[0]}, the students who are where you once were have
           questions only you can answer.
         </p>
-        <ButtonLink href={href} size="lg" icon="arrow_forward">
+        <ButtonLink href={href} icon="arrow_forward" className="mt-3">
           {href === "/pending" ? "See account status" : "Go to the feed"}
         </ButtonLink>
       </div>

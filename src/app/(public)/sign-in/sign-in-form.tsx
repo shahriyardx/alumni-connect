@@ -69,12 +69,12 @@ export function SignInForm() {
         title="Check your inbox"
         subtitle={
           <>
-            We sent a 6-digit code to <b className="text-on-surface">{email}</b>
-            .
+            We sent a 6-digit code to{" "}
+            <b className="font-medium text-foreground">{email}</b>.
           </>
         }
       >
-        <Card variant="elevated" className="p-6 sm:p-8">
+        <Card className="p-6">
           <form onSubmit={verify} className="flex flex-col gap-6">
             <OtpField value={otp} onChange={setOtp} error={error} />
             <div className="flex items-center justify-between gap-2">
@@ -97,7 +97,7 @@ export function SignInForm() {
       title="Welcome back"
       subtitle="Sign in with your institutional email."
     >
-      <Card variant="elevated" className="p-6 sm:p-8">
+      <Card className="p-6">
         <form onSubmit={signIn} className="flex flex-col gap-4">
           <TextField
             label="Email"
@@ -118,15 +118,15 @@ export function SignInForm() {
           {error && (
             <div
               role="alert"
-              className="flex items-start gap-3 rounded-[16px] bg-error-container p-3 text-sm text-on-error-container"
+              className="flex items-start gap-2.5 rounded-xl bg-destructive/10 p-3 text-sm text-destructive"
             >
-              <Icon name="error" size={20} />
+              <Icon name="error" size={18} />
               <div className="flex flex-1 flex-col items-start gap-2">
                 {error}
                 {unverified && (
                   <Button
                     size="sm"
-                    variant="filled"
+                    variant="destructive"
                     icon="mail"
                     loading={busy}
                     onClick={async () => {
@@ -146,18 +146,18 @@ export function SignInForm() {
           )}
           <Link
             href="/forgot-password"
-            className="self-start text-sm font-semibold text-primary hover:underline"
+            className="self-start text-sm font-medium text-primary hover:underline"
           >
             Forgot password?
           </Link>
-          <Button type="submit" size="lg" loading={busy} className="mt-2">
+          <Button type="submit" loading={busy} className="mt-1 w-full">
             Sign in
           </Button>
         </form>
       </Card>
-      <p className="mt-6 flex items-center justify-center gap-2 text-sm text-on-surface-variant">
+      <p className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
         New here?
-        <ButtonLink href="/sign-up" variant="text" size="sm">
+        <ButtonLink href="/sign-up" variant="link">
           Create an account
         </ButtonLink>
       </p>
