@@ -2125,3 +2125,22 @@ demo accounts table; where OTP codes appear (server terminal); MinIO console (`h
 - [ ] **Step 2:** `bun test` (all pass, paste summary), `bun run lint`, `bunx tsc --noEmit`, `bun run build` — all clean.
 - [ ] **Step 3: End-to-end walkthrough** (`bun run start` after build): sign up with a printed sample roster ID → OTP from terminal → lands in feed with correct role badge; ask a question with image + tags; second browser as alumnus replies → first browser gets live notification; vote; bookmark; search; report → mod removes → audit visible to admin; DTU admin sees none of NUB's content; phone-width check of feed, post, composer, admin; keyboard-only pass of sign-in + composer (focus visible everywhere); dark mode check.
 - [ ] **Step 4:** Fix anything found (each fix: failing test first where logic is involved). Commit `fix: …` per fix.
+
+---
+
+### Task 7R: Restyle to the minimal design (added 2026-10-16, runs after Task 7, before Task 8)
+
+**Why:** user feedback — the M3 Expressive kit reads as a Material UI clone; wanted modern minimal like their slash-commands-dashboard. Binding design ref: `docs/superpowers/plans/refs/design-minimal.md` (+ `refs/slash-style/*`). It supersedes spec §10 and Task 4's design rules. Every later UI task follows it.
+
+**Files:**
+- Modify: `src/app/globals.css` (tokens per design-minimal.md; keep Tailwind class names that components use, or update all usages), `src/app/layout.tsx` (Google Sans Flex), every `src/components/ui/*.tsx`, `src/components/ui/styles.ts`, `src/components/app-shell.tsx`, `src/components/user-menu.tsx`, `src/components/auth/*`, `src/app/(public)/**` (landing + auth pages), `src/app/kit/*`, and the Task 7 forum components/pages so nothing references removed tokens.
+- Do NOT change any component's exported name or props (later tasks depend on them). Internal markup/classes may change freely.
+
+**Steps:**
+- [ ] Replace the color/shape/motion tokens with the design-minimal set (light + dark via prefers-color-scheme). Remove blob keyframes, spring easing, shape-morph.
+- [ ] Restyle each kit component (Button/ButtonLink, IconButton, Fab, Card, TextField with label above, Select, Dialog, Menu, Tabs, Toast, Avatar, Chip, RoleBadge/VerifiedMark, Spinner, EmptyState).
+- [ ] App shell: slim sidebar (desktop) with tonal-pill active row + compact top bar; bottom bar on phones; "Ask" primary button instead of a big FAB on desktop (FAB stays on phones, small).
+- [ ] Landing: minimal — short headline, one-line subtext, two buttons, 3 small feature rows. No blob, no giant display type. Auth pages: centered narrow card, plain.
+- [ ] Forum pages from Task 7: align with tokens (no bespoke colors).
+- [ ] Screenshots (headless Chromium, port 3200) of /, /sign-up, /sign-in, /kit, /feed, a post page at desktop + 375px, light + dark → scratchpad `task7r-*.png`. Compare side by side with the user's dashboard look described in design-minimal.md.
+- [ ] lint, tsc, `bun test`, `bun run build` pass. Commit `refactor(ui): minimal design system`.

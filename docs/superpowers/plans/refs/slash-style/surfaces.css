@@ -1,0 +1,268 @@
+/* Material-style tonal surfaces: filled containers instead of outlined boxes.
+   Mixed from the theme's background and a tint colour. Light mode tints with
+   a muted primary, so containers read as soft blue-grey rather than flat
+   grey; dark mode tints with the foreground. srgb on purpose: an oklch mix of
+   two greys has no hue and drifts red.
+
+   In the utilities layer so a hover/state utility on the same element still
+   wins. Its own file rather than globals.css: Turbopack's dev server kept
+   serving stale copies of globals edits. */
+:root {
+  --surface-tint: color-mix(in srgb, var(--primary) 55%, var(--foreground));
+}
+/* Light: the page is a soft tinted grey and cards sit on it in white, the
+   Google-app look; fields and nested boxes step back toward the tint.
+   :not(.dark) so this never beats the .dark block in globals.css. */
+:root:not(.dark) {
+  --background: color-mix(in srgb, var(--surface-tint) 5%, #fff);
+  --surface-1: #fff;
+  --surface-2: color-mix(in srgb, var(--surface-tint) 9%, #fff);
+  --surface-box: color-mix(in srgb, var(--surface-tint) 7%, #fff);
+  --field-card: color-mix(in srgb, var(--surface-tint) 10%, #fff);
+  /* Inside a tinted box, light mode flips back to white: a white field on a
+     tint reads at a glance, where a darker tint on a tint did not. */
+  --surface-box2: #fff;
+  --field-box: #fff;
+  --field-box2: color-mix(in srgb, var(--surface-tint) 9%, #fff);
+  /* Code sits in a recessed well, a step off the card it is on. */
+  --code-bg: color-mix(in srgb, var(--surface-tint) 5%, #fff);
+  /* Tonal buttons: a clear blue container with dark blue text, the Material
+     "secondary container", instead of a grey that vanished on white. */
+  --tonal: color-mix(in srgb, var(--primary) 14%, #fff);
+  --tonal-hover: color-mix(in srgb, var(--primary) 22%, #fff);
+  --tonal-fg: color-mix(in srgb, var(--primary) 55%, #000);
+  /* shadcn's near-white greys disappear on white cards; tint them. */
+  --secondary: var(--surface-2);
+  --muted: var(--surface-2);
+  --accent: color-mix(in srgb, var(--surface-tint) 12%, #fff);
+  --border: color-mix(in srgb, var(--surface-tint) 16%, #fff);
+  --input: color-mix(in srgb, var(--surface-tint) 20%, #fff);
+}
+.dark {
+  --surface-tint: var(--foreground);
+  --surface-1: color-mix(in srgb, var(--surface-tint) 5%, var(--background));
+  --surface-2: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+  --surface-box: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+  --field-card: color-mix(in srgb, var(--surface-tint) 11%, var(--background));
+  --surface-box2: color-mix(
+    in srgb,
+    var(--surface-tint) 13%,
+    var(--background)
+  );
+  --field-box: color-mix(in srgb, var(--surface-tint) 16%, var(--background));
+  --field-box2: color-mix(in srgb, var(--surface-tint) 20%, var(--background));
+  --code-bg: color-mix(in srgb, var(--surface-tint) 2%, var(--background));
+  --tonal: color-mix(in srgb, var(--foreground) 11%, var(--background));
+  --tonal-hover: color-mix(in srgb, var(--foreground) 16%, var(--background));
+  --tonal-fg: var(--foreground);
+}
+
+@layer utilities {
+  .bg-surface {
+    background-color: var(--surface-1);
+  }
+  .bg-surface-high {
+    background-color: var(--surface-2);
+  }
+}
+
+/* Nesting: a box inside a card, and a field inside either, each step so they
+   never vanish into what they sit on. The element's own class sits outside
+   :where and the ancestor test inside it, so these stay at a plain utility's
+   specificity — and an element never counts as its own ancestor. */
+@layer utilities {
+  .bg-surface:where(.bg-surface *) {
+    background-color: var(--surface-box);
+  }
+  .bg-surface:where(.bg-surface .bg-surface *) {
+    background-color: var(--surface-box2);
+  }
+  .bg-surface-high:where(.bg-surface *) {
+    background-color: var(--field-card);
+  }
+  .bg-surface-high:where(.bg-surface .bg-surface *) {
+    background-color: var(--field-box);
+  }
+  /* A field in a box in a box in a card (an embed's field row). */
+  .bg-surface-high:where(.bg-surface .bg-surface .bg-surface *) {
+    background-color: var(--field-box2);
+  }
+}
+
+/* Light mode: a field straight on the tinted page (a list's filter box, a
+   header search) is a tint on a tint and barely shows. Off a card it turns
+   white with a hairline. :where keeps this at a utility's specificity, and it
+   loads after Tailwind, so it beats border-transparent but a focus ring
+   (one pseudo-class more) still wins. */
+@layer utilities {
+  :where(:root:not(.dark))
+    :is(
+      [data-slot="input"],
+      [data-slot="textarea"],
+      [data-slot="select-trigger"],
+      [data-slot="input-group"]
+    ):where(:not(.bg-surface *, [data-slot="input-group"] *)) {
+    background-color: #fff;
+    border-color: var(--input);
+  }
+}
+
+/* Discord's own palette for message previews, in both of Discord's themes, so
+   a preview matches the dashboard theme instead of a dark slab on a light
+   page. Brand colours (blurple, button green/red) stay fixed in the markup. */
+:root:not(.dark) {
+  --dc-chat: #ffffff;
+  --dc-embed: #f2f3f5;
+  --dc-deep: #e3e5e8;
+  --dc-text: #313338;
+  --dc-heading: #060607;
+  --dc-muted: #5c5e66;
+  --dc-soft: #4e5058;
+  --dc-dim: #80848e;
+  --dc-btn: #d7d9dc;
+  --dc-line: #e1e2e4;
+  --dc-bar: #c4c9ce;
+  --dc-link: #006ce7;
+}
+.dark {
+  --dc-chat: #313338;
+  --dc-embed: #2b2d31;
+  --dc-deep: #1e1f22;
+  --dc-text: #dbdee1;
+  --dc-heading: #f2f3f5;
+  --dc-muted: #949ba4;
+  --dc-soft: #b5bac1;
+  --dc-dim: #87898c;
+  --dc-btn: #4e5058;
+  --dc-line: #3f4147;
+  --dc-bar: #4f545c;
+  --dc-link: #00a8fc;
+}
+
+/* Material Symbols Rounded, self-hosted (the CSP allows fonts from 'self'
+   only) and cut down to the icons the navigation uses. To add one, refetch
+   the subset from Google Fonts with the new name in `icon_names`. */
+@font-face {
+  font-family: "Material Symbols Rounded";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/fonts/material-symbols-rounded.woff2") format("woff2");
+}
+.ms {
+  /* biome-ignore lint/a11y/useGenericFontNames: an icon font; a generic fallback would print the ligature names as words */
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0;
+  transition: font-variation-settings 0.2s;
+}
+/* The page you are on wears its icon filled, like Material's nav. */
+[data-active="true"] > .ms,
+[aria-current="page"] .ms {
+  font-variation-settings: "FILL" 1;
+}
+
+/* The hero cat: a slow tail swing from its root, and an ear flick now and
+   then. Off entirely for reduced motion. */
+@keyframes hero-cat-tail {
+  0%,
+  100% {
+    transform: rotate(-10deg);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+}
+@keyframes hero-cat-ear {
+  0%,
+  92%,
+  100% {
+    transform: rotate(0deg);
+  }
+  95% {
+    transform: rotate(-14deg);
+  }
+}
+.hero-cat-tail {
+  transform-box: view-box;
+  transform-origin: 132px 200px;
+  animation: hero-cat-tail 2.8s ease-in-out infinite;
+}
+.hero-cat-ear-left {
+  transform-box: view-box;
+  transform-origin: 70px 66px;
+  animation: hero-cat-ear 5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-cat-tail,
+  .hero-cat-ear-left {
+    animation: none;
+  }
+}
+
+/* react-colorful, restyled for the embed colour field. Two classes so these
+   beat the library's own injected styles. */
+.embed-color .react-colorful {
+  width: 100%;
+  height: auto;
+  gap: 12px;
+}
+.embed-color .react-colorful__saturation {
+  height: 150px;
+  flex: none;
+  border-radius: 14px;
+  border-bottom: 0;
+}
+.embed-color .react-colorful__hue {
+  height: 14px;
+  flex: none;
+  border-radius: 999px;
+}
+.embed-color .react-colorful__last-control {
+  border-radius: 999px;
+}
+.embed-color .react-colorful__pointer {
+  width: 22px;
+  height: 22px;
+  border-width: 3px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+/* Snackbar (toast) colours: the inverse of the page, as Material does it. */
+:root:not(.dark) {
+  --inverse: #2b2d33;
+  --inverse-fg: #f2f3f7;
+  --inverse-accent: color-mix(in srgb, var(--primary) 45%, #fff);
+}
+.dark {
+  --inverse: #e8eaf0;
+  --inverse-fg: #1d1f24;
+  --inverse-accent: var(--primary);
+}
+.snackbar-icon {
+  background: color-mix(in srgb, var(--inverse-fg) 12%, transparent);
+}
+[data-type="success"] .snackbar-icon {
+  background: #1f9d55;
+  color: #fff;
+}
+[data-type="error"] .snackbar-icon {
+  background: #e5484d;
+  color: #fff;
+}
+[data-type="warning"] .snackbar-icon {
+  background: #f5a524;
+  color: #1d1f24;
+}
+[data-type="info"] .snackbar-icon {
+  background: var(--primary);
+  color: #fff;
+}
