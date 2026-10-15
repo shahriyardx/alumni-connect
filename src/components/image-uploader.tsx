@@ -2,12 +2,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTRPC } from "@/lib/trpc";
+import { ALLOWED_MIME, MAX_BYTES } from "@/lib/uploads";
 import { Button } from "./ui/button";
 import { Spinner } from "./ui/spinner";
 import { useToast } from "./ui/toast";
 
-const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
-const MAX_BYTES = 5 * 1024 * 1024;
+const ALLOWED = Object.keys(ALLOWED_MIME) as (keyof typeof ALLOWED_MIME)[];
 
 type Allowed = (typeof ALLOWED)[number];
 

@@ -45,22 +45,33 @@ export const publicProcedure = t.procedure;
 
 export type Me = typeof user.$inferSelect;
 
-export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
-  if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
-  const [me] = await db.select().from(user).where(eq(user.id, ctx.userId));
-  if (!me || !me.emailVerified) throw new TRPCError({ code: "UNAUTHORIZED" });
-  if (me.status === "BANNED")
-    throw new TRPCError({ code: "FORBIDDEN", message: "Account banned" });
-  if (me.status === "PENDING")
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Account awaiting approval",
-    });
+/**
+ * Shared between `memberProcedure` and anything outside tRPC (e.g. the
+ * `/api/files` route handler) that needs the same "is this account allowed
+ * to use the app right now" check. Returns a human-readable reason, or null
+ * when the account is active.
+ */
+export function activeStatusError(
+  me: Pick<Me, "status" | "suspendedUntil">,
+): string | null {
+  if (me.status === "BANNED") return "Account banned";
+  if (me.status === "PENDING") return "Account awaiting approval";
   if (
     me.status === "SUSPENDED" &&
     (!me.suspendedUntil || me.suspendedUntil > new Date())
   ) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Account suspended" });
+    return "Account suspended";
+  }
+  return null;
+}
+
+export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
+  if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
+  const [me] = await db.select().from(user).where(eq(user.id, ctx.userId));
+  if (!me || !me.emailVerified) throw new TRPCError({ code: "UNAUTHORIZED" });
+  const statusError = activeStatusError(me);
+  if (statusError) {
+    throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }
   return withTenant(me.universityId, async (tx) => {
     const res = await next({ ctx: { db: tx, me } });

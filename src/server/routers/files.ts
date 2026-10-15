@@ -3,12 +3,30 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { attachment } from "@/db/schema";
-import { ALLOWED_MIME, MAX_BYTES, presignPut, remove, stat } from "../storage";
+import {
+  ALLOWED_MIME,
+  MAX_BYTES,
+  presignPut,
+  readHead,
+  remove,
+  stat,
+} from "../storage";
 import { memberProcedure, router } from "../trpc";
 
 const EXT_TO_MIME = Object.fromEntries(
   Object.entries(ALLOWED_MIME).map(([mime, ext]) => [ext, mime]),
-) as Record<string, string>;
+) as Record<string, keyof typeof ALLOWED_MIME>;
+
+/** First bytes that identify each allowed image format, regardless of what Content-Type the uploader claimed. */
+const MAGIC: Record<keyof typeof ALLOWED_MIME, (head: Buffer) => boolean> = {
+  "image/png": (h) =>
+    h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4e && h[3] === 0x47,
+  "image/jpeg": (h) => h[0] === 0xff && h[1] === 0xd8 && h[2] === 0xff,
+  "image/gif": (h) => h.subarray(0, 4).toString("ascii") === "GIF8",
+  "image/webp": (h) =>
+    h.subarray(0, 4).toString("ascii") === "RIFF" &&
+    h.subarray(8, 12).toString("ascii") === "WEBP",
+};
 
 export const filesRouter = router({
   createUpload: memberProcedure
@@ -32,6 +50,15 @@ export const filesRouter = router({
       if (!input.key.startsWith(`${ctx.me.universityId}/`)) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
+      const shapeRe = new RegExp(
+        `^${ctx.me.universityId}/(avatar|attachment)/[0-9a-f-]{36}\\.(png|jpg|webp|gif)$`,
+      );
+      if (!shapeRe.test(input.key)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Upload not found",
+        });
+      }
 
       const existing = await ctx.db
         .select({ id: attachment.id, objectKey: attachment.objectKey })
@@ -53,7 +80,19 @@ export const filesRouter = router({
       }
 
       const ext = input.key.slice(input.key.lastIndexOf(".") + 1);
-      const mime = EXT_TO_MIME[ext] ?? "application/octet-stream";
+      const mime = EXT_TO_MIME[ext];
+
+      // Don't trust the Content-Type the uploader sent with the PUT, or the
+      // extension in the key: sniff the real bytes so a .png key can't be
+      // used to serve e.g. HTML/script content back out of /api/files.
+      const head = await readHead(input.key, 16);
+      if (!mime || !MAGIC[mime](head) || info.contentType !== mime) {
+        await remove(input.key);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "File is not a valid image",
+        });
+      }
 
       const [row] = await ctx.db
         .insert(attachment)
