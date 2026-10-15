@@ -87,7 +87,7 @@ describe("cross-tenant reads are impossible", () => {
     ).rejects.toThrow(/NOT_FOUND/));
   test("admin.approveUser B user", () =>
     expect(adminA.admin.approveUser({ userId: bIds.userId })).rejects.toThrow(
-      /NOT_FOUND/,
+      /No pending account/,
     ));
   test("moderation.setUserStatus B user", async () => {
     const modA = adminA; // admin is also a mod

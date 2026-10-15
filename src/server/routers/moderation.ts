@@ -274,6 +274,12 @@ export const moderationRouter = router({
         .from(report)
         .where(eq(report.id, input.reportId));
       if (!rpt) throw new TRPCError({ code: "NOT_FOUND" });
+      if (rpt.status !== "OPEN") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Report already handled",
+        });
+      }
 
       if (input.action === "remove") {
         if (rpt.targetType === "USER")
@@ -287,7 +293,7 @@ export const moderationRouter = router({
         );
         if (!targetUserId) throw new TRPCError({ code: "NOT_FOUND" });
         const [targetUser] = await ctx.db
-          .select({ id: user.id, role: user.role })
+          .select({ id: user.id, role: user.role, status: user.status })
           .from(user)
           .where(
             and(
@@ -299,20 +305,24 @@ export const moderationRouter = router({
         assertCanAct(ctx.me, targetUser);
 
         if (input.action === "suspend") {
-          await ctx.db
-            .update(user)
-            .set({
-              status: "SUSPENDED",
-              suspendedUntil: new Date(
-                Date.now() + (input.days as number) * 86_400_000,
-              ),
-            })
-            .where(
-              and(
-                eq(user.id, targetUserId),
-                eq(user.universityId, ctx.me.universityId),
-              ),
-            );
+          // Don't let a suspend downgrade an already-banned account: leave
+          // it BANNED, but still resolve the report that flagged it.
+          if (targetUser.status !== "BANNED") {
+            await ctx.db
+              .update(user)
+              .set({
+                status: "SUSPENDED",
+                suspendedUntil: new Date(
+                  Date.now() + (input.days as number) * 86_400_000,
+                ),
+              })
+              .where(
+                and(
+                  eq(user.id, targetUserId),
+                  eq(user.universityId, ctx.me.universityId),
+                ),
+              );
+          }
         } else {
           await ctx.db
             .update(user)
@@ -375,7 +385,7 @@ export const moderationRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const [target] = await ctx.db
-        .select({ id: user.id, role: user.role })
+        .select({ id: user.id, role: user.role, status: user.status })
         .from(user)
         .where(
           and(
@@ -385,6 +395,38 @@ export const moderationRouter = router({
         );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       assertCanAct(ctx.me, target);
+
+      // PENDING accounts are an admin-approval concern (admin.approveUser),
+      // not something a moderator can flip straight to ACTIVE.
+      if (target.status === "PENDING") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Use admin approval for pending accounts",
+        });
+      }
+      // A ban is only an admin's to lift — block a MODERATOR from moving a
+      // BANNED account to *any* other status (including SUSPENDED, which
+      // would otherwise let a mod partially undo a ban one step at a time).
+      if (
+        target.status === "BANNED" &&
+        input.status !== "BANNED" &&
+        ctx.me.role !== "ADMIN"
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only an admin can lift a ban",
+        });
+      }
+      if (
+        input.status === "ACTIVE" &&
+        target.status !== "SUSPENDED" &&
+        target.status !== "BANNED"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Can only activate a suspended or banned account",
+        });
+      }
 
       const suspendedUntil =
         input.status === "SUSPENDED"

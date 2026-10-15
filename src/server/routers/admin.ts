@@ -1,5 +1,15 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
   auditLog,
@@ -23,6 +33,11 @@ function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
+}
+
+/** Escape LIKE/ILIKE metacharacters so user search text is matched literally. */
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 /** ISO-8601 week label ("2026-W42"), matching Postgres's `to_char(..., 'IYYY-"W"IW')`. */
@@ -133,9 +148,15 @@ export const adminRouter = router({
           and(
             eq(user.id, input.userId),
             eq(user.universityId, ctx.me.universityId),
+            eq(user.status, "PENDING"),
           ),
         );
-      if (!target) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!target) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No pending account",
+        });
+      }
 
       await ctx.db
         .update(user)
@@ -144,6 +165,7 @@ export const adminRouter = router({
           and(
             eq(user.id, input.userId),
             eq(user.universityId, ctx.me.universityId),
+            eq(user.status, "PENDING"),
           ),
         );
 
@@ -170,7 +192,7 @@ export const adminRouter = router({
       const conds = [eq(user.universityId, ctx.me.universityId)];
       if (input.role) conds.push(eq(user.role, input.role));
       if (input.q) {
-        const needle = `%${input.q}%`;
+        const needle = `%${escapeLike(input.q)}%`;
         const textMatch = or(
           ilike(user.name, needle),
           ilike(user.email, needle),
@@ -303,7 +325,12 @@ export const adminRouter = router({
     const roleRows = await ctx.db
       .select({ role: user.role, c: sql<number>`count(*)` })
       .from(user)
-      .where(eq(user.universityId, ctx.me.universityId))
+      .where(
+        and(
+          eq(user.universityId, ctx.me.universityId),
+          inArray(user.status, ["ACTIVE", "SUSPENDED"]),
+        ),
+      )
       .groupBy(user.role);
     const members = Object.fromEntries(ROLES.map((r) => [r, 0])) as Record<
       Role,
@@ -321,17 +348,27 @@ export const adminRouter = router({
         ),
       );
 
-    const weekExpr = sql<string>`to_char(date_trunc('week', ${post.createdAt}), 'IYYY-"W"IW')`;
+    const weekExpr = sql<string>`to_char(date_trunc('week', ${post.createdAt} at time zone 'UTC'), 'IYYY-"W"IW')`;
     const postWeeks = await ctx.db
       .select({ week: weekExpr, c: sql<number>`count(*)` })
       .from(post)
-      .where(sql`${post.createdAt} >= now() - interval '8 weeks'`)
+      .where(
+        and(
+          isNull(post.deletedAt),
+          sql`${post.createdAt} >= now() - interval '8 weeks'`,
+        ),
+      )
       .groupBy(weekExpr);
-    const commentWeekExpr = sql<string>`to_char(date_trunc('week', ${comment.createdAt}), 'IYYY-"W"IW')`;
+    const commentWeekExpr = sql<string>`to_char(date_trunc('week', ${comment.createdAt} at time zone 'UTC'), 'IYYY-"W"IW')`;
     const commentWeeks = await ctx.db
       .select({ week: commentWeekExpr, c: sql<number>`count(*)` })
       .from(comment)
-      .where(sql`${comment.createdAt} >= now() - interval '8 weeks'`)
+      .where(
+        and(
+          isNull(comment.deletedAt),
+          sql`${comment.createdAt} >= now() - interval '8 weeks'`,
+        ),
+      )
       .groupBy(commentWeekExpr);
     const postMap = new Map(postWeeks.map((r) => [r.week, Number(r.c)]));
     const commentMap = new Map(commentWeeks.map((r) => [r.week, Number(r.c)]));

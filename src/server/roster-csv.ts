@@ -1,6 +1,8 @@
 // Minimal CSV parser for roster imports: no external library needed since
 // the only CSV feature required is quoted fields that may contain commas
 // (RFC 4180 double-quote escaping, `""` -> `"`). Fields never span lines.
+import { normalizeStudentId } from "./student-id";
+
 export type RosterCsvRow = {
   studentId: string;
   batchYear: number;
@@ -14,6 +16,8 @@ const GRADUATED_TRUE = new Set(["true", "yes", "1"]);
 const GRADUATED_FALSE = new Set(["false", "no", "0"]);
 const MAX_ERRORS = 50;
 const MAX_ROWS = 20_000;
+const MIN_BATCH_YEAR = 1950;
+const MAX_BATCH_YEAR = 2100;
 
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -58,11 +62,12 @@ export function parseRosterCsv(text: string): {
 } {
   const errors: RosterCsvError[] = [];
   const rows: RosterCsvRow[] = [];
+  const seenIds = new Map<string, number>(); // normalized student id -> first line number
   const pushError = (line: number, message: string) => {
     if (errors.length < MAX_ERRORS) errors.push({ line, message });
   };
 
-  const lines = text.split(/\r?\n/);
+  const lines = text.replace(/^﻿/, "").split(/\r?\n/);
   const header = parseCsvLine(lines[0] ?? "").map((f) =>
     f.trim().toLowerCase(),
   );
@@ -103,8 +108,16 @@ export function parseRosterCsv(text: string): {
       pushError(lineNo, "student_id is required");
       continue;
     }
-    if (!/^\d+$/.test(yearText)) {
-      pushError(lineNo, "batch_year must be a whole number");
+    const batchYear = Number(yearText);
+    if (
+      !/^\d+$/.test(yearText) ||
+      batchYear < MIN_BATCH_YEAR ||
+      batchYear > MAX_BATCH_YEAR
+    ) {
+      pushError(
+        lineNo,
+        `batch_year must be a whole number between ${MIN_BATCH_YEAR} and ${MAX_BATCH_YEAR}`,
+      );
       continue;
     }
     if (!department) {
@@ -119,12 +132,15 @@ export function parseRosterCsv(text: string): {
       continue;
     }
 
-    rows.push({
-      studentId,
-      batchYear: Number(yearText),
-      department,
-      graduated,
-    });
+    const normalized = normalizeStudentId(studentId);
+    const firstLine = seenIds.get(normalized);
+    if (firstLine !== undefined) {
+      pushError(lineNo, `Duplicate student ID (also on line ${firstLine})`);
+      continue;
+    }
+    seenIds.set(normalized, lineNo);
+
+    rows.push({ studentId, batchYear, department, graduated });
   }
 
   return { rows, errors };
