@@ -93,19 +93,89 @@ describe("auth.startSignup", () => {
     const c = callerFor(null);
     for (let i = 0; i < 10; i++)
       await c.auth
+        .startSignup({
+          ...base(),
+          studentId: `BAD-${i}`,
+          email: `ip-${i}@north.edu`,
+        })
+        .catch(() => {});
+    await expect(c.auth.startSignup(base())).rejects.toThrow(/too many/i);
+  });
+  test("rate limits repeated attempts for the same email", async () => {
+    const c = callerFor(null);
+    for (let i = 0; i < 5; i++)
+      await c.auth
         .startSignup({ ...base(), studentId: `BAD-${i}` })
         .catch(() => {});
     await expect(c.auth.startSignup(base())).rejects.toThrow(/too many/i);
   });
 });
 
+/** Extracts better-auth's structured APIError fields (status/code/message) when `p` rejects. */
+async function apiError(p: Promise<unknown>) {
+  try {
+    await p;
+  } catch (e) {
+    const err = e as {
+      status?: string;
+      body?: { code?: string };
+      message?: string;
+    };
+    return { status: err.status, code: err.body?.code, message: err.message };
+  }
+  throw new Error("expected promise to reject");
+}
+
 describe("better-auth sign-up gate", () => {
-  test("sign-up without startSignup is refused", async () => {
-    await expect(
+  test("sign-up without startSignup is refused with FAILED_TO_CREATE_USER, no user row created", async () => {
+    const err = await apiError(
       auth.api.signUpEmail({
         body: { name: "Eve", email: "eve@north.edu", password: "password123" },
       }),
-    ).rejects.toThrow();
+    );
+    expect(err).toEqual({
+      status: "BAD_REQUEST",
+      code: "FAILED_TO_CREATE_USER",
+      message: "Failed to create user",
+    });
+    expect(
+      await adminDb.select().from(user).where(eq(user.email, "eve@north.edu")),
+    ).toEqual([]);
+  });
+  test("sign-up with an expired pending_signup row is refused", async () => {
+    await callerFor(null).auth.startSignup(base());
+    await adminDb
+      .update(pendingSignup)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(pendingSignup.email, base().email));
+    const err = await apiError(
+      auth.api.signUpEmail({
+        body: { name: "Alice", email: base().email, password: "password123" },
+      }),
+    );
+    expect(err.code).toBe("FAILED_TO_CREATE_USER");
+    expect(
+      await adminDb.select().from(user).where(eq(user.email, base().email)),
+    ).toEqual([]);
+  });
+  test("sign-up for a pending_signup row under a different email is refused", async () => {
+    await callerFor(null).auth.startSignup(base());
+    const err = await apiError(
+      auth.api.signUpEmail({
+        body: {
+          name: "Mallory",
+          email: "mallory@north.edu",
+          password: "password123",
+        },
+      }),
+    );
+    expect(err.code).toBe("FAILED_TO_CREATE_USER");
+    expect(
+      await adminDb
+        .select()
+        .from(user)
+        .where(eq(user.email, "mallory@north.edu")),
+    ).toEqual([]);
   });
   test("sign-up after startSignup creates a tenant-bound unverified user", async () => {
     await callerFor(null).auth.startSignup(base());
@@ -124,5 +194,26 @@ describe("better-auth sign-up gate", () => {
     expect(u.role).toBe("ALUMNUS");
     expect(u.emailVerified).toBe(false);
     expect(await adminDb.select().from(pendingSignup)).toEqual([]);
+  });
+  test("an unverified account squatting on an ID/email does not block the real owner, and is swept away", async () => {
+    // Attacker knows the victim's roster ID and email; starts sign-up and
+    // creates the account but never verifies it.
+    await callerFor(null).auth.startSignup(base());
+    await auth.api.signUpEmail({
+      body: { name: "Attacker", email: base().email, password: "password123" },
+    });
+    const squatter = await adminDb
+      .select()
+      .from(user)
+      .where(eq(user.email, base().email));
+    expect(squatter).toHaveLength(1);
+    expect(squatter[0].emailVerified).toBe(false);
+
+    // The real owner starts sign-up with the same ID/email: not CONFLICT.
+    const r = await callerFor(null).auth.startSignup(base());
+    expect(r).toEqual({ role: "ALUMNUS", status: "ACTIVE" });
+    expect(
+      await adminDb.select().from(user).where(eq(user.email, base().email)),
+    ).toEqual([]);
   });
 });

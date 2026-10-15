@@ -12,8 +12,6 @@ import {
 import { hashStudentId, roleFor } from "../student-id";
 import { audit, publicProcedure, router } from "../trpc";
 
-const year = new Date().getFullYear();
-
 export const authRouter = router({
   universities: publicProcedure.query(() =>
     db
@@ -60,7 +58,9 @@ export const authRouter = router({
           .number()
           .int()
           .min(1990)
-          .max(year + 8),
+          .refine((y) => y <= new Date().getFullYear() + 8, {
+            message: "Invalid batch year",
+          }),
         department: z.string().min(2).max(80),
       }),
     )
@@ -90,12 +90,16 @@ export const authRouter = router({
               ),
             )
             .then((r) => r[0].n);
-        if (
+        const tooMany =
           (await recent(eq(auditLog.ip, ctx.ip))) >= 10 ||
           (await recent(
             sql`${auditLog.meta}->>'idHashPrefix' = ${idHash.slice(0, 12)}`,
-          )) >= 5
-        ) {
+          )) >= 5 ||
+          // Backstop: repeated attempts for one email, regardless of IP/ID.
+          (await recent(eq(auditLog.target, input.email))) >= 5 ||
+          // Backstop: tenant-wide brute force, regardless of IP/ID/email.
+          (await recent(sql`${auditLog.meta}->>'ok' = 'false'`)) >= 100;
+        if (tooMany) {
           return {
             error: new TRPCError({
               code: "TOO_MANY_REQUESTS",
@@ -128,11 +132,18 @@ export const authRouter = router({
             "domain",
           );
         }
+        // Only a *verified* account blocks a signup: an unverified account
+        // can't log in, so it can't be "taken" — and an attacker who
+        // pre-registers a victim's roster ID + email to lock them out gets
+        // swept away below once the real owner starts their own signup.
         const [dup] = await tx
           .select({ id: user.id })
           .from(user)
           .where(
-            or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
+            and(
+              eq(user.emailVerified, true),
+              or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
+            ),
           );
         if (dup)
           return fail(
@@ -151,18 +162,17 @@ export const authRouter = router({
             .select()
             .from(rosterEntry)
             .where(eq(rosterEntry.studentIdHash, idHash));
-          if (!row)
-            return fail(
+          // Same external message for both failure modes so an attacker
+          // can't use it as an oracle to confirm a roster ID exists; the
+          // internal "reason" still distinguishes them in the audit log.
+          const notFound = () =>
+            fail(
               "BAD_REQUEST",
-              "Student ID not found in the university roster",
-              "roster",
+              "Student ID or batch year not found in the university roster",
+              row ? "batch" : "roster",
             );
-          if (row.batchYear !== input.batchYear)
-            return fail(
-              "BAD_REQUEST",
-              "Batch year does not match university records",
-              "batch",
-            );
+          if (!row) return notFound();
+          if (row.batchYear !== input.batchYear) return notFound();
           role = roleFor({
             graduated: row.graduated,
             batchYear: input.batchYear,
@@ -172,6 +182,19 @@ export const authRouter = router({
           role = roleFor({ graduated: null, batchYear: input.batchYear });
           status = "PENDING";
         }
+
+        // Clear any unverified account squatting on this email or ID (e.g.
+        // an attacker who started sign-up with the victim's roster ID and
+        // email but never verified). It never logged in, so nothing of
+        // value is lost; session/account rows cascade with it.
+        await tx
+          .delete(user)
+          .where(
+            and(
+              eq(user.emailVerified, false),
+              or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
+            ),
+          );
 
         const values = {
           email: input.email,
