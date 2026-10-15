@@ -6,6 +6,7 @@ import { createTRPCContext } from "@trpc/tanstack-react-query";
 import { useState } from "react";
 import superjson from "superjson";
 import type { AppRouter } from "@/server/root";
+import { retryQuery } from "./query-retry";
 
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 
@@ -15,7 +16,9 @@ export const { TRPCProvider, useTRPC, useTRPCClient } =
 export function TRPCReactProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
-      new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } }),
+      new QueryClient({
+        defaultOptions: { queries: { staleTime: 30_000, retry: retryQuery } },
+      }),
   );
   const [trpcClient] = useState(() =>
     createTRPCClient<AppRouter>({
