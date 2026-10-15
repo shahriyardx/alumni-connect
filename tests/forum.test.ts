@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { followTag, followUser, notification, tag } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  auditLog,
+  followTag,
+  followUser,
+  notification,
+  tag,
+} from "@/db/schema";
 import { normalizeTags } from "@/server/tags";
 import {
   adminDb,
@@ -94,6 +101,23 @@ describe("posts", () => {
       callerFor(fresh.id).post.create({
         title: "Great internship",
         body: "apply at https://scam.example",
+        tags: [],
+      }),
+    ).rejects.toThrow(/links/);
+  });
+
+  test("new accounts cannot add a link via post.update", async () => {
+    const fresh = await makeUser(uniId);
+    const { id } = await callerFor(fresh.id).post.create({
+      title: "Looking for advice",
+      body: "no links here yet",
+      tags: [],
+    });
+    await expect(
+      callerFor(fresh.id).post.update({
+        id,
+        title: "Looking for advice",
+        body: "check out https://scam.example",
         tags: [],
       }),
     ).rejects.toThrow(/links/);
@@ -208,5 +232,54 @@ describe("comments", () => {
         body: "x",
       }),
     ).rejects.toThrow(/BAD_REQUEST/);
+  });
+
+  test("new accounts cannot add a link via comment.create", async () => {
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Thread for links test",
+      body: "b",
+      tags: [],
+    });
+    const fresh = await makeUser(uniId);
+    await expect(
+      callerFor(fresh.id).comment.create({
+        postId,
+        body: "visit https://scam.example",
+      }),
+    ).rejects.toThrow(/links/);
+  });
+
+  test("cannot reply to a removed comment", async () => {
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Thread for removed-parent test",
+      body: "b",
+      tags: [],
+    });
+    const c1 = await callerFor(bob.id).comment.create({ postId, body: "hi" });
+    await callerFor(bob.id).comment.remove({ id: c1.id });
+    await expect(
+      callerFor(alice.id).comment.create({
+        postId,
+        parentId: c1.id,
+        body: "too late",
+      }),
+    ).rejects.toThrow(/removed/);
+  });
+
+  test("mod removing a student's comment writes an audit row", async () => {
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Thread for mod audit test",
+      body: "b",
+      tags: [],
+    });
+    const c1 = await callerFor(bob.id).comment.create({ postId, body: "hi" });
+    const mod = await makeUser(uniId, { role: "MODERATOR" });
+    await callerFor(mod.id).comment.remove({ id: c1.id });
+    const rows = await adminDb
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "comment.remove"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorId: mod.id, target: c1.id });
   });
 });

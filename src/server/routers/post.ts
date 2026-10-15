@@ -12,12 +12,10 @@ import {
   tag,
 } from "@/db/schema";
 import { publish } from "../events";
+import { assertCanPostLinks } from "../links";
 import { listPosts } from "../queries/posts";
 import { normalizeTags } from "../tags";
-import { audit, memberProcedure, router } from "../trpc";
-
-const isMod = (r: string) => r === "MODERATOR" || r === "ADMIN";
-const LINK_RE = /https?:\/\/|www\./i;
+import { audit, isMod, memberProcedure, router } from "../trpc";
 
 /** Insert any new tag names for this tenant, then return ids for all names. */
 async function tagIdsFor(
@@ -59,7 +57,7 @@ export const postRouter = router({
       z.object({
         sort: z.enum(["new", "top"]).default("new"),
         tag: z.string().optional(),
-        authorId: z.string().optional(),
+        authorId: z.string().min(1).max(64).optional(),
         cursor: z.number().int().min(0).default(0),
       }),
     )
@@ -131,16 +129,7 @@ export const postRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const accountAgeMs = Date.now() - ctx.me.createdAt.getTime();
-      if (
-        (LINK_RE.test(input.title) || LINK_RE.test(input.body)) &&
-        accountAgeMs < 3 * 86_400_000
-      ) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "New accounts can post links after 3 days",
-        });
-      }
+      assertCanPostLinks(ctx.me, input.title, input.body);
       const names = normalizeTags(input.tags);
       const universityId = ctx.me.universityId;
 
@@ -231,6 +220,7 @@ export const postRouter = router({
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
       const canEdit = p.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
+      assertCanPostLinks(ctx.me, input.title, input.body);
 
       const names = normalizeTags(input.tags);
       await ctx.db
@@ -238,6 +228,10 @@ export const postRouter = router({
         .set({ title: input.title, body: input.body })
         .where(eq(post.id, input.id));
       await setPostTags(ctx.db, p.universityId, input.id, names);
+
+      if (p.authorId !== ctx.me.id) {
+        await audit(ctx.db, p.universityId, ctx.me.id, "post.update", p.id);
+      }
 
       return { id: input.id };
     }),
@@ -253,12 +247,15 @@ export const postRouter = router({
       const canEdit = p.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
 
-      await ctx.db
+      // Guard the delete itself against a concurrent remove: only audit when
+      // this call is the one that actually flipped deleted_at.
+      const [removed] = await ctx.db
         .update(post)
         .set({ deletedAt: new Date() })
-        .where(eq(post.id, input.id));
+        .where(and(eq(post.id, input.id), isNull(post.deletedAt)))
+        .returning({ id: post.id });
 
-      if (p.authorId !== ctx.me.id) {
+      if (removed && p.authorId !== ctx.me.id) {
         await audit(ctx.db, p.universityId, ctx.me.id, "post.remove", p.id);
       }
 

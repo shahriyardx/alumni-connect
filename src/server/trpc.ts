@@ -69,7 +69,7 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   });
 });
 
-const isMod = (r: Me["role"]) => r === "MODERATOR" || r === "ADMIN";
+export const isMod = (r: Me["role"]) => r === "MODERATOR" || r === "ADMIN";
 export const modProcedure = memberProcedure.use(({ ctx, next }) => {
   if (!isMod(ctx.me.role)) throw new TRPCError({ code: "FORBIDDEN" });
   return next();

@@ -3,10 +3,9 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { comment, notification, post, user } from "@/db/schema";
 import { publish } from "../events";
+import { assertCanPostLinks } from "../links";
 import type { AuthorInfo } from "../queries/posts";
-import { memberProcedure, router } from "../trpc";
-
-const isMod = (r: string) => r === "MODERATOR" || r === "ADMIN";
+import { audit, isMod, memberProcedure, router } from "../trpc";
 
 export type CommentItem = {
   id: string;
@@ -52,7 +51,13 @@ export const commentRouter = router({
           >`(select value from vote where target_type = 'COMMENT' and target_id = comment.id and user_id = ${ctx.me.id})`,
         })
         .from(comment)
-        .innerJoin(user, eq(user.id, comment.authorId))
+        .innerJoin(
+          user,
+          and(
+            eq(user.id, comment.authorId),
+            eq(user.universityId, comment.universityId),
+          ),
+        )
         .where(eq(comment.postId, input.postId))
         .orderBy(asc(comment.createdAt));
 
@@ -90,6 +95,7 @@ export const commentRouter = router({
         .from(post)
         .where(and(eq(post.id, input.postId), isNull(post.deletedAt)));
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
+      assertCanPostLinks(ctx.me, input.body);
 
       let recipient: string | null;
       let type: "REPLY_COMMENT" | "REPLY_POST";
@@ -99,11 +105,18 @@ export const commentRouter = router({
             id: comment.id,
             postId: comment.postId,
             authorId: comment.authorId,
+            deletedAt: comment.deletedAt,
           })
           .from(comment)
           .where(eq(comment.id, input.parentId));
         if (!parent || parent.postId !== input.postId) {
           throw new TRPCError({ code: "BAD_REQUEST" });
+        }
+        if (parent.deletedAt) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Cannot reply to a removed comment",
+          });
         }
         recipient = parent.authorId;
         type = "REPLY_COMMENT";
@@ -168,11 +181,16 @@ export const commentRouter = router({
       if (!c) throw new TRPCError({ code: "NOT_FOUND" });
       const canEdit = c.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
+      assertCanPostLinks(ctx.me, input.body);
 
       await ctx.db
         .update(comment)
         .set({ body: input.body })
         .where(eq(comment.id, input.id));
+
+      if (c.authorId !== ctx.me.id) {
+        await audit(ctx.db, c.universityId, ctx.me.id, "comment.update", c.id);
+      }
 
       return { id: input.id };
     }),
@@ -188,14 +206,29 @@ export const commentRouter = router({
       const canEdit = c.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
 
-      await ctx.db
+      // Guard the delete itself against a concurrent remove: only decrement
+      // / audit when this call is the one that actually flipped deleted_at.
+      const [removed] = await ctx.db
         .update(comment)
         .set({ deletedAt: new Date() })
-        .where(eq(comment.id, input.id));
-      await ctx.db
-        .update(post)
-        .set({ commentCount: sql`${post.commentCount} - 1` })
-        .where(eq(post.id, c.postId));
+        .where(and(eq(comment.id, input.id), isNull(comment.deletedAt)))
+        .returning({ id: comment.id });
+
+      if (removed) {
+        await ctx.db
+          .update(post)
+          .set({ commentCount: sql`${post.commentCount} - 1` })
+          .where(eq(post.id, c.postId));
+        if (c.authorId !== ctx.me.id) {
+          await audit(
+            ctx.db,
+            c.universityId,
+            ctx.me.id,
+            "comment.remove",
+            c.id,
+          );
+        }
+      }
 
       return { ok: true as const };
     }),

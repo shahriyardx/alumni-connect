@@ -76,10 +76,13 @@ export async function listPosts(
         number | null
       >`(select value from vote where target_type = 'POST' and target_id = post.id and user_id = ${meId})`,
       bookmarked: sql<boolean>`exists (select 1 from bookmark where post_id = post.id and user_id = ${meId})`,
-      hasAlumnusReply: sql<boolean>`exists (select 1 from comment c join "user" u on u.id = c.author_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`,
+      hasAlumnusReply: sql<boolean>`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`,
     })
     .from(post)
-    .innerJoin(user, eq(user.id, post.authorId))
+    .innerJoin(
+      user,
+      and(eq(user.id, post.authorId), eq(user.universityId, post.universityId)),
+    )
     .where(and(isNull(post.deletedAt), ...(opts.where ? [opts.where] : [])))
     .orderBy(...order)
     .limit(limit + 1)
