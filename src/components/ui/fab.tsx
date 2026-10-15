@@ -10,8 +10,11 @@ export function Fab({
   href,
   size = "md",
   className,
+  disabled,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+}: React.HTMLAttributes<HTMLElement> & {
+  /** Button branch only (ignored when `href` is set). */
+  disabled?: boolean;
   icon: string;
   /** Set → extended FAB with visible label; otherwise used as aria-label. */
   label?: string;
@@ -26,9 +29,10 @@ export function Fab({
       ? "h-24 min-w-24 rounded-[28px]"
       : "h-14 min-w-14 rounded-[20px]",
     label && (size === "lg" ? "px-7 text-xl" : "px-5"),
-    "font-semibold",
+    "font-semibold disabled:pointer-events-none disabled:opacity-40",
     className,
   );
+  const ariaLabel = label ? undefined : (props["aria-label"] ?? icon);
   const content = (
     <>
       <Icon name={icon} size={size === "lg" ? 36 : 24} />
@@ -37,11 +41,7 @@ export function Fab({
   );
   if (href)
     return (
-      <Link
-        href={href}
-        className={classes}
-        aria-label={label ? undefined : icon}
-      >
+      <Link {...props} href={href} aria-label={ariaLabel} className={classes}>
         {content}
       </Link>
     );
@@ -49,7 +49,8 @@ export function Fab({
     <button
       type="button"
       {...props}
-      aria-label={label ? undefined : (props["aria-label"] ?? icon)}
+      disabled={disabled}
+      aria-label={ariaLabel}
       className={classes}
     >
       {content}

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { RoleBadge, VerifiedMark } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -41,7 +41,6 @@ function Section({
 
 export function Kit() {
   const toast = useToast();
-  const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(true);
   const [chip, setChip] = useState("all");
   const [sort, setSort] = useState<(typeof sorts)[number]["value"]>("new");
@@ -101,43 +100,45 @@ export function Kit() {
       </Section>
 
       <Section title="Icon buttons & FAB">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid w-fit grid-cols-[auto_repeat(4,auto)] items-center gap-x-4 gap-y-3 text-sm text-on-surface-variant">
+          <span />
+          <span>Standard</span>
+          <span>Filled</span>
+          <span>Tonal</span>
+          <span>Outlined</span>
+          {(
+            [
+              ["Resting", undefined],
+              ["Unselected", false],
+              ["Selected", true],
+            ] as const
+          ).map(([row, sel]) => (
+            <Fragment key={row}>
+              <span>{row}</span>
+              {(["standard", "filled", "tonal", "outlined"] as const).map(
+                (v) => (
+                  <IconButton
+                    key={v}
+                    icon={sel === undefined ? "more_vert" : "favorite"}
+                    label={`${v} ${row.toLowerCase()}`}
+                    variant={v}
+                    selected={sel}
+                  />
+                ),
+              )}
+            </Fragment>
+          ))}
+          <span>Toggle me</span>
           {(["standard", "filled", "tonal", "outlined"] as const).map((v) => (
             <IconButton
               key={v}
-              icon="more_vert"
-              label={`${v} icon button`}
+              icon="bookmark"
+              label={saved ? "Unsave" : "Save"}
               variant={v}
+              selected={saved}
+              onClick={() => setSaved(!saved)}
             />
           ))}
-          <span className="mx-2 h-8 w-px bg-outline-variant" />
-          <IconButton
-            icon="favorite"
-            label={liked ? "Unlike" : "Like"}
-            selected={liked}
-            onClick={() => setLiked(!liked)}
-          />
-          <IconButton
-            icon="bookmark"
-            label={saved ? "Unsave" : "Save"}
-            variant="filled"
-            selected={saved}
-            onClick={() => setSaved(!saved)}
-          />
-          <IconButton
-            icon="notifications"
-            label="Toggle notifications"
-            variant="tonal"
-            selected={liked}
-            onClick={() => setLiked(!liked)}
-          />
-          <IconButton
-            icon="push_pin"
-            label="Pin"
-            variant="outlined"
-            selected={saved}
-            onClick={() => setSaved(!saved)}
-          />
         </div>
         <div className="flex flex-wrap items-end gap-4">
           <Fab icon="edit" aria-label="Compose" />

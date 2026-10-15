@@ -40,7 +40,7 @@ export function Toaster() {
             <Toast.Title className="flex-1 text-sm font-medium" />
             <Toast.Close
               aria-label="Dismiss"
-              className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full hover:bg-inverse-on-surface/10 focus-visible:outline-2 focus-visible:outline-inverse-primary"
+              className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full hover:bg-inverse-on-surface/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary"
             >
               <Icon name="close" size={20} />
             </Toast.Close>

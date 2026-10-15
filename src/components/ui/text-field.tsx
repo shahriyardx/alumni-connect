@@ -39,7 +39,7 @@ export function TextField({
       disabled={props.disabled}
       className={cn("flex flex-col gap-1", className)}
     >
-      <div className="relative">
+      <div className="relative rounded-t-[12px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary">
         {multiline ? (
           <Field.Control
             {...props}

@@ -75,7 +75,10 @@ export function IconButton({
           "transition-[border-radius,scale,background-color] duration-200 ease-[var(--ease-spring)] active:scale-90 active:rounded-[12px]",
           "disabled:pointer-events-none disabled:opacity-40",
           selected ? "rounded-[14px]" : "rounded-full",
-          selected === false ? off : on,
+          // Resting (non-toggle) look: filled/tonal use their container, standard/outlined don't.
+          (selected ?? (variant === "filled" || variant === "tonal"))
+            ? on
+            : off,
           className,
         )}
       >
