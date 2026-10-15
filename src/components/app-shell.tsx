@@ -200,10 +200,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Phone: small FAB + bottom bar */}
-      <div className="fixed right-4 bottom-20 z-30 min-[840px]:hidden">
-        <Fab href="/new" icon="edit" aria-label="Ask a question" />
-      </div>
+      {/* Phone: small FAB + bottom bar. No FAB in the composer: it would cover the submit button. */}
+      {pathname !== "/new" && !pathname.endsWith("/edit") && (
+        <div className="fixed right-4 bottom-20 z-30 min-[840px]:hidden">
+          <Fab href="/new" icon="edit" aria-label="Ask a question" />
+        </div>
+      )}
       <nav
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-30 flex items-center bg-surface/95 px-1 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] backdrop-blur-xl min-[840px]:hidden"
