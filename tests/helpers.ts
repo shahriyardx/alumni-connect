@@ -4,6 +4,10 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@/db/schema";
+import { createCaller } from "@/server/root";
+
+export const callerFor = (userId: string | null) =>
+  createCaller({ userId, ip: "127.0.0.1" });
 
 export const adminClient = postgres(process.env.DATABASE_ADMIN_URL ?? "", {
   max: 2,
