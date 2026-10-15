@@ -133,9 +133,27 @@
   --shadow-elevation-3:
     0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px 0 rgb(0 0 0 / 0.3);
 
+  --animate-blob: blob-morph 16s ease-in-out infinite alternate;
   --animate-spinner-rotate: spinner-rotate 1.6s linear infinite;
   --animate-spinner-arc: spinner-arc 1.4s var(--ease-emphasized) infinite;
 
+  /* Expressive shape-morphing decorative blob (border-radius only). */
+  @keyframes blob-morph {
+    0% {
+      border-radius: 62% 38% 46% 54% / 48% 60% 40% 52%;
+      rotate: 0deg;
+    }
+    33% {
+      border-radius: 40% 60% 70% 30% / 50% 30% 70% 50%;
+    }
+    66% {
+      border-radius: 70% 30% 35% 65% / 35% 55% 45% 65%;
+    }
+    100% {
+      border-radius: 45% 55% 60% 40% / 65% 40% 60% 35%;
+      rotate: 40deg;
+    }
+  }
   @keyframes spinner-rotate {
     to {
       rotate: 360deg;
