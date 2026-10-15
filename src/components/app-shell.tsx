@@ -1,10 +1,13 @@
 "use client";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { Role } from "@/db/schema";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
+import { useLiveEvents } from "@/lib/live";
+import { useTRPC } from "@/lib/trpc";
 import { Button, ButtonLink } from "./ui/button";
 import { EmptyState } from "./ui/empty-state";
 import { Fab } from "./ui/fab";
@@ -41,7 +44,7 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
     },
     {
       href: meId ? `/u/${meId}` : "/settings",
-      match: "/u/",
+      match: meId ? `/u/${meId}` : "/settings",
       label: "Profile",
       icon: "person",
     },
@@ -152,7 +155,13 @@ function Logo({ className }: { className?: string }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { me } = useMe();
-  const unread = 0; // ponytail: notifications count lands in Task 10
+  const trpc = useTRPC();
+  const active = me?.status === "ACTIVE";
+  useLiveEvents(active);
+  // Live "notification" events invalidate this; no polling.
+  const { data: unread = 0 } = useQuery(
+    trpc.notification.unreadCount.queryOptions(undefined, { enabled: active }),
+  );
   const items = destinations(me?.id, unread).filter(
     (d) => !d.roles || (me && d.roles.includes(me.role)),
   );

@@ -1,11 +1,16 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 import { FeedList } from "@/components/feed-list";
 import { ButtonLink } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
+import { focusRing } from "@/components/ui/styles";
 import { Tab, TabsList, TabsRoot } from "@/components/ui/tabs";
+import { cn } from "@/lib/cn";
+import { useNewPosts } from "@/lib/live";
 import { useTRPC } from "@/lib/trpc";
 
 export function FeedView() {
@@ -13,6 +18,11 @@ export function FeedView() {
   const router = useRouter();
   const sort = useSearchParams().get("sort") === "top" ? "top" : "new";
   const tags = useQuery(trpc.post.tags.queryOptions());
+  const qc = useQueryClient();
+  const [newPosts, clearNewPosts] = useNewPosts();
+  // Only count posts that arrive while the feed is on screen.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on mount only
+  useEffect(() => clearNewPosts(), []);
 
   return (
     <div className="flex flex-col gap-5 pt-4">
@@ -30,6 +40,23 @@ export function FeedView() {
           </TabsList>
         </TabsRoot>
       </header>
+      {newPosts > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            clearNewPosts();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            void qc.invalidateQueries(trpc.post.feed.pathFilter());
+          }}
+          className={cn(
+            focusRing,
+            "sticky top-16 z-30 -my-1 flex h-9 animate-rise self-center cursor-pointer items-center gap-1.5 rounded-full bg-tonal pr-4 pl-3 text-sm font-medium text-tonal-fg shadow-md shadow-black/10 transition-[background-color,scale] duration-150 hover:bg-tonal-hover active:scale-[0.97]",
+          )}
+        >
+          <Icon name="arrow_upward" size={18} />
+          {newPosts === 1 ? "1 new post" : `${newPosts} new posts`}
+        </button>
+      )}
 
       {!!tags.data?.length && (
         <nav

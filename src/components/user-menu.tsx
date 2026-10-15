@@ -35,7 +35,11 @@ export function UserMenu() {
         aria-label="Account"
         className={`${focusRing} cursor-pointer rounded-full transition-opacity hover:opacity-85`}
       >
-        <Avatar name={me.name} size={32} />
+        <Avatar
+          name={me.name}
+          src={me.avatarKey ? `/api/files/${me.avatarKey}` : null}
+          size={32}
+        />
       </Menu.Trigger>
       <MenuContent className="w-64">
         <div className="mb-1 flex flex-col gap-0.5 px-2.5 pt-2 pb-2.5">

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthorLine } from "@/components/author-line";
+import { BookmarkButton } from "@/components/bookmark-button";
 import { CommentForm } from "@/components/comment-form";
 import { CommentThread } from "@/components/comment-thread";
 import { Markdown } from "@/components/markdown";
@@ -16,6 +17,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Menu, MenuContent, MenuItem } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
+import { useMe } from "@/components/user-menu";
+import { VoteButtons } from "@/components/vote-buttons";
 import { useTRPC } from "@/lib/trpc";
 
 export function PostView({ id }: { id: string }) {
@@ -23,6 +26,7 @@ export function PostView({ id }: { id: string }) {
   const qc = useQueryClient();
   const router = useRouter();
   const toast = useToast();
+  const { me } = useMe();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const post = useQuery(trpc.post.byId.queryOptions({ id }));
   const comments = useQuery(trpc.comment.list.queryOptions({ postId: id }));
@@ -96,21 +100,24 @@ export function PostView({ id }: { id: string }) {
         )}
 
         <div className="flex items-center gap-2">
-          {/* Votes + bookmark land in Task 10. */}
           <div
             data-slot="post-actions"
-            className="flex items-center gap-4 text-sm font-medium text-muted-foreground"
+            className="-ml-1.5 flex items-center gap-4 text-sm font-medium text-muted-foreground"
           >
-            <span className="flex items-center gap-1">
-              <Icon name="arrow_upward" size={18} />
-              {p.score}
-            </span>
+            <VoteButtons
+              targetType="POST"
+              targetId={p.id}
+              score={p.score}
+              myVote={p.myVote}
+              disabled={me?.id === p.author.id}
+            />
             <span className="flex items-center gap-1">
               <Icon name="chat_bubble" size={18} />
               {p.commentCount}
             </span>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center">
+            <BookmarkButton postId={p.id} bookmarked={p.bookmarked} />
             <Menu.Root>
               <Menu.Trigger
                 render={<IconButton icon="more_vert" label="Post actions" />}

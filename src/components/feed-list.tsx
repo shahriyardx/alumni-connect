@@ -8,7 +8,8 @@ import { Spinner } from "./ui/spinner";
 
 type FeedInput =
   | { sort?: "new" | "top"; tag?: string; authorId?: string }
-  | { q: string };
+  | { q: string }
+  | { bookmarks: true };
 
 export function FeedList({
   input,
@@ -22,9 +23,11 @@ export function FeedList({
     getNextPageParam: (l: { nextCursor: number | null }) => l.nextCursor,
   };
   const query = useInfiniteQuery(
-    "q" in input
-      ? trpc.post.search.infiniteQueryOptions(input, next)
-      : trpc.post.feed.infiniteQueryOptions(input, next),
+    "bookmarks" in input
+      ? trpc.social.bookmarks.infiniteQueryOptions({}, next)
+      : "q" in input
+        ? trpc.post.search.infiniteQueryOptions(input, next)
+        : trpc.post.feed.infiniteQueryOptions(input, next),
   );
   const {
     data,

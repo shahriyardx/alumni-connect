@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { FeedList } from "@/components/feed-list";
+import { TagFollowButton } from "@/components/follow-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { normalizeTag } from "@/lib/tags";
 
@@ -14,8 +15,9 @@ async function Inner({ params }: { params: Promise<{ tag: string }> }) {
         <h1 className="min-w-0 flex-1 truncate text-2xl font-semibold tracking-tight">
           #{tag}
         </h1>
-        {/* Follow button lands in Task 10. */}
-        <div data-slot="tag-follow" />
+        <div data-slot="tag-follow">
+          <TagFollowButton tag={tag} />
+        </div>
       </header>
       <FeedList
         input={{ tag }}

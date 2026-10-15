@@ -11,6 +11,8 @@ import { Markdown } from "./markdown";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { useToast } from "./ui/toast";
+import { useMe } from "./user-menu";
+import { VoteButtons } from "./vote-buttons";
 
 const MAX_DEPTH = 6;
 type Node = TreeNode<CommentItem>;
@@ -46,6 +48,7 @@ function Comment({
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
+  const { me } = useMe();
   const [mode, setMode] = useState<"idle" | "reply" | "edit">("idle");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = useMutation(
@@ -109,13 +112,14 @@ function Comment({
         )}
         {!node.deleted && mode !== "edit" && (
           <div className="-ml-2 flex flex-wrap items-center gap-0.5 text-sm">
-            {/* Votes land in Task 10. */}
-            <span
-              data-slot="comment-actions"
-              className="px-2 text-xs font-medium text-muted-foreground"
-            >
-              {node.score} pts
-            </span>
+            <VoteButtons
+              targetType="COMMENT"
+              targetId={node.id}
+              score={node.score}
+              myVote={node.myVote}
+              disabled={me?.id === node.author?.id}
+              className="mr-1"
+            />
             <Button
               variant="ghost"
               size="sm"
