@@ -26,7 +26,11 @@ test("upload round-trip and tenant-scoped keys", async () => {
   });
   expect(put.ok).toBe(true);
   const att = await c.files.confirm({ key });
-  expect(att.key).toBe(key);
+  // `confirm` stores a server-only FINAL key, never the staging key the
+  // presigned PUT targeted (see the TOCTOU test below for why).
+  expect(att.key).not.toBe(key);
+  expect(att.key.startsWith(`${a.universityId}/attachment/f/`)).toBe(true);
+  expect(await stat(key)).toBeNull(); // staging object was deleted
   await expect(callerFor(b.id).files.confirm({ key })).rejects.toThrow(
     /FORBIDDEN/,
   );
@@ -112,31 +116,75 @@ test("resolveFileAccess: session, tenant, status, and confirmed-object checks", 
     message: "Not found",
   });
 
-  await c.files.confirm({ key });
+  const att = await c.files.confirm({ key });
+  const finalKey = att.key.split("/");
 
-  const noSession = await resolveFileAccess(null, key.split("/"));
+  const noSession = await resolveFileAccess(null, finalKey);
   expect(noSession).toEqual({
     ok: false,
     status: 401,
     message: "Unauthorized",
   });
 
-  const otherTenant = await resolveFileAccess(b.id, key.split("/"));
+  const otherTenant = await resolveFileAccess(b.id, finalKey);
   expect(otherTenant).toEqual({ ok: false, status: 404, message: "Not found" });
 
   const banned = await makeUser(a.universityId, { status: "BANNED" });
-  const bannedResult = await resolveFileAccess(banned.id, key.split("/"));
+  const bannedResult = await resolveFileAccess(banned.id, finalKey);
   expect(bannedResult).toEqual({
     ok: false,
     status: 403,
     message: "Account banned",
   });
 
-  const ok = await resolveFileAccess(a.id, key.split("/"));
+  const ok = await resolveFileAccess(a.id, finalKey);
   expect(ok.ok).toBe(true);
   if (ok.ok) {
     const u = new URL(ok.url);
     expect(u.searchParams.get("response-content-type")).toBe("image/png");
     expect(u.searchParams.get("response-content-disposition")).toBe("inline");
   }
+
+  // The staging key itself is never servable, confirmed or not.
+  const stagingNotServed = await resolveFileAccess(a.id, key.split("/"));
+  expect(stagingNotServed).toEqual({
+    ok: false,
+    status: 404,
+    message: "Not found",
+  });
+});
+
+test("TOCTOU: replaying the staging presigned PUT after confirm doesn't touch the final object", async () => {
+  const c = callerFor(a.id);
+  const { key: stagingKey, url } = await c.files.createUpload({
+    kind: "attachment",
+    mime: "image/png",
+    size: 4,
+  });
+  await fetch(url, {
+    method: "PUT",
+    body: new Uint8Array([137, 80, 78, 71]),
+    headers: { "Content-Type": "image/png" },
+  });
+  const att = await c.files.confirm({ key: stagingKey });
+
+  const before = await stat(att.key);
+  expect(before).not.toBeNull();
+
+  // The presigned PUT URL is still valid (300s) — replay it with a
+  // different, oversize, non-image payload, as a malicious or confused
+  // client might after the object was already validated and confirmed.
+  const replay = await fetch(url, {
+    method: "PUT",
+    body: new Uint8Array(6 * 1024 * 1024).fill(1),
+    headers: { "Content-Type": "image/png" },
+  });
+  expect(replay.ok).toBe(true);
+
+  // The confirmed, served object is a separate copy and is untouched.
+  const after = await stat(att.key);
+  expect(after).toEqual(before);
+
+  const access = await resolveFileAccess(a.id, att.key.split("/"));
+  expect(access.ok).toBe(true);
 });

@@ -1,4 +1,4 @@
-import { Client } from "minio";
+import { Client, CopyDestinationOptions, CopySourceOptions } from "minio";
 import { env } from "@/env";
 import { ALLOWED_MIME, MAX_BYTES } from "@/lib/uploads";
 
@@ -35,10 +35,14 @@ export function presignGet(key: string, mime?: string): Promise<string> {
 
 export async function stat(
   key: string,
-): Promise<{ size: number; contentType?: string } | null> {
+): Promise<{ size: number; contentType?: string; etag: string } | null> {
   try {
     const s = await minio.statObject(env.S3_BUCKET, key);
-    return { size: s.size, contentType: s.metaData?.["content-type"] };
+    return {
+      size: s.size,
+      contentType: s.metaData?.["content-type"],
+      etag: s.etag,
+    };
   } catch (e) {
     if ((e as { code?: string }).code === "NotFound") return null;
     throw e;
@@ -57,4 +61,27 @@ export async function readHead(key: string, length: number): Promise<Buffer> {
 
 export function remove(key: string): Promise<void> {
   return minio.removeObject(env.S3_BUCKET, key);
+}
+
+/**
+ * Server-side copy into a key that was never the target of a presigned PUT,
+ * so nothing (not even the original uploader) can mutate it after it's been
+ * validated. `contentType` is written with `MetadataDirective: "REPLACE"` —
+ * the destination's metadata is never inherited from whatever the client
+ * claimed on the original PUT.
+ */
+export async function copy(
+  sourceKey: string,
+  destKey: string,
+  contentType: string,
+): Promise<void> {
+  await minio.copyObject(
+    new CopySourceOptions({ Bucket: env.S3_BUCKET, Object: sourceKey }),
+    new CopyDestinationOptions({
+      Bucket: env.S3_BUCKET,
+      Object: destKey,
+      MetadataDirective: "REPLACE",
+      Headers: { "Content-Type": contentType },
+    }),
+  );
 }

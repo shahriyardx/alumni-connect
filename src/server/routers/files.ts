@@ -5,6 +5,7 @@ import { z } from "zod";
 import { attachment } from "@/db/schema";
 import {
   ALLOWED_MIME,
+  copy,
   MAX_BYTES,
   presignPut,
   readHead,
@@ -60,13 +61,24 @@ export const filesRouter = router({
         });
       }
 
-      const existing = await ctx.db
-        .select({ id: attachment.id, objectKey: attachment.objectKey })
-        .from(attachment)
-        .where(eq(attachment.objectKey, input.key));
-      if (existing[0])
-        return { id: existing[0].id, key: existing[0].objectKey };
-
+      // `input.key` is a *staging* key: it's where the presigned PUT landed,
+      // and that presigned URL stays valid for 300s after this call returns
+      // (minio can't scope a presign to "one PUT only"). If we validated and
+      // then kept serving that same key, the uploader could silently PUT
+      // different bytes to it afterwards (TOCTOU) and have them served as
+      // the already-"confirmed" attachment. So: validate the staging
+      // object, copy it to a FINAL key that was never the target of any
+      // presigned URL, store *that* key, and delete the staging object.
+      //
+      // Idempotency: NOT idempotent once the staging object is consumed.
+      // The first successful call copies+deletes the staging object and
+      // inserts the attachment row; any later call with the same staging
+      // key hits `stat()` on a now-missing object and gets the same
+      // "Upload not found" error as a key that was never uploaded to. Two
+      // concurrent calls racing on the same still-present staging key both
+      // copy identical source bytes to the same deterministic final key
+      // (harmless) and race on the insert, which `onConflictDoNothing` +
+      // re-select (below) already resolves.
       const info = await stat(input.key);
       if (!info) {
         throw new TRPCError({
@@ -94,14 +106,29 @@ export const filesRouter = router({
         });
       }
 
+      const segments = input.key.split("/");
+      const finalKey = [segments[0], segments[1], "f", segments[2]].join("/");
+
+      await copy(input.key, finalKey, mime);
+      const finalInfo = await stat(finalKey);
+      if (!finalInfo || finalInfo.size > MAX_BYTES) {
+        await remove(finalKey);
+        await remove(input.key);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Upload not found",
+        });
+      }
+      await remove(input.key);
+
       const [row] = await ctx.db
         .insert(attachment)
         .values({
           universityId: ctx.me.universityId,
           ownerId: ctx.me.id,
-          objectKey: input.key,
+          objectKey: finalKey,
           mime,
-          size: info.size,
+          size: finalInfo.size,
         })
         .onConflictDoNothing({ target: attachment.objectKey })
         .returning({ id: attachment.id, objectKey: attachment.objectKey });
@@ -111,7 +138,7 @@ export const filesRouter = router({
       const [again] = await ctx.db
         .select({ id: attachment.id, objectKey: attachment.objectKey })
         .from(attachment)
-        .where(eq(attachment.objectKey, input.key));
+        .where(eq(attachment.objectKey, finalKey));
       return { id: again.id, key: again.objectKey };
     }),
 });
