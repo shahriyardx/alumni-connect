@@ -1,7 +1,9 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { FeedList } from "@/components/feed-list";
 import { FollowButton } from "@/components/follow-button";
+import { ReportDialog } from "@/components/report-dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { RoleBadge, VerifiedMark } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -9,12 +11,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { Menu, MenuContent, MenuItem } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
-import { useToast } from "@/components/ui/toast";
 import { useTRPC } from "@/lib/trpc";
 
 export function ProfileView({ id }: { id: string }) {
   const trpc = useTRPC();
-  const toast = useToast();
+  const [reporting, setReporting] = useState(false);
   const profile = useQuery(trpc.profile.get.queryOptions({ id }));
 
   if (profile.isError)
@@ -64,15 +65,17 @@ export function ProfileView({ id }: { id: string }) {
                     }
                   />
                   <MenuContent>
-                    {/* Report dialog is wired in Task 12. */}
-                    <MenuItem
-                      icon="flag"
-                      onClick={() => toast.success("Reporting arrives soon")}
-                    >
+                    <MenuItem icon="flag" onClick={() => setReporting(true)}>
                       Report user
                     </MenuItem>
                   </MenuContent>
                 </Menu.Root>
+                <ReportDialog
+                  targetType="USER"
+                  targetId={u.id}
+                  open={reporting}
+                  onOpenChange={setReporting}
+                />
               </>
             )}
           </div>

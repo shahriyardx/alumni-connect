@@ -10,8 +10,13 @@ export function Select<T extends string>({
   onValueChange,
   items,
   className,
+  hideLabel,
+  disabled,
 }: {
   label: string;
+  /** Keep the label for screen readers only (e.g. a select inside a table row). */
+  hideLabel?: boolean;
+  disabled?: boolean;
   value: T;
   onValueChange(v: NoInfer<T>): void;
   items: readonly { value: NoInfer<T>; label: string }[];
@@ -21,15 +26,18 @@ export function Select<T extends string>({
     <BaseSelect.Root
       items={items}
       value={value}
+      disabled={disabled}
       onValueChange={(v) => v !== null && onValueChange(v)}
     >
       <div className={cn("flex flex-col gap-1.5", className)}>
-        <BaseSelect.Label className="text-sm font-medium">
+        <BaseSelect.Label
+          className={cn("text-sm font-medium", hideLabel && "sr-only")}
+        >
           {label}
         </BaseSelect.Label>
         <BaseSelect.Trigger
           className={cn(
-            "flex h-10 w-full min-w-48 cursor-pointer items-center justify-between gap-2 rounded-xl border border-transparent bg-surface-high pr-2.5 pl-3.5 text-left text-sm outline-none",
+            "flex h-10 w-full min-w-48 cursor-pointer items-center justify-between gap-2 rounded-xl border border-transparent bg-surface-high pr-2.5 pl-3.5 text-left text-sm outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
             "transition-[box-shadow,border-color] duration-150 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
           )}
         >

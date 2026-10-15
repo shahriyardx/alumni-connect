@@ -8,6 +8,7 @@ import type { CommentItem } from "@/server/routers/comment";
 import { AuthorLine } from "./author-line";
 import { CommentForm } from "./comment-form";
 import { Markdown } from "./markdown";
+import { ReportDialog } from "./report-dialog";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { useToast } from "./ui/toast";
@@ -128,6 +129,17 @@ function Comment({
             >
               Reply
             </Button>
+            {node.author && me?.id !== node.author.id && (
+              <ReportDialog
+                targetType="COMMENT"
+                targetId={node.id}
+                trigger={
+                  <Button variant="ghost" size="sm" icon="flag">
+                    Report
+                  </Button>
+                }
+              />
+            )}
             {node.canEdit && (
               <>
                 <Button

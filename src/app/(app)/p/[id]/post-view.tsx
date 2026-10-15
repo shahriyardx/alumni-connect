@@ -7,6 +7,7 @@ import { BookmarkButton } from "@/components/bookmark-button";
 import { CommentForm } from "@/components/comment-form";
 import { CommentThread } from "@/components/comment-thread";
 import { Markdown } from "@/components/markdown";
+import { ReportDialog } from "@/components/report-dialog";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -28,6 +29,7 @@ export function PostView({ id }: { id: string }) {
   const toast = useToast();
   const { me } = useMe();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const post = useQuery(trpc.post.byId.queryOptions({ id }));
   const comments = useQuery(trpc.comment.list.queryOptions({ postId: id }));
   const remove = useMutation(
@@ -140,18 +142,23 @@ export function PostView({ id }: { id: string }) {
                     Delete
                   </MenuItem>
                 )}
-                {/* Report dialog is wired in Task 12. */}
-                <MenuItem
-                  icon="flag"
-                  onClick={() => toast.success("Reporting arrives soon")}
-                >
-                  Report
-                </MenuItem>
+                {me?.id !== p.author.id && (
+                  <MenuItem icon="flag" onClick={() => setReporting(true)}>
+                    Report
+                  </MenuItem>
+                )}
               </MenuContent>
             </Menu.Root>
           </div>
         </div>
       </Card>
+
+      <ReportDialog
+        targetType="POST"
+        targetId={p.id}
+        open={reporting}
+        onOpenChange={setReporting}
+      />
 
       <Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent
