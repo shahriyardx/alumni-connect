@@ -17,23 +17,49 @@ export async function GET(req: Request) {
   }
 
   const enc = new TextEncoder();
+  let closed = false;
+  let unsubscribe: (() => void) | undefined;
+  let ping: ReturnType<typeof setInterval> | undefined;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (ping) clearInterval(ping);
+    unsubscribe?.();
+  };
+
   const stream = new ReadableStream({
     start(controller) {
-      const send = (d: unknown) =>
-        controller.enqueue(enc.encode(`data: ${JSON.stringify(d)}\n\n`));
-      const off = subscribe((e) => {
+      if (req.signal.aborted) {
+        cleanup();
+        return;
+      }
+      // One misbehaving/closed client must not throw out of the shared
+      // EventEmitter's synchronous `emit` and break delivery to every other
+      // subscriber — so enqueue failures are swallowed here, not up top.
+      const enqueue = (chunk: string) => {
+        try {
+          controller.enqueue(enc.encode(chunk));
+        } catch {
+          cleanup();
+        }
+      };
+      const send = (d: unknown) => enqueue(`data: ${JSON.stringify(d)}\n\n`);
+      unsubscribe = subscribe((e) => {
         if (e.universityId !== me.universityId) return;
         if (e.kind === "notification" && e.userId !== me.id) return;
         send({ kind: e.kind, postId: e.postId });
       });
-      const ping = setInterval(() => {
-        controller.enqueue(enc.encode(": ping\n\n"));
-      }, 15000);
+      ping = setInterval(() => enqueue(": ping\n\n"), 15000);
       req.signal.addEventListener("abort", () => {
-        clearInterval(ping);
-        off();
-        controller.close();
+        cleanup();
+        try {
+          controller.close();
+        } catch {}
       });
+    },
+    cancel() {
+      cleanup();
     },
   });
 

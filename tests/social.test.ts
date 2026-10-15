@@ -1,6 +1,9 @@
 import { beforeEach, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
+import { tag } from "@/db/schema";
 import { type LiveEvent, subscribe } from "@/server/events";
 import {
+  adminDb,
   callerFor,
   makePost,
   makeUniversity,
@@ -108,6 +111,147 @@ test("follow tag", async () => {
   expect(await callerFor(bob.id).social.followedTags()).toEqual([
     "career-advice",
   ]);
+});
+
+test("unfollowing a tag nobody follows does not create it", async () => {
+  const res = await callerFor(bob.id).social.followTag({
+    tag: "never-created",
+    on: false,
+  });
+  expect(res).toEqual({ following: false });
+  const rows = await adminDb
+    .select()
+    .from(tag)
+    .where(eq(tag.name, "never-created"));
+  expect(rows).toEqual([]);
+});
+
+test("votes on a comment", async () => {
+  const p = await makePost(uniId, alice.id);
+  const c = await callerFor(alice.id).comment.create({
+    postId: p.id,
+    body: "hi",
+  });
+  expect(
+    await callerFor(bob.id).social.vote({
+      targetType: "COMMENT",
+      targetId: c.id,
+      value: 1,
+    }),
+  ).toEqual({ score: 1, myVote: 1 });
+});
+
+test("vote on a deleted post is NOT_FOUND", async () => {
+  const p = await makePost(uniId, alice.id);
+  await callerFor(alice.id).post.remove({ id: p.id });
+  await expect(
+    callerFor(bob.id).social.vote({
+      targetType: "POST",
+      targetId: p.id,
+      value: 1,
+    }),
+  ).rejects.toThrow(/NOT_FOUND/);
+});
+
+test("vote on a comment under a deleted post is NOT_FOUND", async () => {
+  const p = await makePost(uniId, alice.id);
+  const c = await callerFor(alice.id).comment.create({
+    postId: p.id,
+    body: "hi",
+  });
+  await callerFor(alice.id).post.remove({ id: p.id });
+  await expect(
+    callerFor(bob.id).social.vote({
+      targetType: "COMMENT",
+      targetId: c.id,
+      value: 1,
+    }),
+  ).rejects.toThrow(/NOT_FOUND/);
+});
+
+test("concurrent votes don't lose updates", async () => {
+  const p = await makePost(uniId, alice.id);
+  const voters = await Promise.all(
+    Array.from({ length: 10 }, () => makeUser(uniId)),
+  );
+  await Promise.all(
+    voters.map((v) =>
+      callerFor(v.id).social.vote({
+        targetType: "POST",
+        targetId: p.id,
+        value: 1,
+      }),
+    ),
+  );
+  const after = await callerFor(alice.id).post.byId({ id: p.id });
+  expect(after.score).toBe(10);
+});
+
+test("notification.list hides the title of a deleted post", async () => {
+  await callerFor(bob.id).social.followUser({ userId: alice.id, on: true });
+  const p = await callerFor(alice.id).post.create({
+    title: "Will be removed",
+    body: "b",
+    tags: [],
+  });
+  await callerFor(alice.id).post.remove({ id: p.id });
+  const list = await callerFor(bob.id).notification.list({});
+  expect(list.items[0].post).toBeNull();
+});
+
+test("markRead only touches my own notifications", async () => {
+  await callerFor(bob.id).social.followUser({ userId: alice.id, on: true });
+  await callerFor(carol.id).social.followUser({ userId: alice.id, on: true });
+  await callerFor(alice.id).post.create({
+    title: "Notify everyone please",
+    body: "b",
+    tags: [],
+  });
+  const carolNotif = (await callerFor(carol.id).notification.list({})).items[0];
+  await callerFor(bob.id).notification.markRead({ ids: [carolNotif.id] });
+  expect(await callerFor(carol.id).notification.unreadCount()).toBe(1);
+});
+
+test("profile.setAvatar requires an owned, avatar-kind attachment", async () => {
+  const me = callerFor(bob.id);
+  const png = new Uint8Array([137, 80, 78, 71]);
+
+  const avatar = await me.files.createUpload({
+    kind: "avatar",
+    mime: "image/png",
+    size: png.length,
+  });
+  await fetch(avatar.url, {
+    method: "PUT",
+    body: png,
+    headers: { "Content-Type": "image/png" },
+  });
+  const avatarAtt = await me.files.confirm({ key: avatar.key });
+
+  const file = await me.files.createUpload({
+    kind: "attachment",
+    mime: "image/png",
+    size: png.length,
+  });
+  await fetch(file.url, {
+    method: "PUT",
+    body: png,
+    headers: { "Content-Type": "image/png" },
+  });
+  const fileAtt = await me.files.confirm({ key: file.key });
+
+  // Wrong kind: a non-avatar attachment, even though bob owns it.
+  await expect(me.profile.setAvatar({ key: fileAtt.key })).rejects.toThrow(
+    /NOT_FOUND/,
+  );
+  // Right kind, wrong owner.
+  await expect(
+    callerFor(alice.id).profile.setAvatar({ key: avatarAtt.key }),
+  ).rejects.toThrow(/NOT_FOUND/);
+  // Owner + correct kind succeeds.
+  expect(await me.profile.setAvatar({ key: avatarAtt.key })).toEqual({
+    ok: true,
+  });
 });
 
 test("live events are published on commit", async () => {

@@ -39,6 +39,7 @@ export const notificationRouter = router({
           and(
             eq(post.id, notification.postId),
             eq(post.universityId, notification.universityId),
+            isNull(post.deletedAt),
           ),
         )
         .where(eq(notification.userId, ctx.me.id))

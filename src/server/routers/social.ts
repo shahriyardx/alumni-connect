@@ -18,18 +18,29 @@ import { memberProcedure, router } from "../trpc";
 
 type TargetType = "POST" | "COMMENT";
 
+/**
+ * Loads the vote target and locks its row (`FOR UPDATE`) so concurrent votes
+ * on the same target serialize: without this, two transactions can both read
+ * the pre-commit vote sum and overwrite each other's `score` update (lost
+ * update under READ COMMITTED). Must be called before writing the vote row.
+ */
 async function loadTarget(tx: Tx, targetType: TargetType, targetId: string) {
   if (targetType === "POST") {
     const [row] = await tx
       .select({ id: post.id, authorId: post.authorId })
       .from(post)
-      .where(and(eq(post.id, targetId), isNull(post.deletedAt)));
+      .where(and(eq(post.id, targetId), isNull(post.deletedAt)))
+      .for("update");
     return row;
   }
+  // A comment's own post may have been (soft-)deleted after the comment was
+  // made — treat that as the comment no longer being votable too.
   const [row] = await tx
     .select({ id: comment.id, authorId: comment.authorId })
     .from(comment)
-    .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)));
+    .innerJoin(post, and(eq(post.id, comment.postId), isNull(post.deletedAt)))
+    .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)))
+    .for("update");
   return row;
 }
 
@@ -196,6 +207,28 @@ export const socialRouter = router({
       const name = normalizeTags([input.tag])[0];
       if (!name) throw new TRPCError({ code: "BAD_REQUEST" });
 
+      if (!input.on) {
+        // Unfollowing a tag nobody follows must not conjure it into
+        // existence — only look it up, never create it.
+        const [tagRow] = await ctx.db
+          .select({ id: tag.id })
+          .from(tag)
+          .where(
+            and(eq(tag.universityId, ctx.me.universityId), eq(tag.name, name)),
+          );
+        if (tagRow) {
+          await ctx.db
+            .delete(followTag)
+            .where(
+              and(
+                eq(followTag.userId, ctx.me.id),
+                eq(followTag.tagId, tagRow.id),
+              ),
+            );
+        }
+        return { following: false };
+      }
+
       await ctx.db
         .insert(tag)
         .values({ universityId: ctx.me.universityId, name })
@@ -206,29 +239,15 @@ export const socialRouter = router({
         .where(
           and(eq(tag.universityId, ctx.me.universityId), eq(tag.name, name)),
         );
-
-      if (input.on) {
-        await ctx.db
-          .insert(followTag)
-          .values({
-            universityId: ctx.me.universityId,
-            userId: ctx.me.id,
-            tagId: tagRow.id,
-          })
-          .onConflictDoNothing({
-            target: [followTag.userId, followTag.tagId],
-          });
-      } else {
-        await ctx.db
-          .delete(followTag)
-          .where(
-            and(
-              eq(followTag.userId, ctx.me.id),
-              eq(followTag.tagId, tagRow.id),
-            ),
-          );
-      }
-      return { following: input.on };
+      await ctx.db
+        .insert(followTag)
+        .values({
+          universityId: ctx.me.universityId,
+          userId: ctx.me.id,
+          tagId: tagRow.id,
+        })
+        .onConflictDoNothing({ target: [followTag.userId, followTag.tagId] });
+      return { following: true };
     }),
 
   followedTags: memberProcedure.query(async ({ ctx }) => {
