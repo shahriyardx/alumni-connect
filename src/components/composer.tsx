@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { normalizeTag } from "@/lib/tags";
 import { useTRPC } from "@/lib/trpc";
+import { ImageUploader } from "./image-uploader";
 import { Markdown } from "./markdown";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -50,6 +51,9 @@ function ComposerForm({ initial }: { initial?: Initial }) {
   const [body, setBody] = useState(initial?.body ?? "");
   const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
   const [draftTag, setDraftTag] = useState("");
+  const [attachments, setAttachments] = useState<{ id: string; key: string }[]>(
+    [],
+  );
 
   const opts = {
     onSuccess: ({ id }: { id: string }) => {
@@ -74,7 +78,11 @@ function ComposerForm({ initial }: { initial?: Initial }) {
     const all = draftTag ? [...tags, normalizeTag(draftTag)] : tags;
     const input = { title: title.trim(), body, tags: all.filter(Boolean) };
     if (initial) update.mutate({ id: initial.id, ...input });
-    else create.mutate(input);
+    else
+      create.mutate({
+        ...input,
+        attachmentIds: attachments.map((a) => a.id),
+      });
   }
 
   const preview = normalizeTag(draftTag);
@@ -174,8 +182,44 @@ function ComposerForm({ initial }: { initial?: Initial }) {
         )}
       </div>
 
-      {/* Attachments uploader lands in Task 8. */}
-      <div data-slot="attachments" />
+      {!initial && (
+        <div data-slot="attachments" className="flex flex-col gap-2">
+          <ImageUploader
+            kind="attachment"
+            multiple
+            onUploaded={(a) => setAttachments((prev) => [...prev, a])}
+          />
+          {attachments.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {attachments.map((a) => (
+                <div
+                  key={a.id}
+                  className="relative aspect-square overflow-hidden rounded-2xl bg-surface-high"
+                >
+                  {/* biome-ignore lint/performance/noImgElement: auth-gated proxy, next/image can't optimise it */}
+                  <img
+                    src={`/api/files/${a.key}`}
+                    alt=""
+                    className="size-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Remove image"
+                    onClick={() =>
+                      setAttachments((prev) =>
+                        prev.filter((x) => x.id !== a.id),
+                      )
+                    }
+                    className="absolute top-1 right-1 grid size-6 cursor-pointer place-items-center rounded-full bg-inverse/80 text-inverse-fg outline-none hover:bg-inverse focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={() => router.back()}>
