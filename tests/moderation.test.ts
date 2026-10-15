@@ -355,3 +355,12 @@ test("admin.stats: members exclude PENDING/BANNED; postsPerWeek excludes soft-de
   );
   expect(totalPostsThisWindow).toBe(0);
 });
+
+test("admin.stats: pending counts only email-verified PENDING users", async () => {
+  const a = callerFor(admin.id);
+  await makeUser(uniId, { status: "PENDING" });
+  await makeUser(uniId, { status: "PENDING", emailVerified: false });
+  const st = await a.admin.stats();
+  expect(st.pending).toBe((await a.admin.pendingUsers()).length);
+  expect(st.pending).toBe(1);
+});

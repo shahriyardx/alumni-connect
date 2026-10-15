@@ -345,6 +345,7 @@ export const adminRouter = router({
         and(
           eq(user.universityId, ctx.me.universityId),
           eq(user.status, "PENDING"),
+          eq(user.emailVerified, true), // match pendingUsers
         ),
       );
 

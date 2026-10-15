@@ -10,6 +10,8 @@ const SAMPLE = `student_id,batch_year,department,graduated
 NUB-2018-0001,2018,CSE,true
 NUB-2023-0002,2023,EEE,false
 `;
+// Server caps `csv` at 2,000,000 chars.
+const MAX_BYTES = 2_000_000;
 const SAMPLE_HREF = `data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE)}`;
 
 export function RosterPanel() {
@@ -31,7 +33,12 @@ export function RosterPanel() {
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (file) importRoster.mutate({ csv: await file.text() });
+    if (!file) return;
+    if (file.size > MAX_BYTES) {
+      toast.error("File is too large (max 2 MB)");
+      return;
+    }
+    importRoster.mutate({ csv: await file.text() });
   };
   const r = importRoster.data;
 

@@ -1,5 +1,6 @@
 "use client";
 import { Tabs } from "@base-ui/react/tabs";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { Icon } from "./icon";
 
@@ -9,17 +10,43 @@ export function TabsRoot({ className, ...props }: S<Tabs.Root.Props>) {
   return <Tabs.Root {...props} className={cn("flex flex-col", className)} />;
 }
 
-/** Segmented pill tabs; the active pill slides between triggers. */
+/** Segmented pill tabs; the active pill slides between triggers. Edges fade when the list scrolls. */
 export function TabsList({
   className,
   children,
   ...props
-}: S<Tabs.List.Props>) {
+}: Omit<S<Tabs.List.Props>, "style">) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ l: false, r: false });
+  const update = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const l = el.scrollLeft > 1;
+    const r = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setFade((f) => (f.l === l && f.r === r ? f : { l, r }));
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [update]);
   return (
     <Tabs.List
       {...props}
+      ref={ref}
+      onScroll={update}
+      style={
+        {
+          "--fade-l": fade.l ? "28px" : "0px",
+          "--fade-r": fade.r ? "28px" : "0px",
+        } as React.CSSProperties
+      }
       className={cn(
         "relative z-0 flex h-10 w-fit max-w-full items-center overflow-x-auto rounded-full bg-surface-high p-1 [scrollbar-width:none]",
+        "[mask-image:linear-gradient(to_right,transparent,#000_var(--fade-l),#000_calc(100%-var(--fade-r)),transparent)]",
         className,
       )}
     >
