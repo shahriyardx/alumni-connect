@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { callerFor, makeUniversity, makeUser, resetDb } from "./helpers";
 
 let asA: ReturnType<typeof callerFor>;
+let adminA: ReturnType<typeof callerFor>;
 const bIds = {} as { userId: string; postId: string; commentId: string };
 
 beforeAll(async () => {
@@ -12,6 +13,7 @@ beforeAll(async () => {
   const ua = await makeUser(a.id, { createdAt: old });
   const ub = await makeUser(b.id, { createdAt: old });
   asA = callerFor(ua.id);
+  adminA = callerFor((await makeUser(a.id, { role: "ADMIN" })).id);
   const asB = callerFor(ub.id);
   const p = await asB.post.create({
     title: "Secret B question",
@@ -71,4 +73,32 @@ describe("cross-tenant reads are impossible", () => {
     expect(asA.profile.get({ id: bIds.userId })).rejects.toThrow(/NOT_FOUND/));
   test("notification.list has nothing from B", async () =>
     expect((await asA.notification.list({})).items).toEqual([]));
+  test("moderation.report B post", () =>
+    expect(
+      asA.moderation.report({
+        targetType: "POST",
+        targetId: bIds.postId,
+        reason: "cross tenant",
+      }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("admin.setRole B user", () =>
+    expect(
+      adminA.admin.setRole({ userId: bIds.userId, role: "ADMIN" }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("admin.approveUser B user", () =>
+    expect(adminA.admin.approveUser({ userId: bIds.userId })).rejects.toThrow(
+      /NOT_FOUND/,
+    ));
+  test("moderation.setUserStatus B user", async () => {
+    const modA = adminA; // admin is also a mod
+    await expect(
+      modA.moderation.setUserStatus({ userId: bIds.userId, status: "BANNED" }),
+    ).rejects.toThrow(/NOT_FOUND/);
+  });
+  test("admin.users excludes B", async () =>
+    expect((await adminA.admin.users({})).items.map((u) => u.id)).not.toContain(
+      bIds.userId,
+    ));
+  test("admin.audit excludes B", async () =>
+    expect((await adminA.admin.audit({})).items).toEqual([]));
 });
