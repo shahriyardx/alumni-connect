@@ -4,15 +4,18 @@ import {
   bigint,
   boolean,
   customType,
+  foreignKey,
   index,
   integer,
   jsonb,
+  type PgTableExtraConfigValue,
   pgPolicy,
   pgRole,
   pgTable,
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -74,7 +77,10 @@ export const user = pgTable(
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
     suspendedUntil: timestamp("suspended_until"),
   },
-  (t) => [index("user_university_idx").on(t.universityId)],
+  (t) => [
+    index("user_university_idx").on(t.universityId),
+    unique("user_id_uni_uq").on(t.id, t.universityId),
+  ],
 );
 
 export const session = pgTable(
@@ -177,9 +183,7 @@ export const post = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => user.id),
+    authorId: text("author_id").notNull(),
     title: text("title").notNull(),
     body: text("body").notNull(),
     score: integer("score").default(0).notNull(),
@@ -200,6 +204,12 @@ export const post = pgTable(
     index("post_uni_score_idx").on(t.universityId, t.score),
     index("post_author_idx").on(t.authorId),
     index("post_search_idx").using("gin", t.search),
+    unique("post_id_uni_uq").on(t.id, t.universityId),
+    foreignKey({
+      name: "post_author_fk",
+      columns: [t.authorId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }),
     tenantPolicy("post", t.universityId),
   ],
 ).enableRLS();
@@ -209,13 +219,9 @@ export const comment = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
-    postId: uuid("post_id")
-      .notNull()
-      .references(() => post.id, { onDelete: "cascade" }),
-    parentId: uuid("parent_id").references((): AnyPgColumn => comment.id),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => user.id),
+    postId: uuid("post_id").notNull(),
+    parentId: uuid("parent_id"),
+    authorId: text("author_id").notNull(),
     body: text("body").notNull(),
     score: integer("score").default(0).notNull(),
     createdAt: created(),
@@ -225,9 +231,25 @@ export const comment = pgTable(
       .notNull(),
     deletedAt: timestamp("deleted_at"),
   },
-  (t) => [
+  (t): PgTableExtraConfigValue[] => [
     index("comment_post_idx").on(t.postId),
     index("comment_author_idx").on(t.authorId),
+    unique("comment_id_uni_uq").on(t.id, t.universityId),
+    foreignKey({
+      name: "comment_post_fk",
+      columns: [t.postId, t.universityId],
+      foreignColumns: [post.id, post.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "comment_parent_fk",
+      columns: [t.parentId, t.universityId],
+      foreignColumns: [comment.id, comment.universityId],
+    }),
+    foreignKey({
+      name: "comment_author_fk",
+      columns: [t.authorId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }),
     tenantPolicy("comment", t.universityId),
   ],
 ).enableRLS();
@@ -241,6 +263,7 @@ export const tag = pgTable(
   },
   (t) => [
     uniqueIndex("tag_uni_name_uq").on(t.universityId, t.name),
+    unique("tag_id_uni_uq").on(t.id, t.universityId),
     tenantPolicy("tag", t.universityId),
   ],
 ).enableRLS();
@@ -249,16 +272,22 @@ export const postTag = pgTable(
   "post_tag",
   {
     universityId: universityRef(),
-    postId: uuid("post_id")
-      .notNull()
-      .references(() => post.id, { onDelete: "cascade" }),
-    tagId: uuid("tag_id")
-      .notNull()
-      .references(() => tag.id, { onDelete: "cascade" }),
+    postId: uuid("post_id").notNull(),
+    tagId: uuid("tag_id").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.postId, t.tagId] }),
     index("post_tag_tag_idx").on(t.tagId),
+    foreignKey({
+      name: "post_tag_post_fk",
+      columns: [t.postId, t.universityId],
+      foreignColumns: [post.id, post.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "post_tag_tag_fk",
+      columns: [t.tagId, t.universityId],
+      foreignColumns: [tag.id, tag.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("post_tag", t.universityId),
   ],
 ).enableRLS();
@@ -267,9 +296,7 @@ export const vote = pgTable(
   "vote",
   {
     universityId: universityRef(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
     targetType: text("target_type", { enum: ["POST", "COMMENT"] }).notNull(),
     targetId: uuid("target_id").notNull(),
     value: integer("value").notNull(),
@@ -277,6 +304,11 @@ export const vote = pgTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.targetType, t.targetId] }),
     index("vote_target_idx").on(t.targetType, t.targetId),
+    foreignKey({
+      name: "vote_user_fk",
+      columns: [t.userId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("vote", t.universityId),
   ],
 ).enableRLS();
@@ -285,16 +317,22 @@ export const bookmark = pgTable(
   "bookmark",
   {
     universityId: universityRef(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    postId: uuid("post_id")
-      .notNull()
-      .references(() => post.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    postId: uuid("post_id").notNull(),
     createdAt: created(),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.postId] }),
+    foreignKey({
+      name: "bookmark_user_fk",
+      columns: [t.userId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "bookmark_post_fk",
+      columns: [t.postId, t.universityId],
+      foreignColumns: [post.id, post.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("bookmark", t.universityId),
   ],
 ).enableRLS();
@@ -303,16 +341,22 @@ export const followUser = pgTable(
   "follow_user",
   {
     universityId: universityRef(),
-    followerId: text("follower_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    followeeId: text("followee_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    followerId: text("follower_id").notNull(),
+    followeeId: text("followee_id").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.followerId, t.followeeId] }),
     index("follow_user_followee_idx").on(t.followeeId),
+    foreignKey({
+      name: "follow_user_follower_fk",
+      columns: [t.followerId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "follow_user_followee_fk",
+      columns: [t.followeeId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("follow_user", t.universityId),
   ],
 ).enableRLS();
@@ -321,16 +365,22 @@ export const followTag = pgTable(
   "follow_tag",
   {
     universityId: universityRef(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    tagId: uuid("tag_id")
-      .notNull()
-      .references(() => tag.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    tagId: uuid("tag_id").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.tagId] }),
     index("follow_tag_tag_idx").on(t.tagId),
+    foreignKey({
+      name: "follow_tag_user_fk",
+      columns: [t.userId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "follow_tag_tag_fk",
+      columns: [t.tagId, t.universityId],
+      foreignColumns: [tag.id, tag.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("follow_tag", t.universityId),
   ],
 ).enableRLS();
@@ -346,22 +396,36 @@ export const notification = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
     type: text("type", { enum: NOTIFICATION_TYPES }).notNull(),
-    actorId: text("actor_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    postId: uuid("post_id").references(() => post.id, { onDelete: "cascade" }),
-    commentId: uuid("comment_id").references(() => comment.id, {
-      onDelete: "cascade",
-    }),
+    actorId: text("actor_id").notNull(),
+    postId: uuid("post_id"),
+    commentId: uuid("comment_id"),
     readAt: timestamp("read_at"),
     createdAt: created(),
   },
   (t) => [
     index("notification_user_idx").on(t.userId, t.createdAt),
+    foreignKey({
+      name: "notification_user_fk",
+      columns: [t.userId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "notification_actor_fk",
+      columns: [t.actorId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "notification_post_fk",
+      columns: [t.postId, t.universityId],
+      foreignColumns: [post.id, post.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "notification_comment_fk",
+      columns: [t.commentId, t.universityId],
+      foreignColumns: [comment.id, comment.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("notification", t.universityId),
   ],
 ).enableRLS();
@@ -371,10 +435,8 @@ export const attachment = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
-    ownerId: text("owner_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    postId: uuid("post_id").references(() => post.id, { onDelete: "set null" }),
+    ownerId: text("owner_id").notNull(),
+    postId: uuid("post_id"),
     objectKey: text("object_key").notNull().unique(),
     mime: text("mime").notNull(),
     size: integer("size").notNull(),
@@ -382,6 +444,17 @@ export const attachment = pgTable(
   },
   (t) => [
     index("attachment_post_idx").on(t.postId),
+    foreignKey({
+      name: "attachment_owner_fk",
+      columns: [t.ownerId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    // No onDelete action: a composite SET NULL would null university_id too; posts are only soft-deleted.
+    foreignKey({
+      name: "attachment_post_fk",
+      columns: [t.postId, t.universityId],
+      foreignColumns: [post.id, post.universityId],
+    }),
     tenantPolicy("attachment", t.universityId),
   ],
 ).enableRLS();
@@ -391,9 +464,7 @@ export const report = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
-    reporterId: text("reporter_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    reporterId: text("reporter_id").notNull(),
     targetType: text("target_type", {
       enum: ["POST", "COMMENT", "USER"],
     }).notNull(),
@@ -402,12 +473,22 @@ export const report = pgTable(
     status: text("status", { enum: ["OPEN", "RESOLVED", "DISMISSED"] })
       .default("OPEN")
       .notNull(),
-    resolvedBy: text("resolved_by").references(() => user.id),
+    resolvedBy: text("resolved_by"),
     resolvedAt: timestamp("resolved_at"),
     createdAt: created(),
   },
   (t) => [
     index("report_uni_status_idx").on(t.universityId, t.status),
+    foreignKey({
+      name: "report_reporter_fk",
+      columns: [t.reporterId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "report_resolved_by_fk",
+      columns: [t.resolvedBy, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }),
     tenantPolicy("report", t.universityId),
   ],
 ).enableRLS();

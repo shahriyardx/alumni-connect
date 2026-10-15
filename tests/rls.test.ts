@@ -1,20 +1,37 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { db, withTenant } from "@/db";
-import { auditLog, post } from "@/db/schema";
+import { auditLog, bookmark, post } from "@/db/schema";
 import { makePost, makeUniversity, makeUser, resetDb } from "./helpers";
+
+/** drizzle-orm wraps the real Postgres error message in `.cause`, not `.message` — match both. */
+async function rejectsWith(p: Promise<unknown>, pattern: RegExp) {
+  try {
+    await p;
+  } catch (err) {
+    const cause =
+      err instanceof Error ? (err.cause as Error | undefined) : undefined;
+    const message = `${err instanceof Error ? err.message : String(err)} ${cause?.message ?? ""}`;
+    expect(message).toMatch(pattern);
+    return;
+  }
+  throw new Error("expected promise to reject");
+}
 
 describe("row level security", () => {
   let a: { id: string };
   let b: { id: string };
+  let ua: { id: string };
+  let ub: { id: string };
+  let postB: { id: string };
   beforeEach(async () => {
     await resetDb();
     a = await makeUniversity("A Uni");
     b = await makeUniversity("B Uni");
-    const ua = await makeUser(a.id);
-    const ub = await makeUser(b.id);
+    ua = await makeUser(a.id);
+    ub = await makeUser(b.id);
     await makePost(a.id, ua.id, { title: "post in A" });
-    await makePost(b.id, ub.id, { title: "post in B" });
+    postB = await makePost(b.id, ub.id, { title: "post in B" });
   });
 
   test("tenant sees only own rows", async () => {
@@ -23,17 +40,18 @@ describe("row level security", () => {
   });
 
   test("cannot insert into another tenant", async () => {
-    const ub = await makeUser(b.id);
-    await expect(
+    const other = await makeUser(b.id);
+    await rejectsWith(
       withTenant(a.id, (tx) =>
         tx.insert(post).values({
           universityId: b.id,
-          authorId: ub.id,
+          authorId: other.id,
           title: "x",
           body: "y",
         }),
       ),
-    ).rejects.toThrow();
+      /row-level security/,
+    );
   });
 
   test("no tenant set → zero rows, also after a pooled connection was used by a tenant tx", async () => {
@@ -47,14 +65,44 @@ describe("row level security", () => {
     await withTenant(a.id, (tx) =>
       tx.insert(auditLog).values({ universityId: a.id, action: "test" }),
     );
-    await expect(
+    await rejectsWith(
       withTenant(a.id, (tx) => tx.update(auditLog).set({ action: "changed" })),
-    ).rejects.toThrow();
-    await expect(
+      /permission denied|append-only/,
+    );
+    await rejectsWith(
       withTenant(a.id, (tx) => tx.delete(auditLog)),
-    ).rejects.toThrow();
-    await expect(
+      /permission denied|append-only/,
+    );
+    await rejectsWith(
       Promise.resolve(db.execute(sql`delete from audit_log`)),
-    ).rejects.toThrow();
+      /permission denied|append-only/,
+    );
+  });
+
+  test("cannot reference another tenant's row via a same-tenant foreign key", async () => {
+    // bookmark with university_id A + user from A, but post_id points at B's post
+    await rejectsWith(
+      withTenant(a.id, (tx) =>
+        tx.insert(bookmark).values({
+          universityId: a.id,
+          userId: ua.id,
+          postId: postB.id,
+        }),
+      ),
+      /foreign key/,
+    );
+
+    // post with university_id A but author from B
+    await rejectsWith(
+      withTenant(a.id, (tx) =>
+        tx.insert(post).values({
+          universityId: a.id,
+          authorId: ub.id,
+          title: "x",
+          body: "y",
+        }),
+      ),
+      /foreign key/,
+    );
   });
 });
