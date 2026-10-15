@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, count, eq, gt, or, type SQL, sql } from "drizzle-orm";
+import { and, count, eq, gt, lt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, withTenant } from "@/db";
 import {
@@ -96,9 +96,7 @@ export const authRouter = router({
             sql`${auditLog.meta}->>'idHashPrefix' = ${idHash.slice(0, 12)}`,
           )) >= 5 ||
           // Backstop: repeated attempts for one email, regardless of IP/ID.
-          (await recent(eq(auditLog.target, input.email))) >= 5 ||
-          // Backstop: tenant-wide brute force, regardless of IP/ID/email.
-          (await recent(sql`${auditLog.meta}->>'ok' = 'false'`)) >= 100;
+          (await recent(eq(auditLog.target, input.email))) >= 5;
         if (tooMany) {
           return {
             error: new TRPCError({
@@ -132,17 +130,25 @@ export const authRouter = router({
             "domain",
           );
         }
-        // Only a *verified* account blocks a signup: an unverified account
-        // can't log in, so it can't be "taken" — and an attacker who
-        // pre-registers a victim's roster ID + email to lock them out gets
-        // swept away below once the real owner starts their own signup.
+        // A verified account always blocks a signup. An unverified account
+        // blocks it too *while it might still be mid-verification* (created
+        // in the last 15 minutes) — otherwise an attacker holding either the
+        // victim's email or their own roster ID could delete the victim's
+        // in-progress signup out from under them (see sweep below). Only an
+        // unverified account older than that grace period is fair game: it
+        // can't log in, so nothing of value is lost, and it gets swept away
+        // once the real owner's signup actually succeeds.
+        const unverifiedGraceCutoff = new Date(Date.now() - 15 * 60_000);
         const [dup] = await tx
           .select({ id: user.id })
           .from(user)
           .where(
             and(
-              eq(user.emailVerified, true),
               or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
+              or(
+                eq(user.emailVerified, true),
+                gt(user.createdAt, unverifiedGraceCutoff),
+              ),
             ),
           );
         if (dup)
@@ -183,15 +189,17 @@ export const authRouter = router({
           status = "PENDING";
         }
 
-        // Clear any unverified account squatting on this email or ID (e.g.
-        // an attacker who started sign-up with the victim's roster ID and
-        // email but never verified). It never logged in, so nothing of
-        // value is lost; session/account rows cascade with it.
+        // Clear any *stale* unverified account squatting on this email or ID
+        // (e.g. an attacker who started sign-up with the victim's roster ID
+        // and email but never verified, past the 15-minute grace period
+        // checked above). It never logged in, so nothing of value is lost;
+        // session/account rows cascade with it.
         await tx
           .delete(user)
           .where(
             and(
               eq(user.emailVerified, false),
+              lt(user.createdAt, unverifiedGraceCutoff),
               or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
             ),
           );

@@ -195,9 +195,10 @@ describe("better-auth sign-up gate", () => {
     expect(u.emailVerified).toBe(false);
     expect(await adminDb.select().from(pendingSignup)).toEqual([]);
   });
-  test("an unverified account squatting on an ID/email does not block the real owner, and is swept away", async () => {
+  test("a fresh unverified squatter still blocks the real owner (CONFLICT), row untouched", async () => {
     // Attacker knows the victim's roster ID and email; starts sign-up and
-    // creates the account but never verifies it.
+    // creates the account but never verifies it — this just happened, so
+    // it might still be the victim's own in-progress verification.
     await callerFor(null).auth.startSignup(base());
     await auth.api.signUpEmail({
       body: { name: "Attacker", email: base().email, password: "password123" },
@@ -208,6 +209,23 @@ describe("better-auth sign-up gate", () => {
       .where(eq(user.email, base().email));
     expect(squatter).toHaveLength(1);
     expect(squatter[0].emailVerified).toBe(false);
+
+    await expect(callerFor(null).auth.startSignup(base())).rejects.toThrow(
+      /already/i,
+    );
+    expect(
+      await adminDb.select().from(user).where(eq(user.email, base().email)),
+    ).toHaveLength(1);
+  });
+  test("a stale (>15min) unverified squatter does not block the real owner, and is swept away", async () => {
+    await callerFor(null).auth.startSignup(base());
+    await auth.api.signUpEmail({
+      body: { name: "Attacker", email: base().email, password: "password123" },
+    });
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 16 * 60_000) })
+      .where(eq(user.email, base().email));
 
     // The real owner starts sign-up with the same ID/email: not CONFLICT.
     const r = await callerFor(null).auth.startSignup(base());
