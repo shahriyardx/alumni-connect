@@ -371,7 +371,7 @@ function AlumnusWelcome({ name, href }: { name: string; href: string }) {
           questions only you can answer.
         </p>
         <ButtonLink href={href} size="lg" icon="arrow_forward">
-          Go to the feed
+          {href === "/pending" ? "See account status" : "Go to the feed"}
         </ButtonLink>
       </div>
     </main>

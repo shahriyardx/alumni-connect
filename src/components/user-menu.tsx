@@ -51,6 +51,25 @@ export function UserMenu() {
         <MenuItem icon="person" onClick={() => router.push(`/u/${me.id}`)}>
           Profile
         </MenuItem>
+        {/* Phones have no rail, so the role-gated destinations live here. */}
+        {(me.role === "MODERATOR" || me.role === "ADMIN") && (
+          <MenuItem
+            icon="shield"
+            className="min-[840px]:hidden"
+            onClick={() => router.push("/mod")}
+          >
+            Moderation
+          </MenuItem>
+        )}
+        {me.role === "ADMIN" && (
+          <MenuItem
+            icon="admin_panel_settings"
+            className="min-[840px]:hidden"
+            onClick={() => router.push("/admin")}
+          >
+            Admin
+          </MenuItem>
+        )}
         <MenuItem icon="settings" onClick={() => router.push("/settings")}>
           Settings
         </MenuItem>

@@ -14,10 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { TextField } from "@/components/ui/text-field";
 import { authClient } from "@/lib/auth-client";
-
-/** Only same-origin paths; never `//evil.com`. */
-const safeNext = (n: string | null) =>
-  n?.startsWith("/") && !n.startsWith("//") ? n : "/feed";
+import { safeNext } from "@/lib/safe-next";
 
 export function SignInForm() {
   const router = useRouter();
