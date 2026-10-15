@@ -68,7 +68,7 @@ Uploaded avatars and post images live in MinIO. Browse the bucket at **http://lo
 bun test
 ```
 
-Tests run against the real dev database as a Postgres superuser (`DATABASE_ADMIN_URL`) so they can arrange data across tenants and assert what RLS blocks. They truncate and rebuild tables as they go — don't run them against data you care about.
+`bun test` loads `.env.test`, not `.env`, so it runs against a separate `alumni_test` database (created alongside `alumni` by `docker/initdb/01-init.sql`) as a Postgres superuser (`DATABASE_ADMIN_URL`) — it never touches your dev database. Tests truncate and rebuild tables in `alumni_test` as they go, so it's safe to run anytime, including right after seeding `alumni` for a demo.
 
 ### Resetting everything
 

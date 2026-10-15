@@ -8,6 +8,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "@/env";
 import { hashStudentId } from "@/server/student-id";
+import { truncateAll } from "./reset";
 import * as schema from "./schema";
 
 const client = postgres(env.DATABASE_ADMIN_URL, { max: 1, onnotice: () => {} });
@@ -18,15 +19,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
 
 // ---- 1. reset ----
-async function resetDb() {
-  await db.execute(sql`
-    truncate university, "user", session, account, verification, rate_limit, pending_signup,
-      roster_entry, post, comment, tag, post_tag, vote, bookmark, follow_user, follow_tag,
-      notification, attachment, report restart identity cascade`);
-  // audit_log has a trigger blocking row-level DELETE; TRUNCATE skips row triggers and
-  // is allowed for the superuser.
-  await db.execute(sql`truncate audit_log`);
-}
+const resetDb = () => truncateAll(db);
 
 // ---- 2. universities ----
 async function seedUniversities() {

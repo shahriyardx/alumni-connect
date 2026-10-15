@@ -1,8 +1,8 @@
 // tests/helpers.ts — superuser access (bypasses RLS) for arranging data
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { truncateAll } from "@/db/reset";
 import * as schema from "@/db/schema";
 import { createCaller } from "@/server/root";
 
@@ -15,14 +15,7 @@ export const adminClient = postgres(process.env.DATABASE_ADMIN_URL ?? "", {
 });
 export const adminDb = drizzle(adminClient, { schema });
 
-export async function resetDb() {
-  await adminDb.execute(sql`
-    truncate university, "user", session, account, verification, rate_limit, pending_signup,
-      roster_entry, post, comment, tag, post_tag, vote, bookmark, follow_user, follow_tag,
-      notification, attachment, report restart identity cascade`);
-  // audit_log: trigger blocks DELETE but TRUNCATE skips row triggers; superuser may truncate.
-  await adminDb.execute(sql`truncate audit_log`);
-}
+export const resetDb = () => truncateAll(adminDb);
 
 export async function makeUniversity(
   name = `Uni ${randomUUID().slice(0, 6)}`,
