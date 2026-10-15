@@ -1,26 +1,195 @@
 @import "tailwindcss";
 
+/* Material 3 color roles (refs/m3-tokens.css) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  color-scheme: light;
+  --md-primary: #1242ff;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #dee0ff;
+  --md-on-primary-container: #002eca;
+  --md-secondary: #605a7d;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #e6deff;
+  --md-on-secondary-container: #484264;
+  --md-tertiary: #6b5485;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: #efdbff;
+  --md-on-tertiary-container: #533d6c;
+  --md-error: #ba1a1a;
+  --md-on-error: #ffffff;
+  --md-error-container: #ffdad6;
+  --md-on-error-container: #93000a;
+  --md-surface: #fbf8ff;
+  --md-on-surface: #1a1b25;
+  --md-surface-variant: #e1e1f3;
+  --md-on-surface-variant: #444654;
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f4f2ff;
+  --md-surface-container: #eeecfb;
+  --md-surface-container-high: #e8e7f5;
+  --md-surface-container-highest: #e2e1ef;
+  --md-inverse-surface: #2f303a;
+  --md-inverse-on-surface: #f0effe;
+  --md-inverse-primary: #bac3ff;
+  --md-outline: #757685;
+  --md-outline-variant: #c5c5d6;
+  --md-scrim: #000000;
+  --md-shadow: #000000;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
+    --md-primary: #bac3ff;
+    --md-on-primary: #001e91;
+    --md-primary-container: #002eca;
+    --md-on-primary-container: #dee0ff;
+    --md-secondary: #c9c1ea;
+    --md-on-secondary: #312c4c;
+    --md-secondary-container: #484264;
+    --md-on-secondary-container: #e6deff;
+    --md-tertiary: #d7bbf3;
+    --md-on-tertiary: #3b2654;
+    --md-tertiary-container: #533d6c;
+    --md-on-tertiary-container: #efdbff;
+    --md-error: #ffb4ab;
+    --md-on-error: #690005;
+    --md-error-container: #93000a;
+    --md-on-error-container: #ffdad6;
+    --md-surface: #11131c;
+    --md-on-surface: #e2e1ef;
+    --md-surface-variant: #444654;
+    --md-on-surface-variant: #c5c5d6;
+    --md-surface-container-lowest: #0c0e17;
+    --md-surface-container-low: #1a1b25;
+    --md-surface-container: #1e1f29;
+    --md-surface-container-high: #282934;
+    --md-surface-container-highest: #33343f;
+    --md-inverse-surface: #e2e1ef;
+    --md-inverse-on-surface: #2f303a;
+    --md-inverse-primary: #1242ff;
+    --md-outline: #8f8f9f;
+    --md-outline-variant: #444654;
+    --md-scrim: #000000;
+    --md-shadow: #000000;
+  }
+}
+
+@theme inline {
+  --color-primary: var(--md-primary);
+  --color-on-primary: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+  --color-secondary: var(--md-secondary);
+  --color-on-secondary: var(--md-on-secondary);
+  --color-secondary-container: var(--md-secondary-container);
+  --color-on-secondary-container: var(--md-on-secondary-container);
+  --color-tertiary: var(--md-tertiary);
+  --color-on-tertiary: var(--md-on-tertiary);
+  --color-tertiary-container: var(--md-tertiary-container);
+  --color-on-tertiary-container: var(--md-on-tertiary-container);
+  --color-error: var(--md-error);
+  --color-on-error: var(--md-on-error);
+  --color-error-container: var(--md-error-container);
+  --color-on-error-container: var(--md-on-error-container);
+  --color-surface: var(--md-surface);
+  --color-on-surface: var(--md-on-surface);
+  --color-surface-variant: var(--md-surface-variant);
+  --color-on-surface-variant: var(--md-on-surface-variant);
+  --color-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+  --color-inverse-surface: var(--md-inverse-surface);
+  --color-inverse-on-surface: var(--md-inverse-on-surface);
+  --color-inverse-primary: var(--md-inverse-primary);
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
+  --color-scrim: var(--md-scrim);
+  --color-shadow: var(--md-shadow);
+  --font-sans: var(--font-roboto-flex), ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme {
+  /* M3 shape scale */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+  --radius-2xl: 32px;
+  --radius-full: 9999px;
+
+  /* M3 Expressive motion */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* M3 elevation */
+  --shadow-elevation-1:
+    0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --shadow-elevation-2:
+    0 1px 2px 0 rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --shadow-elevation-3:
+    0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px 0 rgb(0 0 0 / 0.3);
+
+  --animate-spinner-rotate: spinner-rotate 1.6s linear infinite;
+  --animate-spinner-arc: spinner-arc 1.4s var(--ease-emphasized) infinite;
+
+  @keyframes spinner-rotate {
+    to {
+      rotate: 360deg;
+    }
+  }
+  @keyframes spinner-arc {
+    0% {
+      stroke-dasharray: 2 200;
+      stroke-dashoffset: 0;
+    }
+    50% {
+      stroke-dasharray: 80 200;
+      stroke-dashoffset: -16;
+    }
+    100% {
+      stroke-dasharray: 2 200;
+      stroke-dashoffset: -98;
+    }
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  @apply bg-surface text-on-surface font-sans antialiased;
 }
+
+::selection {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+/* Icon size helper: size via font-size (set by <Icon size>), optical size follows. */
+.material-symbols-rounded {
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+  user-select: none;
+  flex-shrink: 0;
+  transition: font-variation-settings 200ms var(--ease-emphasized);
+}
+
+/* biome-ignore-start lint/complexity/noImportantStyles: reduced-motion must beat utility classes */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scale: none !important;
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+  .animate-spinner-rotate,
+  .animate-spinner-rotate * {
+    animation-duration: 2.4s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: - */
