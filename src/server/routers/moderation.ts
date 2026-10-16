@@ -303,6 +303,12 @@ export const moderationRouter = router({
           );
         if (!targetUser) throw new TRPCError({ code: "NOT_FOUND" });
         assertCanAct(ctx.me, targetUser);
+        if (targetUser.status === "PENDING") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Use admin approval for pending accounts",
+          });
+        }
 
         if (input.action === "suspend") {
           // Don't let a suspend downgrade an already-banned account: leave

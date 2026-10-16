@@ -364,3 +364,26 @@ test("admin.stats: pending counts only email-verified PENDING users", async () =
   expect(st.pending).toBe((await a.admin.pendingUsers()).length);
   expect(st.pending).toBe(1);
 });
+
+test("resolve: suspend/ban rejects PENDING targets (use admin approval)", async () => {
+  const pending = await makeUser(uniId, { status: "PENDING" });
+  for (const action of ["suspend", "ban"] as const) {
+    const r = await callerFor(student.id).moderation.report({
+      targetType: "USER",
+      targetId: pending.id,
+      reason: "suspicious signup",
+    });
+    await expect(
+      callerFor(admin.id).moderation.resolve({
+        reportId: r.id,
+        action,
+        days: action === "suspend" ? 3 : undefined,
+      }),
+    ).rejects.toThrow(/Use admin approval for pending accounts/);
+  }
+  const [row] = await adminDb
+    .select()
+    .from(user)
+    .where(eq(user.id, pending.id));
+  expect(row.status).toBe("PENDING");
+});
