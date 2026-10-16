@@ -122,6 +122,10 @@
   .bg-surface-high:where(.bg-surface *) {
     background-color: var(--field-card);
   }
+  /* Dialogs and menus already sit on a tinted surface in dark mode. */
+  .bg-surface-high:where(.bg-popover *) {
+    background-color: color-mix(in srgb, var(--surface-tint) 12%, var(--popover));
+  }
 }
 
 /* Light mode: a field straight on the tinted page is a tint on a tint and
