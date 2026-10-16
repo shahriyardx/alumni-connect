@@ -70,6 +70,7 @@ const RESERVED: RosterRow[] = [
   { raw: "NUB-20270002", batch: 2027, dept: "LLB", graduated: false }, // student: ayesha
   { raw: "NUB-20280001", batch: 2028, dept: "CSE", graduated: false }, // student: imran
   { raw: "NUB-20290001", batch: 2029, dept: "EEE", graduated: false }, // student: lamia
+  { raw: "NUB-20290002", batch: 2029, dept: "CSE", graduated: false }, // student: new (fresh)
 ];
 
 function buildRoster(): RosterRow[] {
@@ -108,6 +109,7 @@ type SeedUser = {
   batch: number;
   dept: string;
   raw?: string; // roster-backed student id (hashed into studentIdHash); omit for DTU
+  fresh?: boolean; // created "now" (demos the 3-day link gate); others are a year old
 };
 
 const NUB_USERS: SeedUser[] = [
@@ -215,8 +217,17 @@ const NUB_USERS: SeedUser[] = [
     dept: "EEE",
     raw: "NUB-20290001",
   },
+  {
+    email: "new.student@nub.ac.bd",
+    name: "Nabil Hasan",
+    role: "STUDENT",
+    batch: 2029,
+    dept: "CSE",
+    raw: "NUB-20290002",
+    fresh: true,
+  },
 ];
-// indices: 0 admin, 1 mod, 2-6 alumni, 7-12 students
+// indices: 0 admin, 1 mod, 2-6 alumni, 7-12 students, 13 fresh student
 
 const DTU_USERS: SeedUser[] = [
   {
@@ -238,6 +249,7 @@ const DTU_USERS: SeedUser[] = [
 
 async function seedUsers(universityId: string, users: SeedUser[]) {
   const passwordHash = await hashPassword(PASSWORD);
+  const yearAgo = new Date(Date.now() - 365 * 86_400_000);
   const ids: string[] = [];
   for (const u of users) {
     const id = randomUUID();
@@ -253,6 +265,7 @@ async function seedUsers(universityId: string, users: SeedUser[]) {
       department: u.dept,
       studentIdHash: u.raw ? hashStudentId(universityId, u.raw) : null,
       status: "ACTIVE",
+      createdAt: u.fresh ? new Date() : yearAgo,
     });
     await db.insert(schema.account).values({
       id: randomUUID(),

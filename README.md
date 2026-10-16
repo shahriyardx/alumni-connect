@@ -35,7 +35,7 @@ bun run dev               # http://localhost:3000
 
 ### Demo accounts
 
-All seeded accounts use the password **`password123`**.
+All seeded accounts use the password **`password123`**. Every account except `new.student@nub.ac.bd` is backdated a year, so they can post links right away.
 
 | Email | Role | University | Notes |
 |---|---|---|---|
@@ -47,6 +47,7 @@ All seeded accounts use the password **`password123`**.
 | `nusrat.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2022, LLB |
 | `tanvir.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2024, CSE |
 | `mim.student@nub.ac.bd` … `lamia.student@nub.ac.bd` | STUDENT | NUB | 6 current students, batches 2026–2029 |
+| `new.student@nub.ac.bd` | STUDENT | NUB | account created at seed time — shows the "new accounts can post links after 3 days" rule |
 | `admin@demo.edu` | ADMIN | Demo Tech University | second tenant, no roster loaded — shows the PENDING sign-up path |
 | `student@demo.edu` | STUDENT | Demo Tech University | |
 
@@ -89,7 +90,7 @@ bun run db:seed
 
 **Live updates.** Mutations that matter for the feed (new post, new comment, new notification) call `pg_notify('events', …)` inside the same transaction, so the notification only fires on commit. A single server-side `LISTEN` fans events out over Server-Sent Events to connected clients — no separate message broker, no polling.
 
-**Storage.** Images are uploaded directly to MinIO via short-lived presigned URLs; the server only ever sees an object key, never the file bytes.
+**Storage.** Images are uploaded directly to MinIO via short-lived presigned URLs; the browser never streams the file through the app server. On confirm, the server copies the object from staging to its final key and reads its first bytes to check the magic number against the declared type before recording it.
 
 ## Project structure
 
@@ -109,10 +110,10 @@ src/
     events.ts         LISTEN/NOTIFY live-event bus
   db/
     schema.ts         Drizzle schema incl. RLS policies
-    seed.ts            demo data (this task)
+    seed.ts           demo data
     migrate.ts
   lib/                client-safe helpers shared across app + server
-tests/                bun test suite (runs against the real dev DB as superuser)
+tests/                bun test suite (runs against the separate alumni_test DB as superuser)
 docs/                 specs, design notes, sample roster CSV
 ```
 
