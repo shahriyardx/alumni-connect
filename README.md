@@ -92,23 +92,32 @@ bun run db:seed
 
 **Auth & verification.** better-auth handles sessions and password hashing. Sign-up requires proving membership of the university roster (student ID → salted hash, batch, department); a `pending_signup` row holds that proof until email OTP verification completes, at which point a database hook promotes it into the real `user` row. Universities with no roster loaded fall back to an admin-reviewed PENDING flow (see `demo.edu` in the seed data).
 
-**Roles.** `OWNER`, `ADMIN`, `MODERATOR`, `STAFF`, `STUDENT`, `ALUMNUS`. Students belong to a batch (number + graduation year) and become `ALUMNUS` automatically once that year has passed; staff roles are assigned by admins. Moderators/admins get a moderation queue (reports, suspensions) and admins additionally get roster CSV import and forum-wide stats.
+**Roles.** `OWNER`, `ADMIN`, `MODERATOR`, `STAFF`, `STUDENT`, `ALUMNUS`, one university each. `OWNER` is unique per university (settings, ownership transfer, admin role changes); `ADMIN` runs the workspace day to day; `MODERATOR` only gets the moderation queue; `STAFF` is faculty/staff joined by email invite (a "Faculty" badge on the feed, no admin powers unless also promoted). Students belong to a batch (number + graduation year) and become `ALUMNUS` automatically once that year has passed — either lazily on their next request or immediately for everyone in a batch when an admin edits its graduation year. `isMod(role)` = `MODERATOR|ADMIN|OWNER`, `isAdmin(role)` = `ADMIN|OWNER`.
+
+**Platform admin.** A separate, DB-free layer above universities: any verified account whose email is listed (comma-separated, case-insensitive) in the `PLATFORM_ADMIN_EMAILS` env var can open `/platform` to approve or reject university applications and create universities directly. It's not a role — the same account is still whatever role it holds inside its own university, if any.
+
+**Workspace.** `/workspace` is the management dashboard for a university's staff (`OWNER`/`ADMIN`/`MODERATOR`/`STAFF`); the public forum stays at `/feed`. Tabs are gated by role: Overview, Approvals and Batches & rosters need `ADMIN`+, Moderation needs `MODERATOR`+, Settings is `OWNER`-only. A university stays usable by its own staff while its application is still `PENDING` platform review — the one thing gated on approval is that new students can't sign up yet (the public sign-up picker only lists `ACTIVE` universities). A `REJECTED` university is blocked application-wide for everyone in it.
 
 **Live updates.** Mutations that matter for the feed (new post, new comment, new notification) call `pg_notify('events', …)` inside the same transaction, so the notification only fires on commit. A single server-side `LISTEN` fans events out over Server-Sent Events to connected clients — no separate message broker, no polling.
 
 **Storage.** Images are uploaded directly to MinIO via short-lived presigned URLs; the browser never streams the file through the app server. On confirm, the server copies the object from staging to its final key and reads its first bytes to check the magic number against the declared type before recording it.
+
+**Roster format.** Rosters are uploaded per batch as `.xlsx` or `.csv` with columns `student_id, department` or `student_id, department, name` (name optional; a sample is downloadable from Batches & rosters). Student IDs are never stored raw — only a salted hash (for matching at sign-up) and the last 4 characters (`studentIdHint`, shown to approvers). Re-uploading a roster for a batch moves an ID to that batch. If a batch has no roster loaded, students can still sign up — there's just no roster-match hint for the approver.
+
+**ID card privacy.** Every student sign-up requires a photo of their ID card. It's private: only `OWNER`/`ADMIN` of that university (and platform admins, for rep applications) can view it, via a signed-in-only route — never a public URL. It's deleted automatically 30 days after the approve/reject decision (checked lazily when the approvals list loads, no cron job). Rejecting a sign-up deletes the pending account and its card immediately.
 
 ## Project structure
 
 ```
 src/
   app/
-    (public)/        sign-in, sign-up, forgot-password, landing page
-    (app)/            feed, post view, search, bookmarks, notifications, settings, admin, mod
-    api/              auth, tRPC, file upload, SSE endpoints
-  components/         shared UI, plus admin/ and auth/ specific pieces
+    (public)/        sign-in, sign-up, register-university, invite accept, forgot-password, landing page
+    (app)/            feed, post view, search, bookmarks, notifications, settings, platform
+    (workspace)/      /workspace — the OWNER/ADMIN/MODERATOR/STAFF dashboard (see Workspace below)
+    api/              auth, tRPC, file upload, ID card, SSE endpoints
+  components/         shared UI, plus workspace/ and auth/ specific pieces
   server/
-    routers/          tRPC routers (post, comment, social, moderation, admin, …)
+    routers/          tRPC routers (post, comment, social, moderation, workspace, platform, invites, …)
     queries/          shared read queries (feed/post listing)
     auth.ts           better-auth config
     student-id.ts     roster hashing + role derivation

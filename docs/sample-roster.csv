@@ -1,11 +1,6 @@
-student_id,batch_year,department,graduated
-SR-2015-0101,2015,CSE,true
-SR-2016-0102,2016,EEE,true
-SR-2017-0103,2017,BBA,true
-SR-2018-0104,2018,CSE,true
-SR-2019-0105,2019,Civil,true
-SR-2020-0106,2020,English,true
-SR-2022-0107,2022,CSE,false
-SR-2023-0108,2023,EEE,false
-SR-2024-0109,2024,BBA,false
-SR-2025-0110,2025,Pharmacy,false
+student_id,department,name
+SR-0101,CSE,Rahim Uddin
+SR-0102,EEE,Karim Hossain
+SR-0103,BBA,Salma Begum
+SR-0104,CSE,Nusrat Jahan
+SR-0105,Civil,Tanvir Ahmed
