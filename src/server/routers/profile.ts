@@ -2,13 +2,13 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { attachment, comment, followUser, post, user } from "@/db/schema";
-import { memberProcedure, router } from "../trpc";
+import { isMod, memberProcedure, router } from "../trpc";
 
 export const profileRouter = router({
   get: memberProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const [u] = await ctx.db
+      const [row] = await ctx.db
         .select({
           id: user.id,
           name: user.name,
@@ -18,6 +18,8 @@ export const profileRouter = router({
           avatarKey: user.avatarKey,
           bio: user.bio,
           createdAt: user.createdAt,
+          status: user.status,
+          suspendedUntil: user.suspendedUntil,
         })
         .from(user)
         .where(
@@ -26,7 +28,9 @@ export const profileRouter = router({
             eq(user.universityId, ctx.me.universityId),
           ),
         );
-      if (!u) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+      // Account status is moderation info: only mods/admins get it.
+      const { status, suspendedUntil, ...u } = row;
 
       const [postCount] = await ctx.db
         .select({ c: sql<number>`count(*)` })
@@ -62,6 +66,7 @@ export const profileRouter = router({
         following: Number(following.c),
         isFollowing: !!isFollowingRow,
         isMe: input.id === ctx.me.id,
+        moderation: isMod(ctx.me.role) ? { status, suspendedUntil } : null,
       };
     }),
 

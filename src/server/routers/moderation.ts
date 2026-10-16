@@ -99,12 +99,20 @@ async function resolveTargetUserId(
 
 /** Nobody can act on themselves; a MODERATOR cannot suspend/ban a MODERATOR or ADMIN. */
 function assertCanAct(me: Me, target: { id: string; role: Role }) {
-  if (target.id === me.id) throw new TRPCError({ code: "FORBIDDEN" });
+  if (target.id === me.id) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You can't do this to your own account",
+    });
+  }
   if (
     me.role === "MODERATOR" &&
     (target.role === "MODERATOR" || target.role === "ADMIN")
   ) {
-    throw new TRPCError({ code: "FORBIDDEN" });
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Moderators can't act on moderators or admins",
+    });
   }
 }
 

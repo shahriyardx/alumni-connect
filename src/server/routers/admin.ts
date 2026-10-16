@@ -210,6 +210,7 @@ export const adminRouter = router({
           avatarKey: user.avatarKey,
           email: user.email,
           status: user.status,
+          suspendedUntil: user.suspendedUntil,
           createdAt: user.createdAt,
         })
         .from(user)

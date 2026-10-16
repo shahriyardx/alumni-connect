@@ -10,11 +10,14 @@ import { useDeferredValue, useState } from "react";
 import { ROLES, type Role } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
+import { useAccountStatusActions } from "../account-status-actions";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Chip } from "../ui/chip";
 import { EmptyState } from "../ui/empty-state";
+import { IconButton } from "../ui/icon-button";
+import { Menu, MenuContent } from "../ui/menu";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { TextField } from "../ui/text-field";
@@ -100,6 +103,9 @@ export function UsersPanel({ meId }: { meId: string }) {
                 <th className="px-3 pt-2 pb-1 font-medium">Member</th>
                 <th className="w-24 px-3 pt-2 pb-1 font-medium">Status</th>
                 <th className="w-52 px-3 pt-2 pb-1 font-medium">Role</th>
+                <th className="w-12 px-1 pt-2 pb-1">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -157,6 +163,9 @@ export function UsersPanel({ meId }: { meId: string }) {
                       }
                     />
                   </td>
+                  <td className="px-1 py-2 max-sm:p-0">
+                    <RowStatusMenu user={u} self={u.id === meId} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -174,5 +183,32 @@ export function UsersPanel({ meId }: { meId: string }) {
         </Button>
       )}
     </div>
+  );
+}
+
+function RowStatusMenu({
+  user,
+  self,
+}: {
+  user: Parameters<typeof useAccountStatusActions>[0];
+  self: boolean;
+}) {
+  const { items, dialogs } = useAccountStatusActions(user);
+  return (
+    <>
+      <Menu.Root>
+        <Menu.Trigger
+          disabled={self || items.length === 0}
+          render={
+            <IconButton
+              icon="more_vert"
+              label={`Account actions for ${user.name}`}
+            />
+          }
+        />
+        <MenuContent>{items}</MenuContent>
+      </Menu.Root>
+      {dialogs}
+    </>
   );
 }

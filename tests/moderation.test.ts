@@ -95,7 +95,7 @@ test("suspend and ban via report; role limits", async () => {
   });
   await expect(
     callerFor(mod.id).moderation.resolve({ reportId: r2.id, action: "ban" }),
-  ).rejects.toThrow(/FORBIDDEN/);
+  ).rejects.toThrow(/Moderators can't act on moderators or admins/);
 });
 
 test("admin: roster import, approve, roles, stats", async () => {
@@ -211,13 +211,13 @@ test("setUserStatus: a mod cannot act on themselves or ban another moderator", a
       userId: mod.id,
       status: "BANNED",
     }),
-  ).rejects.toThrow(/FORBIDDEN/);
+  ).rejects.toThrow(/You can't do this to your own account/);
   await expect(
     callerFor(mod.id).moderation.setUserStatus({
       userId: mod2.id,
       status: "BANNED",
     }),
-  ).rejects.toThrow(/FORBIDDEN/);
+  ).rejects.toThrow(/Moderators can't act on moderators or admins/);
 });
 
 test("setUserStatus: BANNED deletes the user's sessions", async () => {
@@ -386,4 +386,20 @@ test("resolve: suspend/ban rejects PENDING targets (use admin approval)", async 
     .from(user)
     .where(eq(user.id, pending.id));
   expect(row.status).toBe("PENDING");
+});
+
+test("profile.get exposes account status to moderators only", async () => {
+  await adminDb
+    .update(user)
+    .set({
+      status: "SUSPENDED",
+      suspendedUntil: new Date(Date.now() + 86_400_000),
+    })
+    .where(eq(user.id, spammer.id));
+  const asMod = await callerFor(mod.id).profile.get({ id: spammer.id });
+  expect(asMod.moderation?.status).toBe("SUSPENDED");
+  expect(asMod.moderation?.suspendedUntil).toBeInstanceOf(Date);
+  const asStudent = await callerFor(student.id).profile.get({ id: spammer.id });
+  expect(asStudent.moderation).toBeNull();
+  expect(asStudent).not.toHaveProperty("status");
 });

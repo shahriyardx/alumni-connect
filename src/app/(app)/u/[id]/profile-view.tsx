@@ -1,6 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useAccountStatusActions } from "@/components/account-status-actions";
 import { FeedList } from "@/components/feed-list";
 import { FollowButton } from "@/components/follow-button";
 import { ReportDialog } from "@/components/report-dialog";
@@ -15,7 +16,6 @@ import { useTRPC } from "@/lib/trpc";
 
 export function ProfileView({ id }: { id: string }) {
   const trpc = useTRPC();
-  const [reporting, setReporting] = useState(false);
   const profile = useQuery(trpc.profile.get.queryOptions({ id }));
 
   if (profile.isError)
@@ -56,27 +56,7 @@ export function ProfileView({ id }: { id: string }) {
                 Edit profile
               </ButtonLink>
             ) : (
-              <>
-                <FollowButton userId={u.id} following={u.isFollowing} />
-                <Menu.Root>
-                  <Menu.Trigger
-                    render={
-                      <IconButton icon="more_vert" label="Profile actions" />
-                    }
-                  />
-                  <MenuContent>
-                    <MenuItem icon="flag" onClick={() => setReporting(true)}>
-                      Report user
-                    </MenuItem>
-                  </MenuContent>
-                </Menu.Root>
-                <ReportDialog
-                  targetType="USER"
-                  targetId={u.id}
-                  open={reporting}
-                  onOpenChange={setReporting}
-                />
-              </>
+              <OtherUserActions u={u} />
             )}
           </div>
         </div>
@@ -113,5 +93,49 @@ export function ProfileView({ id }: { id: string }) {
         />
       </section>
     </div>
+  );
+}
+
+/** Follow + overflow menu (report; suspend/ban/restore for mods). */
+function OtherUserActions({
+  u,
+}: {
+  u: { id: string; name: string; isFollowing: boolean } & {
+    moderation: {
+      status: string;
+      suspendedUntil: Date | string | null;
+    } | null;
+  };
+}) {
+  const [reporting, setReporting] = useState(false);
+  // Hook lives out here, not in the menu: menu items unmount on close and
+  // would take their dialogs with them.
+  const mod = useAccountStatusActions({
+    ...u,
+    status: u.moderation?.status ?? "PENDING",
+    suspendedUntil: u.moderation?.suspendedUntil,
+  });
+  return (
+    <>
+      <FollowButton userId={u.id} following={u.isFollowing} />
+      <Menu.Root>
+        <Menu.Trigger
+          render={<IconButton icon="more_vert" label="Profile actions" />}
+        />
+        <MenuContent>
+          <MenuItem icon="flag" onClick={() => setReporting(true)}>
+            Report user
+          </MenuItem>
+          {u.moderation && mod.items}
+        </MenuContent>
+      </Menu.Root>
+      <ReportDialog
+        targetType="USER"
+        targetId={u.id}
+        open={reporting}
+        onOpenChange={setReporting}
+      />
+      {mod.dialogs}
+    </>
   );
 }
