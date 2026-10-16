@@ -179,6 +179,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isActive = (d: Dest) =>
     pathname === d.match || pathname.startsWith(d.match.replace(/\/?$/, "/"));
 
+  // Accounts waiting for approval get no app navigation, only the status page.
+  if (me?.status === "PENDING")
+    return (
+      <div className="min-h-dvh bg-background">
+        <header className="flex h-16 items-center px-4 sm:px-8">
+          <Logo />
+          <div className="ml-auto">
+            <UserMenu />
+          </div>
+        </header>
+        <main className="mx-auto w-full max-w-3xl px-4">
+          <StatusGate>{children}</StatusGate>
+        </main>
+      </div>
+    );
+
   return (
     <div className="min-h-dvh bg-background">
       {/* Sidebar (≥ 840px) */}
