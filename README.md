@@ -51,7 +51,7 @@ All seeded accounts use the password **`password123`**. Every account except `ne
 | `mim.student@nub.ac.bd` … `lamia.student@nub.ac.bd` | STUDENT | NUB | 6 current students, batches 46–49 (graduating 2026–2029) |
 | `new.student@nub.ac.bd` | STUDENT | NUB | account created at seed time — shows the "new accounts can post links after 3 days" rule |
 | `pending1@nub.ac.bd`, `pending2@nub.ac.bd` | STUDENT / ALUMNUS | NUB | awaiting approval (no ID card image) |
-| `admin@demo.edu` | OWNER | Demo Tech University | second tenant, no roster loaded — shows the PENDING sign-up path |
+| `admin@demo.edu` | OWNER | Demo Tech University | second tenant, no roster loaded (every sign-up waits for approval regardless; a roster is just a hint) |
 | `student@demo.edu` | STUDENT | Demo Tech University | |
 | `rep@eti.edu` | OWNER (PENDING) | Eastern Tech Institute | pending university application |
 
@@ -86,17 +86,21 @@ bun run db:migrate
 bun run db:seed
 ```
 
+### Deployment note
+
+Every `ip:` rate limit (register, invite lookup/accept, confirmIdCard, startSignup) trusts the right-most `X-Forwarded-For` hop, which is only safe behind a real reverse proxy that appends it — production must sit behind one, or those limits can be bypassed by sending an arbitrary `X-Forwarded-For`.
+
 ## Architecture
 
 **Tenancy.** Every tenant-scoped table (`post`, `comment`, `vote`, `roster_entry`, …) carries a `university_id` column and a Postgres RLS policy that compares it against `current_setting('app.university_id')`. The app sets that setting per-request/transaction (`withTenant`, see `src/db/index.ts`) using the signed-in user's university — a query simply cannot see another university's rows, even if application code has a bug. Composite foreign keys (e.g. `post(author_id, university_id) → user(id, university_id)`) stop a row from ever referencing a parent in a different tenant. Seeds and tests connect as the Postgres superuser (`DATABASE_ADMIN_URL`), which bypasses RLS, to arrange cross-tenant fixtures.
 
-**Auth & verification.** better-auth handles sessions and password hashing. Sign-up requires proving membership of the university roster (student ID → salted hash, batch, department); a `pending_signup` row holds that proof until email OTP verification completes, at which point a database hook promotes it into the real `user` row. Universities with no roster loaded fall back to an admin-reviewed PENDING flow (see `demo.edu` in the seed data).
+**Auth & verification.** better-auth handles sessions and password hashing. Every student/alumnus sign-up submits a student ID (→ salted hash), batch, department and an ID card photo into a `pending_signup` row; a database hook promotes it into the real `user` row at sign-up itself — before email OTP verification, not after. Every such account lands `PENDING` and waits for an admin to approve or reject it; a roster match is shown to the approver as a hint, not required (see `demo.edu`, which has no roster loaded at all).
 
 **Roles.** `OWNER`, `ADMIN`, `MODERATOR`, `STAFF`, `STUDENT`, `ALUMNUS`, one university each. `OWNER` is unique per university (settings, ownership transfer, admin role changes); `ADMIN` runs the workspace day to day; `MODERATOR` only gets the moderation queue; `STAFF` is faculty/staff joined by email invite (a "Faculty" badge on the feed, no admin powers unless also promoted). Students belong to a batch (number + graduation year) and become `ALUMNUS` automatically once that year has passed — either lazily on their next request or immediately for everyone in a batch when an admin edits its graduation year. `isMod(role)` = `MODERATOR|ADMIN|OWNER`, `isAdmin(role)` = `ADMIN|OWNER`.
 
 **Platform admin.** A separate, DB-free layer above universities: any verified account whose email is listed (comma-separated, case-insensitive) in the `PLATFORM_ADMIN_EMAILS` env var can open `/platform` to approve or reject university applications and create universities directly. It's not a role — the same account is still whatever role it holds inside its own university, if any.
 
-**Workspace.** `/workspace` is the management dashboard for a university's staff (`OWNER`/`ADMIN`/`MODERATOR`/`STAFF`); the public forum stays at `/feed`. Tabs are gated by role: Overview, Approvals and Batches & rosters need `ADMIN`+, Moderation needs `MODERATOR`+, Settings is `OWNER`-only. A university stays usable by its own staff while its application is still `PENDING` platform review — the one thing gated on approval is that new students can't sign up yet (the public sign-up picker only lists `ACTIVE` universities). A `REJECTED` university is blocked application-wide for everyone in it.
+**Workspace.** `/workspace` is the management dashboard for a university's `OWNER`/`ADMIN`/`MODERATOR` (`isMod`); `STAFF` has no workspace access — just a "Faculty" badge on the feed. The public forum stays at `/feed`. Tabs are gated by role: Overview, Approvals and Batches & rosters need `ADMIN`+, Moderation needs `MODERATOR`+, Settings is `OWNER`-only. A university stays usable by its own staff while its application is still `PENDING` platform review — the one thing gated on approval is that new students can't sign up yet (the public sign-up picker only lists `ACTIVE` universities). A `REJECTED` university is blocked application-wide for everyone in it.
 
 **Live updates.** Mutations that matter for the feed (new post, new comment, new notification) call `pg_notify('events', …)` inside the same transaction, so the notification only fires on commit. A single server-side `LISTEN` fans events out over Server-Sent Events to connected clients — no separate message broker, no polling.
 
@@ -113,7 +117,7 @@ src/
   app/
     (public)/        sign-in, sign-up, register-university, invite accept, forgot-password, landing page
     (app)/            feed, post view, search, bookmarks, notifications, settings, platform
-    (workspace)/      /workspace — the OWNER/ADMIN/MODERATOR/STAFF dashboard (see Workspace below)
+    (workspace)/      /workspace — the OWNER/ADMIN/MODERATOR dashboard (see Workspace below)
     api/              auth, tRPC, file upload, ID card, SSE endpoints
   components/         shared UI, plus workspace/ and auth/ specific pieces
   server/
