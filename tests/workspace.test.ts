@@ -118,6 +118,28 @@ describe("approvals", () => {
     expect((await row(u.id)).idCardKey).toBeNull();
   });
 
+  test("M3: a never-verified sign-up's account and card are purged after 30 days", async () => {
+    const staleCard = await putCard();
+    const stale = await makeUser(uniId, {
+      status: "PENDING",
+      emailVerified: false,
+      idCardKey: staleCard,
+      createdAt: new Date(Date.now() - 31 * 86_400_000),
+    });
+    const freshCard = await putCard();
+    const fresh = await makeUser(uniId, {
+      status: "PENDING",
+      emailVerified: false,
+      idCardKey: freshCard,
+      createdAt: new Date(Date.now() - 1 * 86_400_000),
+    });
+    await callerFor(admin.id).workspace.approvals();
+    expect(await row(stale.id)).toBeUndefined();
+    expect(await stat(staleCard)).toBeNull();
+    expect((await row(fresh.id)).idCardKey).toBe(freshCard);
+    expect(await stat(freshCard)).not.toBeNull();
+  });
+
   test("moderators and members can't reach admin procedures", async () => {
     for (const id of [mod.id, student.id]) {
       const c = callerFor(id);
@@ -175,8 +197,13 @@ describe("batches", () => {
       graduationYear: thisYear - 1,
     });
     expect((await row(staff.id)).role).toBe("STAFF");
+    // M2: promotion is one-way, like everywhere else — editing the batch's
+    // year back into the future never demotes an already-ALUMNUS member.
     await a.workspace.saveBatch({ id, number: 42, graduationYear: thisYear });
-    expect((await row(s.id)).role).toBe("STUDENT");
+    expect(await row(s.id)).toMatchObject({
+      role: "ALUMNUS",
+      graduationYear: thisYear,
+    });
 
     await expect(a.workspace.deleteBatch({ id })).rejects.toThrow(
       /has members/,

@@ -22,6 +22,7 @@ import {
   ownerProcedure,
   router,
 } from "../trpc";
+import { clearStaleUnverified } from "./auth";
 
 const CARD_TTL_MS = 30 * 86_400_000;
 
@@ -40,7 +41,12 @@ const pendingStudents = (universityId: string): SQL =>
     inArray(user.role, ["STUDENT", "ALUMNUS"]),
   ) as SQL;
 
-/** STUDENT ↔ ALUMNUS for everyone in a batch; staff roles are never touched. */
+/**
+ * STUDENT -> ALUMNUS for everyone in a batch whose new graduation year has
+ * passed; staff roles are never touched. One-way, like every other
+ * promotion: an already-ALUMNUS member never reverts to STUDENT, even if the
+ * batch's year is edited back into the future.
+ */
 async function syncBatchMembers(
   tx: Tx,
   universityId: string,
@@ -52,7 +58,7 @@ async function syncBatchMembers(
     .set({
       batchNumber: to.number,
       graduationYear: to.graduationYear,
-      role: sql`case when ${to.graduationYear} < extract(year from now()) then 'ALUMNUS' else 'STUDENT' end`,
+      role: sql`case when ${user.role} = 'ALUMNUS' or ${to.graduationYear} < extract(year from now()) then 'ALUMNUS' else 'STUDENT' end`,
     })
     .where(
       and(
@@ -235,6 +241,20 @@ export const workspaceRouter = router({
             ),
           );
     }
+    // Same lazy purge, for sign-ups that never got past OTP at all: they
+    // never enter this list (pendingStudents requires emailVerified), so
+    // the purge above never sees their card either. Treat "never verified
+    // in 30 days" the same as "decided 30 days ago".
+    await removeAll(
+      await clearStaleUnverified(
+        ctx.db,
+        and(
+          eq(user.universityId, uni),
+          inArray(user.role, ["STUDENT", "ALUMNUS"]),
+          lt(user.createdAt, new Date(Date.now() - CARD_TTL_MS)),
+        ) as SQL,
+      ),
+    );
     return ctx.db
       .select({
         id: user.id,
