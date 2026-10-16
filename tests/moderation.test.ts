@@ -134,6 +134,16 @@ test("admin: roles, stats, audit", async () => {
   );
 });
 
+test("M1: setRole refuses a PENDING account (it would otherwise become invisible to Approvals)", async () => {
+  const pending = await makeUser(uniId, { status: "PENDING" });
+  await expect(
+    callerFor(admin.id).admin.setRole({
+      userId: pending.id,
+      role: "MODERATOR",
+    }),
+  ).rejects.toThrow(/pending/i);
+});
+
 test("setUserStatus rejects PENDING targets (no mod bypass of admin approval)", async () => {
   const pending = await makeUser(uniId, { status: "PENDING" });
   await expect(

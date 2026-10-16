@@ -166,7 +166,7 @@ export const adminRouter = router({
       if (input.userId === ctx.me.id)
         throw new TRPCError({ code: "BAD_REQUEST" });
       const [target] = await ctx.db
-        .select({ id: user.id, role: user.role })
+        .select({ id: user.id, role: user.role, status: user.status })
         .from(user)
         .where(
           and(
@@ -175,6 +175,13 @@ export const adminRouter = router({
           ),
         );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
+      // A PENDING account is invisible to Approvals once it has any staff
+      // role (pendingStudents only lists STUDENT/ALUMNUS) — decide it first.
+      if (target.status === "PENDING")
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Approve or reject the pending account first",
+        });
       // Ownership only moves via workspace.transferOwnership.
       if (target.role === "OWNER")
         throw new TRPCError({
