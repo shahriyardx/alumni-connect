@@ -103,3 +103,9 @@
 - [ ] Fresh `docker compose down -v && bun run db:up && bun run db:migrate && bun run db:seed`; full test/lint/tsc/build.
 - [ ] Headless walkthrough on port 3200: rep applies → platform admin approves → owner signs in → creates batch → uploads xlsx roster → invites a faculty member → faculty accepts → student signs up with ID card → owner approves (sees card + roster ✓) → student posts; batch graduation year edited → student becomes Alumnus; DTU owner sees nothing of NUB; phone width + dark mode on new pages.
 - [ ] Fix found bugs (test first for logic); README updated (roles, platform admin env, workspace, roster format, ID card privacy).
+
+### Task W4 addendum (user feedback 2026-10-17): the workspace is its own dashboard
+- `/workspace` gets its **own layout/shell**, not the student app shell: a workspace sidebar (university logo + name at top, then Overview, Approvals (badge count), Batches & rosters, Members & invites, Moderation (badge count), Audit log, Settings; role-gated), a compact top bar (university switch-free; "View feed" button that opens `/feed`; account menu), and wide content area (max-w-6xl) with bento stat tiles on Overview.
+- Use route group `src/app/(workspace)/workspace/...` with its own `layout.tsx`; the student `AppShell` must not wrap it. Remove "Admin" and "Moderation" from the student sidebar/bottom bar/user menu; staff roles (OWNER/ADMIN/MODERATOR) instead get one "Workspace" entry in the student shell, and the workspace shell has "View feed".
+- After sign-in, OWNER/ADMIN land on `/workspace` (not `/feed`); MODERATOR/STAFF/STUDENT/ALUMNUS land on `/feed`.
+- Each workspace section is a real page (`/workspace`, `/workspace/approvals`, `/workspace/batches`, `/workspace/members`, `/workspace/moderation`, `/workspace/audit`, `/workspace/settings`) rather than tabs, so the sidebar drives navigation.
