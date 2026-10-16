@@ -440,7 +440,15 @@ export function SignUpWizard() {
               }}
               error={errors.form}
             />
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col items-start gap-2">
+              <Button
+                className="w-full"
+                type="submit"
+                loading={busy}
+                disabled={!isOtpComplete(otp)}
+              >
+                Verify
+              </Button>
               <ResendButton
                 onResend={() =>
                   authClient.emailOtp.sendVerificationOtp({
@@ -449,13 +457,6 @@ export function SignUpWizard() {
                   })
                 }
               />
-              <Button
-                type="submit"
-                loading={busy}
-                disabled={!isOtpComplete(otp)}
-              >
-                Verify
-              </Button>
             </div>
           </form>
         )}

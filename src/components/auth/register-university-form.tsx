@@ -171,7 +171,15 @@ export function RegisterUniversityForm() {
               }}
               error={error}
             />
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col items-start gap-2">
+              <Button
+                className="w-full"
+                type="submit"
+                loading={busy}
+                disabled={!isOtpComplete(otp)}
+              >
+                Verify
+              </Button>
               <ResendButton
                 onResend={() =>
                   authClient.emailOtp.sendVerificationOtp({
@@ -180,13 +188,6 @@ export function RegisterUniversityForm() {
                   })
                 }
               />
-              <Button
-                type="submit"
-                loading={busy}
-                disabled={!isOtpComplete(otp)}
-              >
-                Verify
-              </Button>
             </div>
           </form>
         )}

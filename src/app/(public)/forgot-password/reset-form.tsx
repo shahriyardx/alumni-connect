@@ -77,15 +77,16 @@ export function ResetForm() {
                 {error}
               </p>
             )}
-            <div className="flex items-center justify-between gap-2">
-              <ResendButton onResend={request} />
+            <div className="flex flex-col items-start gap-2">
               <Button
+                className="w-full"
                 type="submit"
                 loading={busy}
                 disabled={!isOtpComplete(otp)}
               >
                 Reset password
               </Button>
+              <ResendButton onResend={request} />
             </div>
           </form>
         ) : (

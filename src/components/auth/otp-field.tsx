@@ -33,7 +33,7 @@ export function OtpField({
     <div className="flex flex-col gap-2">
       <fieldset
         aria-label="Verification code"
-        className="flex justify-center gap-1.5 sm:gap-2"
+        className="grid grid-cols-6 gap-2"
       >
         {Array.from({ length: LEN }, (_, i) => (
           <input
@@ -73,7 +73,7 @@ export function OtpField({
               else if (e.key === "ArrowRight") focus(i + 1);
             }}
             className={cn(
-              "h-12 w-10 rounded-xl border border-transparent bg-surface-high text-center text-xl font-medium tabular-nums outline-none sm:w-11",
+              "h-14 w-full min-w-0 rounded-2xl border border-transparent bg-surface-high text-center text-xl font-medium tabular-nums outline-none",
               "transition-[box-shadow,border-color] duration-150 focus:border-ring focus:ring-3 focus:ring-ring/50",
               error && "border-destructive focus:ring-destructive/20",
             )}
@@ -81,12 +81,12 @@ export function OtpField({
         ))}
       </fieldset>
       {error && (
-        <p role="alert" className="text-center text-xs text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}
       {process.env.NODE_ENV !== "production" && (
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Dev mode: the code is printed in the server terminal.
         </p>
       )}
@@ -110,6 +110,7 @@ export function ResendButton({ onResend }: { onResend(): Promise<unknown> }) {
       variant="ghost"
       size="sm"
       icon="refresh"
+      className="-ml-3"
       loading={busy}
       disabled={left > 0}
       onClick={async () => {

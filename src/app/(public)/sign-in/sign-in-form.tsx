@@ -78,15 +78,16 @@ export function SignInForm() {
         <div>
           <form onSubmit={verify} className="flex flex-col gap-6">
             <OtpField value={otp} onChange={setOtp} error={error} />
-            <div className="flex items-center justify-between gap-2">
-              <ResendButton onResend={sendCode} />
+            <div className="flex flex-col items-start gap-2">
               <Button
+                className="w-full"
                 type="submit"
                 loading={busy}
                 disabled={!isOtpComplete(otp)}
               >
                 Verify
               </Button>
+              <ResendButton onResend={sendCode} />
             </div>
           </form>
         </div>
