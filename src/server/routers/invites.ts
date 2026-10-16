@@ -5,6 +5,7 @@ import { db, type Tx } from "@/db";
 import { invite, university, user } from "@/db/schema";
 import { env } from "@/env";
 import {
+  graceCutoff,
   hashInviteToken,
   INVITE_TTL_MS,
   newInviteToken,
@@ -37,8 +38,6 @@ const ROLE_WORD: Record<(typeof INVITABLE_ROLES)[number], string> = {
 };
 
 /** A verified account always blocks; a fresh (<15min) unverified one is still mid-signup. */
-const GRACE_MS = 15 * 60_000;
-const graceCutoff = () => new Date(Date.now() - GRACE_MS);
 const blocksSignup = (targetEmail: string) =>
   and(
     eq(user.email, targetEmail),
@@ -105,6 +104,23 @@ export const invitesRouter = router({
           message: "Only the owner can invite admins",
         });
       const uni = ctx.me.universityId;
+
+      // A PENDING university is already fully usable by its staff (W2b), so
+      // without this an unreviewed OWNER could spam the platform mailer.
+      // Keyed per university and per inviter so one bad actor can't drain
+      // either budget on behalf of the other.
+      if (
+        (await overLimit(`app:invite-create:uni:${uni}`, 20, 60 * 60_000)) ||
+        (await overLimit(
+          `app:invite-create:actor:${ctx.me.id}`,
+          20,
+          60 * 60_000,
+        ))
+      )
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many invites, try again later",
+        });
 
       const [blocking] = await ctx.db
         .select({ id: user.id })

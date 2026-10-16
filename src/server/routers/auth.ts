@@ -23,6 +23,7 @@ import {
   university,
   user,
 } from "@/db/schema";
+import { graceCutoff } from "../invite-token";
 import {
   ALLOWED_MIME,
   type AllowedMime,
@@ -342,14 +343,13 @@ export const authRouter = router({
 
       // Same squatting rules as startSignup: a verified or fresh account
       // blocks; a stale unverified one is cleared.
-      const graceCutoff = new Date(Date.now() - 15 * 60_000);
       const [dup] = await db
         .select({ id: user.id })
         .from(user)
         .where(
           and(
             eq(user.email, input.email),
-            or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff)),
+            or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff())),
           ),
         );
       if (dup)
@@ -591,7 +591,7 @@ export const authRouter = router({
         // unverified account older than that grace period is fair game: it
         // can't log in, so nothing of value is lost, and it gets swept away
         // once the real owner's signup actually succeeds.
-        const unverifiedGraceCutoff = new Date(Date.now() - 15 * 60_000);
+        const unverifiedGraceCutoff = graceCutoff();
         const [dup] = await tx
           .select({ id: user.id })
           .from(user)
