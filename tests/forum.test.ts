@@ -286,16 +286,23 @@ describe("comments", () => {
   });
 });
 
-test("link gate catches protocol-relative markdown links and mailto:", () => {
+test("link gate matches what the markdown renderer turns into links", () => {
   const fresh = { createdAt: new Date() } as Me;
   for (const t of [
     "see [here](//evil.example)",
     "mail mailto:x@y.z",
-    "MAILTO:x@y.z",
+    "ref style [click][1]\n\n[1]: //evil.example",
+    "autolink <https://x.y>",
+    "bare www.x.y works too",
+    "![img](//evil.example/a.png)",
+    "entity [x](&#104;ttps://evil.example)",
   ]) {
     expect(() => assertCanPostLinks(fresh, t)).toThrow(/links/);
   }
-  expect(() =>
-    assertCanPostLinks(fresh, "a/b // comment, no link"),
-  ).not.toThrow();
+  for (const t of [
+    "a/b // comment, no link",
+    "plain question about CSE 101?",
+  ]) {
+    expect(() => assertCanPostLinks(fresh, t)).not.toThrow();
+  }
 });
