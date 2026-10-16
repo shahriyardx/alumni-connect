@@ -161,25 +161,29 @@ function InviteDialog({ meRole }: { meRole: Role }) {
             <TextField
               label="Email"
               type="email"
+              placeholder="name@university.edu"
               required
               {...field("email")}
             />
-            <Select
-              label="Role"
-              value={form.role}
-              onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
-              items={inviteRoleItems(meRole)}
-            />
-            <TextField
-              label="Department"
-              required
-              minLength={1}
-              maxLength={80}
-              {...field("department")}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select
+                label="Role"
+                value={form.role}
+                onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
+                items={inviteRoleItems(meRole)}
+              />
+              <TextField
+                label="Department"
+                placeholder="CSE"
+                required
+                minLength={1}
+                maxLength={80}
+                {...field("department")}
+              />
+            </div>
             <TextField
               label="Title"
-              description="Optional"
+              placeholder="Lecturer (optional)"
               maxLength={80}
               {...field("title")}
             />

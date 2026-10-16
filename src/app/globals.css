@@ -124,7 +124,11 @@
   }
   /* Dialogs and menus already sit on a tinted surface in dark mode. */
   .bg-surface-high:where(.bg-popover *) {
-    background-color: color-mix(in srgb, var(--surface-tint) 12%, var(--popover));
+    background-color: color-mix(
+      in srgb,
+      var(--surface-tint) 12%,
+      var(--popover)
+    );
   }
 }
 
