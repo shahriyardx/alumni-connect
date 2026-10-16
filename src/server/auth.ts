@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { betterAuth } from "better-auth";
+import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { emailOTP } from "better-auth/plugins/email-otp";
@@ -8,6 +8,7 @@ import { db, withTenant } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/env";
 import { clientIp } from "./client-ip";
+import { graceCutoff } from "./invite-token";
 import { sendMail } from "./mail";
 import { insertUniversity } from "./university";
 
@@ -26,7 +27,29 @@ export const auth = betterAuth({
     requireEmailVerification: true,
     minPasswordLength: 8,
   },
-  emailVerification: { autoSignInAfterVerification: true },
+  emailVerification: {
+    autoSignInAfterVerification: true,
+    // A STAFF/ADMIN/MODERATOR/OWNER role is granted by an invite or
+    // application at sign-up, before OTP (see the create.before hook
+    // below) — nothing re-checks that grant at verification time. Once such
+    // an account has sat unverified past the same grace window every other
+    // "still mid-signup?" check in this app uses, treat it as abandoned: its
+    // invite may since have been revoked, or simply outlived its own TTL,
+    // and verifying would hand out the role regardless. (STUDENT/ALUMNUS
+    // accounts carry no such grant, so they're unaffected.)
+    beforeEmailVerification: async (u) => {
+      const row = u as unknown as { role: schema.Role; createdAt: Date };
+      if (
+        row.role !== "STUDENT" &&
+        row.role !== "ALUMNUS" &&
+        row.createdAt < graceCutoff()
+      ) {
+        throw new APIError("FORBIDDEN", {
+          message: "This invitation has expired, ask for a new one",
+        });
+      }
+    },
+  },
   user: {
     additionalFields: {
       universityId: field("string"),
@@ -116,8 +139,13 @@ export const auth = betterAuth({
                   email: schema.invite.email,
                   acceptedAt: schema.invite.acceptedAt,
                   expiresAt: schema.invite.expiresAt,
+                  universityStatus: schema.university.status,
                 })
                 .from(schema.invite)
+                .innerJoin(
+                  schema.university,
+                  eq(schema.university.id, schema.invite.universityId),
+                )
                 .where(eq(schema.invite.id, p.inviteId as string)),
             );
             if (
@@ -125,7 +153,10 @@ export const auth = betterAuth({
               inv.role !== p.role ||
               inv.email !== email ||
               inv.acceptedAt ||
-              inv.expiresAt <= new Date()
+              inv.expiresAt <= new Date() ||
+              // A university rejected between accept() and this sign-up
+              // (e.g. its application was abandoned) stays blocked.
+              inv.universityStatus === "REJECTED"
             )
               return false;
           }

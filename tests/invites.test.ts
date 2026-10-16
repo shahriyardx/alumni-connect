@@ -1,7 +1,13 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { invite, pendingSignup, user } from "@/db/schema";
+import {
+  invite,
+  pendingSignup,
+  rateLimit,
+  university,
+  user,
+} from "@/db/schema";
 import { auth } from "@/server/auth";
 import {
   adminDb,
@@ -43,6 +49,26 @@ const inviteByEmail = (email: string) =>
 
 const signUp = (email: string, name = "New Member") =>
   auth.api.signUpEmail({ body: { name, email, password: "password123" } });
+
+/**
+ * There's no SMTP in tests (see src/server/mail.ts), so the OTP is printed
+ * to the console instead of sent — capture it the same way a developer
+ * reads it in dev.
+ */
+async function signUpAndCaptureOtp(email: string, name: string) {
+  const logs: string[] = [];
+  const logSpy = spyOn(console, "log").mockImplementation((msg?: unknown) => {
+    logs.push(String(msg));
+  });
+  try {
+    await signUp(email, name);
+  } finally {
+    logSpy.mockRestore();
+  }
+  const otp = logs.join("\n").match(/Alumni Connect code: (\d+)/)?.[1];
+  if (!otp) throw new Error("OTP was not printed to the console");
+  return otp;
+}
 
 describe("invites.create", () => {
   test("admin creates a MODERATOR invite; a dup open invite is replaced, not stacked", async () => {
@@ -122,6 +148,57 @@ describe("invites.create", () => {
         department: "CSE",
       }),
     ).rejects.toThrow(/already has an account/);
+  });
+});
+
+describe("invites.create rate limit (I3: a PENDING university could otherwise spam invites)", () => {
+  test("a university at its hourly cap is blocked; a different university is unaffected", async () => {
+    await adminDb.insert(rateLimit).values({
+      id: `app:invite-create:uni:${uniId}`,
+      key: `app:invite-create:uni:${uniId}`,
+      count: 20,
+      lastRequest: Date.now(),
+    });
+    await expect(
+      callerFor(admin.id).invites.create({
+        email: "blocked@x.edu",
+        role: "STAFF",
+        department: "CSE",
+      }),
+    ).rejects.toThrow(/too many/i);
+
+    const otherUni = (await makeUniversity()).id;
+    const otherAdmin = await makeUser(otherUni, { role: "ADMIN" });
+    const r = await callerFor(otherAdmin.id).invites.create({
+      email: "fine@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    expect(r.inviteUrl).toBeTruthy();
+  });
+
+  test("an inviter at their own hourly cap is blocked even under the university cap", async () => {
+    await adminDb.insert(rateLimit).values({
+      id: `app:invite-create:actor:${admin.id}`,
+      key: `app:invite-create:actor:${admin.id}`,
+      count: 20,
+      lastRequest: Date.now(),
+    });
+    await expect(
+      callerFor(admin.id).invites.create({
+        email: "blocked2@x.edu",
+        role: "STAFF",
+        department: "CSE",
+      }),
+    ).rejects.toThrow(/too many/i);
+
+    // A different inviter in the same university still has their own budget.
+    const r = await callerFor(owner.id).invites.create({
+      email: "fine2@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    expect(r.inviteUrl).toBeTruthy();
   });
 });
 
@@ -367,6 +444,22 @@ describe("the sign-up hook's own invite guards (not just invites.* NOT_FOUND)", 
     expect(await userByEmail("expgap@x.edu")).toBeUndefined();
   });
 
+  test("M5: a university rejected between accept() and sign-up refuses the hook", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "rejecteduni@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "X" });
+    await adminDb
+      .update(university)
+      .set({ status: "REJECTED" })
+      .where(eq(university.id, uniId));
+    await expect(signUp("rejecteduni@x.edu", "X")).rejects.toThrow();
+    expect(await userByEmail("rejecteduni@x.edu")).toBeUndefined();
+  });
+
   test("a role mismatch between the pending row and the invite is refused", async () => {
     const r = await callerFor(admin.id).invites.create({
       email: "rolemismatch@x.edu",
@@ -443,5 +536,47 @@ describe("the sign-up hook's own invite guards (not just invites.* NOT_FOUND)", 
         .from(user)
         .where(eq(user.email, "abandoned@x.edu")),
     ).toHaveLength(1);
+  });
+
+  test("I1: a staff account that never verified past the grace window can't complete email verification", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "stale-verify@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "Stale Person" });
+    const otp = await signUpAndCaptureOtp("stale-verify@x.edu", "Stale Person");
+    expect((await userByEmail("stale-verify@x.edu")).role).toBe("STAFF");
+
+    // Abandoned: well past the 15-minute grace window, whether or not
+    // anyone ever revoked the (already-consumed) invite.
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(user.email, "stale-verify@x.edu"));
+
+    await expect(
+      auth.api.verifyEmailOTP({
+        body: { email: "stale-verify@x.edu", otp },
+      }),
+    ).rejects.toThrow();
+    expect((await userByEmail("stale-verify@x.edu")).emailVerified).toBe(false);
+  });
+
+  test("I1: a fresh staff account can still verify within the grace window", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "fresh-verify@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "Fresh Person" });
+    const otp = await signUpAndCaptureOtp("fresh-verify@x.edu", "Fresh Person");
+
+    await auth.api.verifyEmailOTP({
+      body: { email: "fresh-verify@x.edu", otp },
+    });
+    expect((await userByEmail("fresh-verify@x.edu")).emailVerified).toBe(true);
   });
 });
