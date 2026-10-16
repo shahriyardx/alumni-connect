@@ -8,6 +8,7 @@ import { ImageUploader } from "./image-uploader";
 import { Markdown } from "./markdown";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
+import { EmptyState } from "./ui/empty-state";
 import { Icon } from "./ui/icon";
 import { Spinner } from "./ui/spinner";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "./ui/tabs";
@@ -37,6 +38,14 @@ export function Composer({ postId }: { postId?: string }) {
         <div className="grid place-items-center py-24">
           <Spinner />
         </div>
+      );
+    if (!existing.data.canEdit)
+      return (
+        <EmptyState
+          icon="lock"
+          title="You can't edit this post"
+          body="Only the author or a moderator can edit it."
+        />
       );
   }
   return <ComposerForm initial={existing.data} />;
