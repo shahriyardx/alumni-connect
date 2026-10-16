@@ -101,10 +101,16 @@ export function UniversityPendingBanner() {
   const { me } = useMe();
   if (me?.universityStatus !== "PENDING") return null;
   return (
-    <div className="flex items-center gap-2.5 rounded-2xl bg-tonal px-4 py-3 text-sm text-tonal-fg">
-      <Icon name="hourglass_top" size={18} />
-      Under review — students can't find your university yet.
-    </div>
+    <p className="mb-6 inline-flex items-center gap-2 rounded-full bg-amber-500/12 py-1.5 pr-3.5 pl-3 text-xs font-medium text-amber-700 dark:text-amber-300">
+      <span className="relative flex size-2">
+        <span className="absolute inset-0 animate-ping rounded-full bg-amber-500 opacity-60 motion-reduce:hidden" />
+        <span className="relative size-2 rounded-full bg-amber-500" />
+      </span>
+      Under review
+      <span className="text-amber-700/60 dark:text-amber-300/60">
+        · hidden from students until approved
+      </span>
+    </p>
   );
 }
 
