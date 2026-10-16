@@ -1,5 +1,12 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { callerFor, makeUniversity, makeUser, resetDb } from "./helpers";
+import { rosterEntry } from "@/db/schema";
+import {
+  adminDb,
+  callerFor,
+  makeUniversity,
+  makeUser,
+  resetDb,
+} from "./helpers";
 
 let asA: ReturnType<typeof callerFor>;
 let adminA: ReturnType<typeof callerFor>;
@@ -22,6 +29,27 @@ beforeAll(async () => {
   });
   const c = await asB.comment.create({ postId: p.id, body: "B comment" });
   Object.assign(bIds, { userId: ub.id, postId: p.id, commentId: c.id });
+  // More B-only data for the list/count endpoints below.
+  await asB.social.bookmark({ postId: p.id, on: true });
+  await asB.social.followTag({ tag: "secret", on: true });
+  const asB2 = callerFor((await makeUser(b.id, { createdAt: old })).id);
+  await asB2.comment.create({ postId: p.id, body: "notify B author" });
+  await asB2.moderation.report({
+    targetType: "POST",
+    targetId: p.id,
+    reason: "B-only report",
+  });
+  await makeUser(b.id, { status: "PENDING" });
+  await adminDb.insert(rosterEntry).values({
+    universityId: b.id,
+    studentIdHash: "b-roster-hash",
+    batchYear: 2020,
+    department: "CSE",
+    graduated: true,
+  });
+  // Positive control: the B data really exists for B.
+  expect(await asB.notification.unreadCount()).toBeGreaterThan(0);
+  expect((await asB.social.bookmarks({})).items).toHaveLength(1);
 });
 
 describe("cross-tenant reads are impossible", () => {
@@ -99,6 +127,31 @@ describe("cross-tenant reads are impossible", () => {
     expect((await adminA.admin.users({})).items.map((u) => u.id)).not.toContain(
       bIds.userId,
     ));
+  test("social.bookmarks excludes B", async () =>
+    expect((await asA.social.bookmarks({})).items).toEqual([]));
+  test("social.followedTags excludes B", async () =>
+    expect(await asA.social.followedTags()).toEqual([]));
+  test("notification.unreadCount excludes B", async () =>
+    expect(await asA.notification.unreadCount()).toBe(0));
+  test("moderation.queue excludes B", async () =>
+    expect((await adminA.moderation.queue({})).items).toEqual([]));
+  test("admin.pendingUsers excludes B", async () =>
+    expect(await adminA.admin.pendingUsers()).toEqual([]));
+  test("admin.stats excludes B", async () => {
+    const s = await adminA.admin.stats();
+    expect(s.members).toMatchObject({ STUDENT: 1, ADMIN: 1 });
+    expect(s.pending).toBe(0);
+    expect(s.totalPosts).toBe(0);
+    expect(s.openReports).toBe(0);
+    expect(s.postsPerWeek.every((w) => w.posts === 0 && w.comments === 0)).toBe(
+      true,
+    );
+  });
+  test("admin.rosterStats excludes B", async () =>
+    expect(await adminA.admin.rosterStats()).toEqual({
+      total: 0,
+      graduated: 0,
+    }));
   test("admin.audit excludes B", async () =>
     expect((await adminA.admin.audit({})).items).toEqual([]));
 });
