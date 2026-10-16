@@ -172,7 +172,7 @@ function Decide({ u, action }: { u: Row; action: "approve" | "reject" }) {
         description={
           approve
             ? "The workspace goes live and its owner gets access."
-            : "The owner's account is deleted. They can apply again."
+            : "The university is hidden and its members lose access."
         }
       >
         <div className="flex justify-end gap-2">

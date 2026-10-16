@@ -16,13 +16,15 @@ export async function GET(req: Request) {
     .from(user)
     .innerJoin(university, eq(university.id, user.universityId))
     .where(eq(user.id, session.user.id));
-  if (
-    !row?.me?.emailVerified ||
-    activeStatusError({ ...row.me, universityStatus: row.universityStatus })
-  ) {
+  if (!row?.me?.emailVerified) {
     return new Response("Unauthorized", { status: 401 });
   }
   const me = row.me;
+  const statusError = activeStatusError({
+    ...me,
+    universityStatus: row.universityStatus,
+  });
+  if (statusError) return new Response(statusError, { status: 403 });
 
   const enc = new TextEncoder();
   let closed = false;
