@@ -1,8 +1,16 @@
 import { beforeEach, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { resolveFileAccess } from "@/app/api/files/[...key]/route";
 import { resolveIdCardAccess } from "@/app/api/id-cards/[userId]/route";
+import { university } from "@/db/schema";
 import { stat } from "@/server/storage";
-import { callerFor, makeUniversity, makeUser, resetDb } from "./helpers";
+import {
+  adminDb,
+  callerFor,
+  makeUniversity,
+  makeUser,
+  resetDb,
+} from "./helpers";
 
 let a: { id: string; universityId: string };
 let b: { id: string; universityId: string };
@@ -223,7 +231,7 @@ test("resolveIdCardAccess: only OWNER/ADMIN of the same university, or a platfor
   expect(await resolveIdCardAccess(admin.id, owner.id)).toMatchObject({
     status: 404,
   });
-  for (const viewer of [owner, admin, platform]) {
+  for (const viewer of [owner, admin]) {
     const r = await resolveIdCardAccess(viewer.id, applicant.id);
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -232,6 +240,11 @@ test("resolveIdCardAccess: only OWNER/ADMIN of the same university, or a platfor
       expect(u.searchParams.get("response-content-type")).toBe("image/jpeg");
     }
   }
+  // A platform admin isn't OWNER/ADMIN of `uni`, and `applicant` is a
+  // regular STUDENT in an ACTIVE university — neither widens into this.
+  expect(await resolveIdCardAccess(platform.id, applicant.id)).toMatchObject({
+    status: 404,
+  });
   const bannedAdmin = await makeUser(uni, {
     role: "ADMIN",
     status: "BANNED",
@@ -239,4 +252,41 @@ test("resolveIdCardAccess: only OWNER/ADMIN of the same university, or a platfor
   expect(await resolveIdCardAccess(bannedAdmin.id, applicant.id)).toMatchObject(
     { status: 403 },
   );
+});
+
+test("resolveIdCardAccess: a platform admin may only view a PENDING university's OWNER card", async () => {
+  const pendingUni = await makeUniversity();
+  const rep = await makeUser(pendingUni.id, {
+    role: "OWNER",
+    idCardKey: `${pendingUni.id}/idcard/f/${"c".repeat(32)}.jpg`,
+  });
+  const staffInPendingUni = await makeUser(pendingUni.id, {
+    role: "STAFF",
+    idCardKey: `${pendingUni.id}/idcard/f/${"d".repeat(32)}.jpg`,
+  });
+  const platform = await makeUser(b.universityId, {
+    email: "platform@test.edu",
+  });
+  await adminDb
+    .update(university)
+    .set({ status: "PENDING" })
+    .where(eq(university.id, pendingUni.id));
+
+  const r = await resolveIdCardAccess(platform.id, rep.id);
+  expect(r.ok).toBe(true);
+
+  // Never widens past OWNER, even within the same PENDING university.
+  expect(
+    await resolveIdCardAccess(platform.id, staffInPendingUni.id),
+  ).toMatchObject({ status: 404 });
+
+  // Once the university is decided (no longer PENDING), platform access to
+  // the rep's card closes again.
+  await adminDb
+    .update(university)
+    .set({ status: "ACTIVE" })
+    .where(eq(university.id, pendingUni.id));
+  expect(await resolveIdCardAccess(platform.id, rep.id)).toMatchObject({
+    status: 404,
+  });
 });
