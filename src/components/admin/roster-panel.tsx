@@ -7,8 +7,8 @@ import { Card } from "../ui/card";
 import { useToast } from "../ui/toast";
 
 const SAMPLE = `student_id,batch_year,department,graduated
-NUB-2018-0001,2018,CSE,true
-NUB-2023-0002,2023,EEE,false
+NUB-20300001,2030,CSE,false
+NUB-20300002,2030,EEE,false
 `;
 // Server caps `csv` at 2,000,000 chars.
 const MAX_BYTES = 2_000_000;
