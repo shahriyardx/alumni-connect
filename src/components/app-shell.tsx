@@ -23,6 +23,7 @@ type Dest = {
   label: string;
   icon: string;
   roles?: Role[];
+  platform?: boolean;
   badge?: number;
 };
 
@@ -62,6 +63,13 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       label: "Admin",
       icon: "admin_panel_settings",
       roles: ["ADMIN", "OWNER"],
+    },
+    {
+      href: "/platform",
+      match: "/platform",
+      label: "Platform",
+      icon: "domain",
+      platform: true,
     },
   ];
 }
@@ -164,7 +172,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     trpc.notification.unreadCount.queryOptions(undefined, { enabled: active }),
   );
   const items = destinations(me?.id, unread).filter(
-    (d) => !d.roles || (me && d.roles.includes(me.role)),
+    (d) =>
+      (!d.roles || (me && d.roles.includes(me.role))) &&
+      (!d.platform || me?.isPlatformAdmin),
   );
   const isActive = (d: Dest) =>
     pathname === d.match || pathname.startsWith(d.match.replace(/\/?$/, "/"));
@@ -218,7 +228,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="fixed inset-x-0 bottom-0 z-30 flex items-center bg-surface/95 px-1 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] backdrop-blur-xl min-[840px]:hidden"
       >
         {items
-          .filter((d) => !d.roles)
+          .filter((d) => !d.roles && !d.platform)
           .map((d) => (
             <BarItem key={d.label} d={d} active={isActive(d)} />
           ))}

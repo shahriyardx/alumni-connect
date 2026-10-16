@@ -13,6 +13,7 @@ const PROTECTED = [
   "/settings",
   "/mod",
   "/admin",
+  "/platform",
   "/pending",
 ];
 

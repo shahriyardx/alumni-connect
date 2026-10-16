@@ -142,6 +142,12 @@ export default function LandingPage() {
 
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 px-3 text-xs text-muted-foreground">
           <span>CSE · Northern University Bangladesh</span>
+          <Link
+            href="/register-university"
+            className="hover:text-foreground hover:underline"
+          >
+            Register your university
+          </Link>
           <span>© {2026} Alumni Connect</span>
         </footer>
       </div>

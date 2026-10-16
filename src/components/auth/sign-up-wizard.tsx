@@ -118,44 +118,7 @@ export function SignUpWizard() {
       title="Join your university"
       subtitle="Verified students and alumni only — it takes a minute."
     >
-      {/* Step progress */}
-      <div className="mb-4 flex flex-col gap-2.5">
-        <div
-          role="progressbar"
-          aria-label="Sign-up progress"
-          aria-valuemin={1}
-          aria-valuemax={STEPS.length}
-          aria-valuenow={step + 1}
-          className="flex h-1 gap-1"
-        >
-          {STEPS.map((s, i) => (
-            <div
-              key={s}
-              className={cn(
-                "h-full flex-1 rounded-full transition-colors duration-200",
-                i <= step ? "bg-primary" : "bg-muted",
-              )}
-            />
-          ))}
-        </div>
-        <ol className="grid grid-cols-3 gap-1 text-xs font-medium">
-          {STEPS.map((s, i) => (
-            <li
-              key={s}
-              aria-current={i === step ? "step" : undefined}
-              className={cn(
-                "flex items-center gap-1",
-                i <= step ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {i < step && (
-                <Icon name="check" size={14} className="text-primary" />
-              )}
-              {s}
-            </li>
-          ))}
-        </ol>
-      </div>
+      <StepProgress steps={STEPS} step={step} />
 
       {/* Keyed so each step's card mounts fresh and fades in via @starting-style. */}
       <div
@@ -318,19 +281,75 @@ export function SignUpWizard() {
       </div>
 
       {step < 2 && (
-        <p className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-          Already have an account?
-          <ButtonLink href="/sign-in" variant="link">
-            Sign in
+        <div className="mt-6 flex flex-col items-center gap-1 text-sm text-muted-foreground">
+          <p className="flex items-center gap-1.5">
+            Already have an account?
+            <ButtonLink href="/sign-in" variant="link">
+              Sign in
+            </ButtonLink>
+          </p>
+          <ButtonLink href="/register-university" variant="link">
+            Register your university
           </ButtonLink>
-        </p>
+        </div>
       )}
     </AuthFrame>
   );
 }
 
+export function StepProgress({
+  steps,
+  step,
+}: {
+  steps: readonly string[];
+  step: number;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-2.5">
+      <div
+        role="progressbar"
+        aria-label="Sign-up progress"
+        aria-valuemin={1}
+        aria-valuemax={steps.length}
+        aria-valuenow={step + 1}
+        className="flex h-1 gap-1"
+      >
+        {steps.map((s, i) => (
+          <div
+            key={s}
+            className={cn(
+              "h-full flex-1 rounded-full transition-colors duration-200",
+              i <= step ? "bg-primary" : "bg-muted",
+            )}
+          />
+        ))}
+      </div>
+      <ol
+        className="grid gap-1 text-xs font-medium"
+        style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}
+      >
+        {steps.map((s, i) => (
+          <li
+            key={s}
+            aria-current={i === step ? "step" : undefined}
+            className={cn(
+              "flex items-center gap-1",
+              i <= step ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {i < step && (
+              <Icon name="check" size={14} className="text-primary" />
+            )}
+            {s}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 /** Puts each tRPC failure next to the field it's about. */
-function mapSignupError(err: unknown): Errors {
+export function mapSignupError(err: unknown): Errors {
   if (!(err instanceof TRPCClientError))
     return { form: "Something went wrong, try again" };
   const msg: string = err.message;

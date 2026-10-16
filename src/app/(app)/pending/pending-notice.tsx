@@ -10,8 +10,16 @@ export function PendingNotice() {
     <EmptyState
       className="py-20"
       icon="hourglass_top"
-      title="Waiting for admin approval"
-      body={`${me?.universityName ?? "Your university"} hasn't uploaded a student roster yet, so an administrator has to confirm your account by hand. You'll get full access as soon as they approve it — just come back and sign in.`}
+      title={
+        me?.role === "OWNER"
+          ? "Application under review"
+          : "Waiting for admin approval"
+      }
+      body={
+        me?.role === "OWNER"
+          ? `We're reviewing ${me.universityName}. You'll get access as soon as it's approved — just come back and sign in.`
+          : `${me?.universityName ?? "Your university"} hasn't uploaded a student roster yet, so an administrator has to confirm your account by hand. You'll get full access as soon as they approve it — just come back and sign in.`
+      }
       action={
         <Button variant="tonal" icon="logout" onClick={signOut}>
           Sign out

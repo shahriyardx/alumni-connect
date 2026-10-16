@@ -4,6 +4,7 @@ import { commentRouter } from "./routers/comment";
 import { filesRouter } from "./routers/files";
 import { moderationRouter } from "./routers/moderation";
 import { notificationRouter } from "./routers/notification";
+import { platformRouter } from "./routers/platform";
 import { postRouter } from "./routers/post";
 import { profileRouter } from "./routers/profile";
 import { socialRouter } from "./routers/social";
@@ -19,6 +20,7 @@ export const appRouter = router({
   profile: profileRouter,
   moderation: moderationRouter,
   admin: adminRouter,
+  platform: platformRouter,
 });
 export type AppRouter = typeof appRouter;
 export const createCaller = createCallerFactory(appRouter);

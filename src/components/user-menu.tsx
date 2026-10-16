@@ -85,6 +85,15 @@ export function UserMenu() {
             Admin
           </MenuItem>
         )}
+        {me.isPlatformAdmin && (
+          <MenuItem
+            icon="domain"
+            className="min-[840px]:hidden"
+            onClick={() => router.push("/platform")}
+          >
+            Platform
+          </MenuItem>
+        )}
         <MenuItem icon="settings" onClick={() => router.push("/settings")}>
           Settings
         </MenuItem>

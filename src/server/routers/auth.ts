@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { and, count, eq, gt, lt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -6,12 +7,43 @@ import {
   auditLog,
   batch,
   pendingSignup,
+  rateLimit,
   rosterEntry,
   university,
   user,
 } from "@/db/schema";
 import { hashStudentId, roleFor } from "../student-id";
-import { audit, publicProcedure, router } from "../trpc";
+import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
+import { optionalUrl, uniqueSlug } from "./platform";
+
+const email = z
+  .string()
+  .trim()
+  .email()
+  .max(200)
+  .transform((e) => e.toLowerCase());
+
+/**
+ * Fixed-window counter on better-auth's rate_limit table (no RLS), for
+ * limits that span tenants — audit_log is tenant-scoped, so it can't count
+ * one IP's attempts across freshly created universities.
+ */
+async function overLimit(key: string, max: number, windowMs = 10 * 60_000) {
+  const now = Date.now();
+  const stale = sql`${rateLimit.lastRequest} < ${now - windowMs}`;
+  const [r] = await db
+    .insert(rateLimit)
+    .values({ id: key, key, count: 1, lastRequest: now })
+    .onConflictDoUpdate({
+      target: rateLimit.key,
+      set: {
+        count: sql`case when ${stale} then 1 else ${rateLimit.count} + 1 end`,
+        lastRequest: sql`case when ${stale} then ${now} else ${rateLimit.lastRequest} end`,
+      },
+    })
+    .returning({ count: rateLimit.count });
+  return r.count > max;
+}
 
 export const authRouter = router({
   universities: publicProcedure.query(() =>
@@ -22,6 +54,7 @@ export const authRouter = router({
         emailDomain: university.emailDomain,
       })
       .from(university)
+      .where(eq(university.status, "ACTIVE"))
       .orderBy(university.name),
   ),
 
@@ -32,6 +65,7 @@ export const authRouter = router({
         id: user.id,
         name: user.name,
         email: user.email,
+        emailVerified: user.emailVerified,
         role: user.role,
         status: user.status,
         suspendedUntil: user.suspendedUntil,
@@ -42,18 +76,108 @@ export const authRouter = router({
       .from(user)
       .innerJoin(university, eq(university.id, user.universityId))
       .where(eq(user.id, ctx.userId));
-    return row ?? null;
+    if (!row) return null;
+    const { emailVerified: _, ...me } = row;
+    return { ...me, isPlatformAdmin: isPlatformAdmin(row) };
   }),
+
+  registerUniversity: publicProcedure
+    .input(
+      z.object({
+        universityName: z.string().trim().min(2).max(120),
+        website: optionalUrl,
+        name: z.string().trim().min(2).max(80),
+        title: z.string().trim().min(2).max(80),
+        email,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        (await overLimit(`app:register-university:ip:${ctx.ip}`, 5)) ||
+        (await overLimit(`app:register-university:email:${input.email}`, 3))
+      )
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many attempts, try again later",
+        });
+
+      // Same squatting rules as startSignup: a verified or fresh account
+      // blocks; a stale unverified one is cleared.
+      const graceCutoff = new Date(Date.now() - 15 * 60_000);
+      const [dup] = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(
+          and(
+            eq(user.email, input.email),
+            or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff)),
+          ),
+        );
+      if (dup)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This email is already registered",
+        });
+      await db
+        .delete(user)
+        .where(and(eq(user.email, input.email), eq(user.emailVerified, false)));
+      // Re-applying reuses an earlier, never-finished application (audit
+      // rows are append-only, so universities are never deleted).
+      const [prev] = await db
+        .select({ id: university.id })
+        .from(pendingSignup)
+        .innerJoin(university, eq(university.id, pendingSignup.universityId))
+        .where(
+          and(
+            eq(pendingSignup.email, input.email),
+            eq(pendingSignup.role, "OWNER"),
+            eq(university.status, "PENDING"),
+            sql`not exists (select 1 from "user" m where m.university_id = ${university.id})`,
+          ),
+        );
+
+      const id = prev?.id ?? randomUUID();
+      const slug = await uniqueSlug(input.universityName);
+      await withTenant(id, async (tx) => {
+        const details = { name: input.universityName, website: input.website };
+        await tx
+          .insert(university)
+          .values({ id, slug, status: "PENDING", ...details })
+          .onConflictDoUpdate({ target: university.id, set: details });
+        const values = {
+          email: input.email,
+          universityId: id,
+          department: "Administration",
+          title: input.title,
+          role: "OWNER" as const,
+          status: "PENDING" as const,
+          expiresAt: new Date(Date.now() + 30 * 60_000),
+        };
+        await tx
+          .insert(pendingSignup)
+          .values(values)
+          .onConflictDoUpdate({ target: pendingSignup.email, set: values });
+        await audit(
+          tx,
+          id,
+          null,
+          "university.apply",
+          input.email,
+          {
+            name: input.universityName,
+            rep: input.name,
+          },
+          ctx.ip,
+        );
+      });
+      return { universityId: id };
+    }),
 
   startSignup: publicProcedure
     .input(
       z.object({
         universityId: z.string().uuid(),
-        email: z
-          .string()
-          .email()
-          .max(200)
-          .transform((e) => e.toLowerCase()),
+        email,
         studentId: z.string().min(3).max(40),
         batchNumber: z.number().int().min(1).max(9999),
         graduationYear: z
@@ -70,7 +194,12 @@ export const authRouter = router({
       const [uni] = await db
         .select()
         .from(university)
-        .where(eq(university.id, input.universityId));
+        .where(
+          and(
+            eq(university.id, input.universityId),
+            eq(university.status, "ACTIVE"),
+          ),
+        );
       if (!uni)
         throw new TRPCError({
           code: "NOT_FOUND",
