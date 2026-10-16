@@ -271,7 +271,8 @@ function StatusGate({ children }: { children: React.ReactNode }) {
   }, [me, isLoading, pending, pathname, router]);
 
   const suspended = !!me && isSuspendedNow(me);
-  const blocked = me?.status === "BANNED" || suspended;
+  const rejected = me?.universityStatus === "REJECTED";
+  const blocked = me?.status === "BANNED" || suspended || rejected;
   const waiting = isLoading || !me || (pending && pathname !== "/pending");
 
   // Children always render (hidden while gated) so Next can validate the
@@ -287,16 +288,26 @@ function StatusGate({ children }: { children: React.ReactNode }) {
       {me && blocked && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-background p-6">
           <EmptyState
-            icon={me.status === "BANNED" ? "block" : "pause_circle"}
+            icon={
+              me.status === "BANNED"
+                ? "block"
+                : suspended
+                  ? "pause_circle"
+                  : "cancel"
+            }
             title={
               me.status === "BANNED"
                 ? "This account has been banned"
-                : "Your account is suspended"
+                : suspended
+                  ? "Your account is suspended"
+                  : "Application rejected"
             }
             body={
               me.status === "BANNED"
                 ? "A moderator removed your access to Alumni Connect. Contact your university administrator if you think this is a mistake."
-                : `You can come back ${me.suspendedUntil ? `on ${new Date(me.suspendedUntil).toLocaleString()}` : "once an admin lifts the suspension"}.`
+                : suspended
+                  ? `You can come back ${me.suspendedUntil ? `on ${new Date(me.suspendedUntil).toLocaleString()}` : "once an admin lifts the suspension"}.`
+                  : `${me.universityName}'s application was rejected. Contact the platform team if you think this is a mistake.`
             }
             action={
               <Button variant="tonal" icon="logout" onClick={signOut}>

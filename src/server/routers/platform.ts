@@ -78,12 +78,12 @@ export const platformRouter = router({
     .mutation(async ({ ctx, input }) => {
       const uni = await pendingUniversity(input.universityId);
       await withTenant(uni.id, async (tx) => {
-        await decide(tx, uni.id, "ACTIVE");
+        // The owner is already ACTIVE (set on sign-up) — only the
+        // university's own status is a decision here.
         const owners = await tx
-          .update(user)
-          .set({ status: "ACTIVE", decidedAt: new Date() })
-          .where(and(eq(user.universityId, uni.id), eq(user.role, "OWNER")))
-          .returning({ verified: user.emailVerified });
+          .select({ verified: user.emailVerified })
+          .from(user)
+          .where(and(eq(user.universityId, uni.id), eq(user.role, "OWNER")));
         if (owners.length === 0)
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -94,6 +94,7 @@ export const platformRouter = router({
             code: "BAD_REQUEST",
             message: "Owner hasn't verified their email",
           });
+        await decide(tx, uni.id, "ACTIVE");
         await audit(
           tx,
           uni.id,
@@ -115,9 +116,8 @@ export const platformRouter = router({
       const uni = await pendingUniversity(input.universityId);
       await withTenant(uni.id, async (tx) => {
         await decide(tx, uni.id, "REJECTED");
-        await tx
-          .delete(user)
-          .where(and(eq(user.universityId, uni.id), eq(user.role, "OWNER")));
+        // The owner keeps their account — they're blocked from every
+        // university-scoped route by the REJECTED status, not deleted.
         await audit(
           tx,
           uni.id,

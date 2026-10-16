@@ -107,13 +107,13 @@ describe("platform gate", () => {
 });
 
 describe("applications", () => {
-  test("apply → PENDING university + PENDING owner; hidden from auth.universities", async () => {
+  test("apply → PENDING university + ACTIVE owner; hidden from auth.universities", async () => {
     const uniId = await applyAndSignUp();
     const owner = await userByEmail("rep@eti.edu");
     expect(owner).toMatchObject({
       universityId: uniId,
       role: "OWNER",
-      status: "PENDING",
+      status: "ACTIVE",
       title: "Registrar",
       department: "Administration",
     });
@@ -127,6 +127,13 @@ describe("applications", () => {
       members: 1,
       owner: { name: "Rep Person", email: "rep@eti.edu" },
     });
+  });
+  test("owner of a PENDING university can use member/admin procedures once verified", async () => {
+    await applyAndSignUp();
+    const owner = await userByEmail("rep@eti.edu");
+    const as = callerFor(owner.id);
+    expect(await as.notification.unreadCount()).toBe(0);
+    expect(await as.admin.rosterStats()).toEqual({ total: 0, graduated: 0 });
   });
   test("approve → university and owner ACTIVE, audited in tenant", async () => {
     const uniId = await applyAndSignUp();
@@ -149,7 +156,7 @@ describe("applications", () => {
       platform.platform.reject({ universityId: uniId }),
     ).rejects.toThrow(/decided/);
   });
-  test("reject → REJECTED and the pending owner is deleted", async () => {
+  test("reject → REJECTED; the owner keeps their account but is FORBIDDEN", async () => {
     const uniId = await applyAndSignUp();
     await platform.platform.reject({ universityId: uniId });
     const [uni] = await adminDb
@@ -157,9 +164,12 @@ describe("applications", () => {
       .from(university)
       .where(eq(university.id, uniId));
     expect(uni.status).toBe("REJECTED");
-    expect(await userByEmail("rep@eti.edu")).toBeUndefined();
-    // They can re-apply.
-    await apply();
+    const owner = await userByEmail("rep@eti.edu");
+    expect(owner).toMatchObject({ role: "OWNER", status: "ACTIVE" });
+    const as = callerFor(owner.id);
+    await expect(as.notification.unreadCount()).rejects.toThrow(
+      /University application was rejected/,
+    );
   });
   test("students can't startSignup into PENDING/REJECTED universities", async () => {
     const pendingId = await pendingUni("Pend");
@@ -312,7 +322,9 @@ describe("applications", () => {
     await expect(platform.platform.approve({ universityId })).rejects.toThrow(
       /hasn't verified/,
     );
-    expect((await userByEmail("rep@eti.edu")).status).toBe("PENDING");
+    // The account is ACTIVE already (set on sign-up); the unverified email
+    // keeps memberProcedure out, not the account status.
+    expect((await userByEmail("rep@eti.edu")).status).toBe("ACTIVE");
   });
   test("startSignup's stale cleanup rejects the abandoned application it orphans", async () => {
     await apply();

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { user } from "@/db/schema";
+import { university, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import { EXT_TO_MIME, presignGet } from "@/server/storage";
 import { activeStatusError, isPlatformAdmin } from "@/server/trpc";
@@ -15,10 +15,18 @@ export async function resolveIdCardAccess(
   targetId: string,
 ): Promise<IdCardAccessResult> {
   if (!viewerId) return { ok: false, status: 401, message: "Unauthorized" };
-  const [me] = await db.select().from(user).where(eq(user.id, viewerId));
-  if (!me?.emailVerified)
+  const [row] = await db
+    .select({ me: user, universityStatus: university.status })
+    .from(user)
+    .innerJoin(university, eq(university.id, user.universityId))
+    .where(eq(user.id, viewerId));
+  if (!row?.me?.emailVerified)
     return { ok: false, status: 401, message: "Unauthorized" };
-  const statusError = activeStatusError(me);
+  const me = row.me;
+  const statusError = activeStatusError({
+    ...me,
+    universityStatus: row.universityStatus,
+  });
   if (statusError) return { ok: false, status: 403, message: statusError };
   const platform = isPlatformAdmin(me);
   if (!platform && me.role !== "OWNER" && me.role !== "ADMIN")

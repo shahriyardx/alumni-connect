@@ -3,7 +3,14 @@ import { and, eq } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db, type Tx, withTenant } from "@/db";
-import { auditLog, isAdmin, isMod, user } from "@/db/schema";
+import {
+  auditLog,
+  isAdmin,
+  isMod,
+  type UniversityStatus,
+  university,
+  user,
+} from "@/db/schema";
 import { env } from "@/env";
 import { isSuspendedNow } from "@/lib/account-status";
 import { auth } from "./auth";
@@ -43,19 +50,32 @@ export type Me = typeof user.$inferSelect;
  * when the account is active.
  */
 export function activeStatusError(
-  me: Pick<Me, "status" | "suspendedUntil">,
+  me: Pick<Me, "status" | "suspendedUntil"> & {
+    universityStatus: UniversityStatus;
+  },
 ): string | null {
   if (me.status === "BANNED") return "Account banned";
   if (me.status === "PENDING") return "Account awaiting approval";
   if (isSuspendedNow(me)) return "Account suspended";
+  if (me.universityStatus === "REJECTED")
+    return "University application was rejected";
   return null;
 }
 
 export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
-  const [me] = await db.select().from(user).where(eq(user.id, ctx.userId));
-  if (!me || !me.emailVerified) throw new TRPCError({ code: "UNAUTHORIZED" });
-  const statusError = activeStatusError(me);
+  const [row] = await db
+    .select({ me: user, universityStatus: university.status })
+    .from(user)
+    .innerJoin(university, eq(university.id, user.universityId))
+    .where(eq(user.id, ctx.userId));
+  if (!row || !row.me.emailVerified)
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  const me = row.me;
+  const statusError = activeStatusError({
+    ...me,
+    universityStatus: row.universityStatus,
+  });
   if (statusError) {
     throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }
@@ -110,10 +130,18 @@ export const isPlatformAdmin = (u: Pick<Me, "email" | "emailVerified">) =>
 /** Platform admins (env allow-list, verified email). ctx.db is the plain, untenanted db. */
 export const platformProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
-  const [me] = await db.select().from(user).where(eq(user.id, ctx.userId));
-  if (!me) throw new TRPCError({ code: "UNAUTHORIZED" });
+  const [row] = await db
+    .select({ me: user, universityStatus: university.status })
+    .from(user)
+    .innerJoin(university, eq(university.id, user.universityId))
+    .where(eq(user.id, ctx.userId));
+  if (!row) throw new TRPCError({ code: "UNAUTHORIZED" });
+  const me = row.me;
   if (!isPlatformAdmin(me)) throw new TRPCError({ code: "FORBIDDEN" });
-  const statusError = activeStatusError(me);
+  const statusError = activeStatusError({
+    ...me,
+    universityStatus: row.universityStatus,
+  });
   if (statusError) {
     throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }

@@ -300,6 +300,7 @@ export const authRouter = router({
         suspendedUntil: user.suspendedUntil,
         universityId: user.universityId,
         universityName: university.name,
+        universityStatus: university.status,
         avatarKey: user.avatarKey,
       })
       .from(user)
@@ -359,7 +360,10 @@ export const authRouter = router({
         department: "Administration",
         title: input.title,
         role: "OWNER" as const,
-        status: "PENDING" as const,
+        // The university itself is the thing under review, not its rep:
+        // the owner account is usable (once email-verified) while the
+        // university stays PENDING.
+        status: "ACTIVE" as const,
         expiresAt: new Date(Date.now() + 30 * 60_000),
       };
       const orphans = await db.transaction(async (tx) => {

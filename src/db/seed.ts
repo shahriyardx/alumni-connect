@@ -310,7 +310,6 @@ const ETI_USERS: SeedUser[] = [
     role: "OWNER",
     dept: "Administration",
     title: "Registrar",
-    status: "PENDING",
   },
 ];
 

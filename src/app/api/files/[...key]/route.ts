@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, withTenant } from "@/db";
-import { attachment, user } from "@/db/schema";
+import { attachment, university, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import { presignGet } from "@/server/storage";
 import { activeStatusError } from "@/server/trpc";
@@ -26,8 +26,10 @@ export async function resolveFileAccess(
       status: user.status,
       suspendedUntil: user.suspendedUntil,
       emailVerified: user.emailVerified,
+      universityStatus: university.status,
     })
     .from(user)
+    .innerJoin(university, eq(university.id, user.universityId))
     .where(eq(user.id, userId));
   if (!me || !me.emailVerified) {
     return { ok: false, status: 401, message: "Unauthorized" };

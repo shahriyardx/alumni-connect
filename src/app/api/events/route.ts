@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { connection } from "next/server";
 import { db } from "@/db";
-import { user } from "@/db/schema";
+import { university, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import { subscribe } from "@/server/events";
 import { activeStatusError } from "@/server/trpc";
@@ -11,10 +11,18 @@ export async function GET(req: Request) {
 
   const session = await auth.api.getSession({ headers: req.headers });
   if (!session?.user.id) return new Response("Unauthorized", { status: 401 });
-  const [me] = await db.select().from(user).where(eq(user.id, session.user.id));
-  if (!me || !me.emailVerified || activeStatusError(me)) {
+  const [row] = await db
+    .select({ me: user, universityStatus: university.status })
+    .from(user)
+    .innerJoin(university, eq(university.id, user.universityId))
+    .where(eq(user.id, session.user.id));
+  if (
+    !row?.me?.emailVerified ||
+    activeStatusError({ ...row.me, universityStatus: row.universityStatus })
+  ) {
     return new Response("Unauthorized", { status: 401 });
   }
+  const me = row.me;
 
   const enc = new TextEncoder();
   let closed = false;
