@@ -67,13 +67,14 @@ async function overLimit(key: string, max: number, windowMs = 10 * 60_000) {
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /**
- * The ID card's staging key is derived from the signup token's hash, so a
- * key issued to another signup (even in the same university) never matches,
- * and a replaced or expired signup's staging object can still be found.
- * Staging lives under its own prefix so a bucket lifecycle rule can expire it.
+ * The ID card's staging key is derived one-way from the signup token's hash:
+ * a key issued to another signup (even in the same university) never
+ * matches, a replaced or expired signup's staging object can still be
+ * found, and the key reveals nothing of the stored hash. Staging lives under
+ * its own prefix so a bucket lifecycle rule can expire it.
  */
 const idCardStem = (universityId: string, tokenHash: string) =>
-  `${universityId}/staging/idcard/${tokenHash.slice(0, 32)}`;
+  `${universityId}/staging/idcard/${sha256(`idcard-key:${tokenHash}`).slice(0, 32)}`;
 
 /** Every object a pending row's ID card may occupy: its final copy and each possible staging key. */
 const cardObjects = (p: {
@@ -90,28 +91,82 @@ const cardObjects = (p: {
     : []),
 ];
 
+/**
+ * The subset of `keys` nothing still uses: no user row and no live pending
+ * row points at it. Call inside the transaction that dropped the old
+ * reference, after the write; remove the result only after commit.
+ */
+async function unreferenced(tx: Tx | typeof db, keys: string[]) {
+  if (keys.length === 0) return [];
+  const unis = [...new Set(keys.map((k) => k.split("/")[0]))];
+  const users = await tx
+    .select({ k: user.idCardKey })
+    .from(user)
+    .where(
+      and(inArray(user.universityId, unis), inArray(user.idCardKey, keys)),
+    );
+  const pending = await tx
+    .select({ k: pendingSignup.idCardKey })
+    .from(pendingSignup)
+    .where(
+      and(
+        inArray(pendingSignup.idCardKey, keys),
+        gt(pendingSignup.expiresAt, new Date()),
+      ),
+    );
+  const used = new Set([...users, ...pending].map((r) => r.k));
+  return keys.filter((k) => !used.has(k));
+}
+
 const removeAll = (keys: string[]) =>
   Promise.all(keys.map((k) => remove(k).catch(() => {})));
 
-/** Card objects of the pending row about to be overwritten for `email`. */
-const replacedCards = (tx: Tx | typeof db, email: string) =>
-  tx
+/**
+ * Upserts the pending row for `values.email`, returning the card objects of
+ * the row it replaced that nothing else references. The old row is read
+ * under FOR UPDATE in the same transaction as the write, so a concurrent
+ * confirmIdCard / sign-up claim either finished before (and its reference
+ * is seen) or sees the new row (and fails its compare). Remove the returned
+ * keys after commit.
+ */
+async function upsertPending(
+  tx: Tx,
+  values: typeof pendingSignup.$inferInsert,
+): Promise<string[]> {
+  const [old] = await tx
     .select()
     .from(pendingSignup)
-    .where(eq(pendingSignup.email, email))
-    .then((rows) => rows.flatMap(cardObjects));
+    .where(eq(pendingSignup.email, values.email))
+    .for("update");
+  await tx
+    .insert(pendingSignup)
+    .values(values)
+    .onConflictDoUpdate({ target: pendingSignup.email, set: values });
+  return old ? cardObjects(old) : [];
+}
 
 /**
  * Opportunistic purge (no cron): expired pending rows can never complete
- * sign-up, so delete them and their card objects.
+ * sign-up, so delete them (100 per call) and their unreferenced card objects.
  */
 async function purgeExpiredPending() {
-  // ponytail: unbounded delete; fine while rows expire in 30 min and are swept on every signup.
-  const rows = await db
-    .delete(pendingSignup)
-    .where(lt(pendingSignup.expiresAt, new Date()))
-    .returning();
-  await removeAll(rows.flatMap(cardObjects));
+  const orphans = await db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(pendingSignup)
+      .where(
+        inArray(
+          pendingSignup.email,
+          tx
+            .select({ email: pendingSignup.email })
+            .from(pendingSignup)
+            .where(lt(pendingSignup.expiresAt, new Date()))
+            .limit(100),
+        ),
+      )
+      .returning();
+    return unreferenced(tx, rows.flatMap(cardObjects));
+  });
+  await removeAll(orphans);
 }
 
 const mimeEnum = z.enum(Object.keys(ALLOWED_MIME) as [AllowedMime]);
@@ -182,7 +237,10 @@ async function clearStaleUnverified(tx: Tx, where: SQL): Promise<string[]> {
     ),
   );
   // Returned, not removed: the caller deletes the objects after commit.
-  return stale.flatMap((s) => (s.idCardKey ? [s.idCardKey] : []));
+  return unreferenced(
+    tx,
+    stale.flatMap((s) => (s.idCardKey ? [s.idCardKey] : [])),
+  );
 }
 
 export const authRouter = router({
@@ -258,10 +316,6 @@ export const authRouter = router({
           code: "CONFLICT",
           message: "This email is already registered",
         });
-      const staleCards = await db.transaction((tx) =>
-        clearStaleUnverified(tx, eq(user.email, input.email)),
-      );
-      const replaced = await replacedCards(db, input.email);
 
       // The university itself is created by the sign-up hook, so an
       // abandoned application leaves nothing behind. Every column is set,
@@ -277,11 +331,15 @@ export const authRouter = router({
         status: "PENDING" as const,
         expiresAt: new Date(Date.now() + 30 * 60_000),
       };
-      await db
-        .insert(pendingSignup)
-        .values(values)
-        .onConflictDoUpdate({ target: pendingSignup.email, set: values });
-      await removeAll([...staleCards, ...replaced]);
+      const orphans = await db.transaction(async (tx) => {
+        const stale = await clearStaleUnverified(
+          tx,
+          eq(user.email, input.email),
+        );
+        const replaced = await upsertPending(tx, values);
+        return [...stale, ...(await unreferenced(tx, replaced))];
+      });
+      await removeAll(orphans);
       return { ok: true };
     }),
 
@@ -355,16 +413,33 @@ export const authRouter = router({
       // Idempotent once this signup's card is stored; never re-copies.
       if (p.idCardKey === finalKeyFor(input.key)) return { ok: true };
       const final = await promoteUpload(input.key, mime);
-      // Bound to the token hash: a concurrent startSignup reset wins.
-      await db
-        .update(pendingSignup)
-        .set({ idCardKey: final.key })
-        .where(
-          and(
-            eq(pendingSignup.email, input.email),
-            eq(pendingSignup.signupTokenHash, p.signupTokenHash as string),
-          ),
-        );
+      // Bound to the token hash: a concurrent restart or sign-up claim wins.
+      const outcome = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ idCardKey: pendingSignup.idCardKey })
+          .from(pendingSignup)
+          .where(
+            and(
+              eq(pendingSignup.email, input.email),
+              eq(pendingSignup.signupTokenHash, p.signupTokenHash as string),
+            ),
+          )
+          .for("update");
+        if (!row) return { stored: false, orphans: [final.key] };
+        await tx
+          .update(pendingSignup)
+          .set({ idCardKey: final.key })
+          .where(eq(pendingSignup.email, input.email));
+        // A card of another type confirmed earlier for this token is replaced.
+        const old = row.idCardKey && row.idCardKey !== final.key;
+        return { stored: true, orphans: old ? [row.idCardKey as string] : [] };
+      });
+      await removeAll(await unreferenced(db, outcome.orphans));
+      if (!outcome.stored)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Sign-up expired, start again",
+        });
       return { ok: true };
     }),
 
@@ -518,7 +593,6 @@ export const authRouter = router({
           ) as SQL,
         );
 
-        const replaced = await replacedCards(tx, input.email);
         const signupToken = randomBytes(32).toString("base64url");
         const values = {
           ...BLANK_PENDING,
@@ -535,10 +609,10 @@ export const authRouter = router({
           status: "PENDING" as const,
           expiresAt: new Date(Date.now() + 30 * 60_000),
         };
-        await tx
-          .insert(pendingSignup)
-          .values(values)
-          .onConflictDoUpdate({ target: pendingSignup.email, set: values });
+        const replaced = await unreferenced(
+          tx,
+          await upsertPending(tx, values),
+        );
         await audit(
           tx,
           uni.id,

@@ -57,11 +57,13 @@ export function SignUpWizard() {
   const [errors, setErrors] = useState<Errors>({});
   const [role, setRole] = useState<string>();
   // Set once startSignup + card upload succeeded, so a retry of a failed
-  // better-auth sign-up doesn't redo them (unless the inputs changed).
+  // better-auth sign-up doesn't redo them (unless the inputs changed, it is
+  // older than the 30-min pending row, or better-auth refused the row).
   const [prepared, setPrepared] = useState<{
     sig: string;
     card: File;
     role: string;
+    at: number;
   }>();
   const [card, setCard] = useState<File>();
   const preview = useMemo(() => card && URL.createObjectURL(card), [card]);
@@ -116,7 +118,11 @@ export function SignUpWizard() {
     };
     const sig = JSON.stringify(input);
     try {
-      let ready = prepared?.sig === sig && prepared.card === card && prepared;
+      let ready =
+        prepared?.sig === sig &&
+        prepared.card === card &&
+        Date.now() - prepared.at < 25 * 60_000 &&
+        prepared;
       if (!ready) {
         const r = await startSignup.mutateAsync(input);
         const body = new FormData();
@@ -130,7 +136,7 @@ export function SignUpWizard() {
           signupToken: r.signupToken,
           key: r.upload.key,
         });
-        ready = { sig, card, role: r.role };
+        ready = { sig, card, role: r.role, at: Date.now() };
         setPrepared(ready);
       }
       const { error } = await authClient.signUp.email({
@@ -138,8 +144,11 @@ export function SignUpWizard() {
         email,
         password: form.password,
       });
-      if (error)
+      if (error) {
+        // The pending row is gone or changed: the next try starts over.
+        if (error.code === "FAILED_TO_CREATE_USER") setPrepared(undefined);
         return setErrors({ form: error.message ?? "Could not create account" });
+      }
       setRole(ready.role);
       setStep(3);
     } catch (err) {

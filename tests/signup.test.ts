@@ -335,6 +335,64 @@ describe("ID card + v2 sign-up", () => {
     expect(await pendingRow(base().email)).toBeUndefined();
     expect(await stat(card)).toBeNull();
   });
+  test("card keys are one-way: they reveal nothing of the stored token hash", async () => {
+    const r = await callerFor(null).auth.startSignup(base());
+    const hash = (await pendingRow(base().email)).signupTokenHash as string;
+    const id = r.upload.key.split("/").pop()?.split(".")[0] as string;
+    expect(id).toHaveLength(32);
+    expect(hash.includes(id.slice(0, 8))).toBe(false);
+  });
+  test("a card a user references survives a restart and an expired purge of rows pointing at it", async () => {
+    await startWithCard();
+    await signUp();
+    const [u] = await adminDb
+      .select()
+      .from(user)
+      .where(eq(user.email, base().email));
+    const card = u.idCardKey as string;
+    // Stray pending rows that (wrongly) point at the user's card.
+    const stray = (email: string, expiresAt: Date) => ({
+      email,
+      universityId: uni.id,
+      department: "CSE",
+      idCardKey: card,
+      role: "STUDENT" as const,
+      status: "PENDING" as const,
+      expiresAt,
+    });
+    await adminDb
+      .insert(pendingSignup)
+      .values([
+        stray("live@north.edu", new Date(Date.now() + 60_000)),
+        stray("dead@north.edu", new Date(Date.now() - 1000)),
+      ]);
+    // Restart for live@ replaces its row; the purge deletes dead@.
+    await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "live@north.edu",
+      studentId: "NU-2002",
+      batchNumber: 48,
+    });
+    expect(await pendingRow("dead@north.edu")).toBeUndefined();
+    expect((await pendingRow("live@north.edu")).idCardKey).toBeNull();
+    expect(await stat(card)).not.toBeNull();
+  });
+  test("restart racing sign-up never leaves a user pointing at a deleted card", async () => {
+    for (let i = 0; i < 3; i++) {
+      const email = `race-${i}@north.edu`;
+      const studentId = `RACE-${i}`;
+      await startWithCard({ email, studentId });
+      await Promise.allSettled([
+        signUp(email),
+        callerFor(null).auth.startSignup({ ...base(), email, studentId }),
+      ]);
+      const [u] = await adminDb
+        .select()
+        .from(user)
+        .where(eq(user.email, email));
+      if (u) expect(await stat(u.idCardKey as string)).not.toBeNull();
+    }
+  });
   test("presigned POST: size-capped by MinIO, pinned key and content-type", async () => {
     const r = await callerFor(null).auth.startSignup(base());
     expect(r.upload.key.startsWith(`${uni.id}/staging/idcard/`)).toBe(true);

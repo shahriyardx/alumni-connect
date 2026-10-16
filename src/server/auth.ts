@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { emailOTP } from "better-auth/plugins/email-otp";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { db, withTenant } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/env";
@@ -61,8 +61,12 @@ export const auth = betterAuth({
       create: {
         before: async (u, ctx) => {
           const email = u.email.toLowerCase();
-          const [p] = await db
-            .select()
+          const [read] = await db
+            .select({
+              p: schema.pendingSignup,
+              // Row version, for the compare-and-delete claim below.
+              version: sql<string>`${schema.pendingSignup}.xmin::text`,
+            })
             .from(schema.pendingSignup)
             .where(
               and(
@@ -70,7 +74,8 @@ export const auth = betterAuth({
                 gt(schema.pendingSignup.expiresAt, new Date()),
               ),
             );
-          if (!p) return false;
+          if (!read) return false;
+          const { p, version } = read;
           // Students must have confirmed an ID card photo (confirmIdCard).
           if ((p.role === "STUDENT" || p.role === "ALUMNUS") && !p.idCardKey)
             return false;
@@ -87,6 +92,21 @@ export const auth = betterAuth({
               .where(eq(schema.user.studentIdHash, p.studentIdHash));
             if (existingById) return false;
           }
+          // Claim the row: delete it only if it is still exactly what was
+          // read. A concurrent startSignup restart (which replaces the row
+          // and deletes its old card) then either sees no row to replace,
+          // or wins and this sign-up is refused — the user never ends up
+          // pointing at a card the restart removed.
+          const [claimed] = await db
+            .delete(schema.pendingSignup)
+            .where(
+              and(
+                eq(schema.pendingSignup.email, email),
+                sql`${schema.pendingSignup}.xmin::text = ${version}`,
+              ),
+            )
+            .returning({ email: schema.pendingSignup.email });
+          if (!claimed) return false;
           let universityId = p.universityId;
           if (p.role === "OWNER" || p.applicationName) {
             // OWNER rows only ever create a *new* PENDING university from an
