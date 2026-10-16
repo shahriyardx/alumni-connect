@@ -8,7 +8,6 @@ import {
   ResendButton,
 } from "@/components/auth/otp-field";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { TextField } from "@/components/ui/text-field";
 import { useToast } from "@/components/ui/toast";
 import { authClient } from "@/lib/auth-client";
@@ -51,6 +50,7 @@ export function ResetForm() {
 
   return (
     <AuthFrame
+      icon="key"
       title={sent ? "Choose a new password" : "Forgot your password?"}
       subtitle={
         sent
@@ -58,7 +58,7 @@ export function ResetForm() {
           : "We'll email you a code to reset it."
       }
     >
-      <Card className="p-6">
+      <div>
         {sent ? (
           <form onSubmit={reset} className="flex flex-col gap-6">
             <OtpField value={otp} onChange={setOtp} />
@@ -104,7 +104,7 @@ export function ResetForm() {
             </Button>
           </form>
         )}
-      </Card>
+      </div>
       <div className="mt-6 flex justify-center">
         <ButtonLink href="/sign-in" variant="ghost" size="sm" icon="arrow_back">
           Back to sign in

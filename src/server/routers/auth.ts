@@ -123,13 +123,6 @@ export const authRouter = router({
           return { error: new TRPCError({ code, message }) };
         };
 
-        if (input.email.split("@")[1] !== uni.emailDomain.toLowerCase()) {
-          return fail(
-            "BAD_REQUEST",
-            `Use your institutional email domain (@${uni.emailDomain})`,
-            "domain",
-          );
-        }
         // A verified account always blocks a signup. An unverified account
         // blocks it too *while it might still be mid-verification* (created
         // in the last 15 minutes) — otherwise an attacker holding either the

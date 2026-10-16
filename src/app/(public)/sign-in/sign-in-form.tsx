@@ -10,7 +10,6 @@ import {
   ResendButton,
 } from "@/components/auth/otp-field";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { TextField } from "@/components/ui/text-field";
 import { useRedirectIfSignedIn } from "@/components/user-menu";
@@ -76,7 +75,7 @@ export function SignInForm() {
           </>
         }
       >
-        <Card className="p-6">
+        <div>
           <form onSubmit={verify} className="flex flex-col gap-6">
             <OtpField value={otp} onChange={setOtp} error={error} />
             <div className="flex items-center justify-between gap-2">
@@ -90,16 +89,13 @@ export function SignInForm() {
               </Button>
             </div>
           </form>
-        </Card>
+        </div>
       </AuthFrame>
     );
 
   return (
-    <AuthFrame
-      title="Welcome back"
-      subtitle="Sign in with your institutional email."
-    >
-      <Card className="p-6">
+    <AuthFrame title="Welcome back" icon="login">
+      <div>
         <form onSubmit={signIn} className="flex flex-col gap-4">
           <TextField
             label="Email"
@@ -156,7 +152,7 @@ export function SignInForm() {
             Sign in
           </Button>
         </form>
-      </Card>
+      </div>
       <p className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
         New here?
         <ButtonLink href="/sign-up" variant="link">

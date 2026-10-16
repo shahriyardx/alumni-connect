@@ -167,3 +167,83 @@ body {
   }
 }
 /* biome-ignore-end lint/complexity/noImportantStyles: - */
+
+/* Landing page motion: one staggered rise on load, then quiet loops. */
+@keyframes lp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+@keyframes lp-drift {
+  50% {
+    transform: translate(-40px, 30px) scale(1.1);
+  }
+}
+@keyframes lp-bob {
+  50% {
+    transform: translateY(-10px) rotate(-4deg);
+  }
+}
+@keyframes lp-bubble {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  16%,
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes lp-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+.lp-rise {
+  animation: lp-rise 0.6s cubic-bezier(0.2, 0, 0, 1) both;
+}
+.lp-drift {
+  animation: lp-drift 14s ease-in-out infinite;
+}
+.lp-bob {
+  animation: lp-bob 6s ease-in-out infinite;
+}
+.lp-bubble {
+  animation: lp-bubble 6s ease-out infinite both;
+}
+.lp-dots i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: lp-dot 1.2s ease-in-out infinite;
+}
+.lp-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.lp-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-rise,
+  .lp-drift,
+  .lp-bob,
+  .lp-bubble,
+  .lp-dots i {
+    animation: none;
+  }
+}

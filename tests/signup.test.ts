@@ -42,10 +42,12 @@ beforeEach(async () => {
 });
 
 describe("auth.startSignup", () => {
-  test("rejects email outside the university domain", async () => {
-    await expect(
-      callerFor(null).auth.startSignup({ ...base(), email: "alice@gmail.com" }),
-    ).rejects.toThrow(/domain/i);
+  test("accepts any email domain", async () => {
+    const r = await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "alice@gmail.com",
+    });
+    expect(r.status).toBe("ACTIVE");
   });
   test("rejects ID not in roster", async () => {
     await expect(

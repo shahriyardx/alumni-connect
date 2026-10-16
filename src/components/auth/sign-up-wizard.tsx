@@ -7,7 +7,6 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
 import { Button, ButtonLink } from "../ui/button";
-import { Card } from "../ui/card";
 import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
@@ -112,6 +111,7 @@ export function SignUpWizard() {
   return (
     <AuthFrame
       wide
+      icon="person_add"
       title="Join your university"
       subtitle="Verified students and alumni only — it takes a minute."
     >
@@ -155,9 +155,9 @@ export function SignUpWizard() {
       </div>
 
       {/* Keyed so each step's card mounts fresh and fades in via @starting-style. */}
-      <Card
+      <div
         key={step}
-        className="p-6 transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0"
+        className="transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0"
       >
         {step === 0 && (
           <form
@@ -230,11 +230,11 @@ export function SignUpWizard() {
                 {...field("department")}
               />
               <TextField
-                label="Institutional email"
+                label="Email"
                 type="email"
                 autoComplete="email"
                 required
-                placeholder={`you@${uni.emailDomain}`}
+                placeholder="you@example.com"
                 className="sm:col-span-2"
                 {...field("email")}
               />
@@ -312,7 +312,7 @@ export function SignUpWizard() {
             </div>
           </form>
         )}
-      </Card>
+      </div>
 
       {step < 2 && (
         <p className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
@@ -331,8 +331,6 @@ function mapSignupError(err: unknown): Errors {
   if (!(err instanceof TRPCClientError))
     return { form: "Something went wrong, try again" };
   const msg: string = err.message;
-  if (err.data?.code === "BAD_REQUEST" && /domain/i.test(msg))
-    return { email: msg };
   if (/roster/i.test(msg)) return { studentId: msg };
   if (err.data?.code === "CONFLICT") return { studentId: msg, form: msg };
   if (err.data?.zodError || msg.startsWith("["))
