@@ -1,10 +1,15 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Tx, withTenant } from "@/db";
 import { invite, UNIVERSITY_STATUSES, university, user } from "@/db/schema";
 import { env } from "@/env";
+import {
+  hashInviteToken,
+  INVITE_TTL_MS,
+  newInviteToken,
+} from "../invite-token";
 import { sendMail } from "../mail";
 import { audit, platformProcedure, router } from "../trpc";
 import { insertUniversity } from "../university";
@@ -156,7 +161,7 @@ export const platformRouter = router({
           code: "CONFLICT",
           message: "That email already has an account",
         });
-      const token = randomBytes(32).toString("base64url");
+      const token = newInviteToken();
       const id = randomUUID();
       const uni = await withTenant(id, async (tx) => {
         const uni = await insertUniversity(tx, {
@@ -168,8 +173,8 @@ export const platformRouter = router({
           universityId: uni.id,
           email: input.ownerEmail,
           role: "OWNER",
-          tokenHash: createHash("sha256").update(token).digest("hex"),
-          expiresAt: new Date(Date.now() + 7 * 86_400_000),
+          tokenHash: hashInviteToken(token),
+          expiresAt: new Date(Date.now() + INVITE_TTL_MS),
         });
         await audit(
           tx,

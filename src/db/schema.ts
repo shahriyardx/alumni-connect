@@ -177,42 +177,6 @@ export const rateLimit = pgTable("rate_limit", {
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
 });
 
-// Holds verified roster data between auth.startSignup and better-auth sign-up (no RLS: read by auth hook).
-export const pendingSignup = pgTable(
-  "pending_signup",
-  {
-    email: text("email").primaryKey(),
-    // Null for a university application: the university is created by the
-    // sign-up hook, so abandoned applications leave no university rows.
-    universityId: uuid("university_id").references(() => university.id, {
-      onDelete: "cascade",
-    }),
-    applicationName: text("application_name"),
-    applicationWebsite: text("application_website"),
-    batchNumber: integer("batch_number"),
-    graduationYear: integer("graduation_year"),
-    department: text("department").notNull(),
-    title: text("title"),
-    studentIdHash: text("student_id_hash"),
-    signupTokenHash: text("signup_token_hash"),
-    idCardKey: text("id_card_key"),
-    rosterMatch: boolean("roster_match"),
-    studentIdHint: text("student_id_hint"),
-    role: text("role", { enum: ROLES }).notNull(),
-    status: text("status", { enum: STATUSES }).notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    // Set when better-auth's sign-up hook claims the row; the after-hook
-    // deletes it once the user exists.
-    claimedAt: timestamp("claimed_at"),
-  },
-  (t) => [
-    check(
-      "pending_signup_target_ck",
-      sql`${t.universityId} is not null or ${t.applicationName} is not null`,
-    ),
-  ],
-);
-
 // ---- tenant tables (RLS) ----
 export const batch = pgTable(
   "batch",
@@ -269,14 +233,71 @@ export const invite = pgTable(
   },
   (t) => [
     index("invite_uni_idx").on(t.universityId),
+    unique("invite_id_uni_uq").on(t.id, t.universityId),
     foreignKey({
       name: "invite_invited_by_fk",
       columns: [t.invitedBy, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }).onDelete("cascade"),
     tenantPolicy("invite", t.universityId),
+    // The public /invite/[token] flow doesn't know the tenant yet (that's
+    // what it's looking up), so RLS can't gate it by app.university_id.
+    // Instead it proves it already holds the secret token by setting
+    // app.lookup_token_hash to that token's hash; this permissive SELECT
+    // policy then reveals exactly the one matching row (permissive
+    // policies OR together, so tenant-scoped reads are unaffected).
+    pgPolicy("invite_token_lookup", {
+      as: "permissive",
+      for: "select",
+      to: appUser,
+      using: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
+    }),
   ],
 ).enableRLS();
+
+// Holds verified roster data between auth.startSignup and better-auth sign-up (no RLS: read by auth hook).
+export const pendingSignup = pgTable(
+  "pending_signup",
+  {
+    email: text("email").primaryKey(),
+    // Null for a university application: the university is created by the
+    // sign-up hook, so abandoned applications leave no university rows.
+    universityId: uuid("university_id").references(() => university.id, {
+      onDelete: "cascade",
+    }),
+    applicationName: text("application_name"),
+    applicationWebsite: text("application_website"),
+    batchNumber: integer("batch_number"),
+    graduationYear: integer("graduation_year"),
+    department: text("department").notNull(),
+    title: text("title"),
+    studentIdHash: text("student_id_hash"),
+    signupTokenHash: text("signup_token_hash"),
+    idCardKey: text("id_card_key"),
+    rosterMatch: boolean("roster_match"),
+    studentIdHint: text("student_id_hint"),
+    // Set by invites.accept; the sign-up hook re-validates the invite (it
+    // may have been revoked/accepted elsewhere since) and marks it accepted.
+    inviteId: uuid("invite_id"),
+    role: text("role", { enum: ROLES }).notNull(),
+    status: text("status", { enum: STATUSES }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    // Set when better-auth's sign-up hook claims the row; the after-hook
+    // deletes it once the user exists.
+    claimedAt: timestamp("claimed_at"),
+  },
+  (t) => [
+    check(
+      "pending_signup_target_ck",
+      sql`${t.universityId} is not null or ${t.applicationName} is not null`,
+    ),
+    foreignKey({
+      name: "pending_signup_invite_fk",
+      columns: [t.inviteId, t.universityId],
+      foreignColumns: [invite.id, invite.universityId],
+    }).onDelete("cascade"),
+  ],
+);
 
 export const post = pgTable(
   "post",

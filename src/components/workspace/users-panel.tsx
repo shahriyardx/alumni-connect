@@ -3,6 +3,7 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import Link from "next/link";
@@ -11,6 +12,7 @@ import { ROLES, type Role } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
 import { useAccountStatusActions } from "../account-status-actions";
+import { timeAgo } from "../author-line";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -56,9 +58,196 @@ export function MembersPanel() {
   if (!me) return null;
   return (
     <>
-      <PageHeader title="Members" sub="Roles, account status and ownership." />
+      <PageHeader
+        title="Members & invites"
+        sub="Roles, account status, ownership and staff invites."
+        action={<InviteDialog meRole={me.role} />}
+      />
+      <PendingInvites meRole={me.role} />
       <UsersPanel meId={me.id} meRole={me.role} />
     </>
+  );
+}
+
+const INVITABLE_ROLES = ["ADMIN", "MODERATOR", "STAFF"] as const;
+type InvitableRole = (typeof INVITABLE_ROLES)[number];
+// Only the owner hands out admin — same rule as changing a member's role.
+const inviteRoleItems = (viewer: Role) =>
+  INVITABLE_ROLES.filter((r) => r !== "ADMIN" || viewer === "OWNER").map(
+    (r) => ({ value: r, label: ROLE_LABEL[r] }),
+  );
+
+function InviteDialog({ meRole }: { meRole: Role }) {
+  const trpc = useTRPC();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const blank = {
+    email: "",
+    role: "STAFF" as InvitableRole,
+    department: "",
+    title: "",
+  };
+  const [form, setForm] = useState(blank);
+  const invite = useMutation(
+    trpc.invites.create.mutationOptions({
+      onError: (e) =>
+        toast.error(e.data?.zod ? "Check the details" : e.message),
+      onSettled: () => qc.invalidateQueries(trpc.invites.pathFilter()),
+    }),
+  );
+  const field = (k: keyof typeof blank) => ({
+    value: form[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value })),
+  });
+  const reset = (o: boolean) => {
+    setOpen(o);
+    if (!o) {
+      setForm(blank);
+      invite.reset();
+    }
+  };
+
+  return (
+    <Dialog.Root open={open} onOpenChange={reset}>
+      <Dialog.Trigger render={<Button icon="person_add" />}>
+        Invite
+      </Dialog.Trigger>
+      <DialogContent
+        title={invite.data ? "Invite sent" : "Invite a staff member"}
+        description={
+          invite.data
+            ? "We emailed them a link. It works for 7 days."
+            : "They set a password and verify their email to join."
+        }
+      >
+        {invite.data ? (
+          <div className="flex flex-col gap-4">
+            <TextField
+              label="Invite link"
+              readOnly
+              value={invite.data.inviteUrl}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                icon="content_copy"
+                onClick={() =>
+                  navigator.clipboard
+                    .writeText(invite.data.inviteUrl)
+                    .then(() => toast.success("Copied"))
+                }
+              >
+                Copy
+              </Button>
+              <Dialog.Close render={<Button />}>Done</Dialog.Close>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              invite.mutate({
+                email: form.email.trim(),
+                role: form.role,
+                department: form.department.trim(),
+                title: form.title.trim() || undefined,
+              });
+            }}
+          >
+            <TextField
+              label="Email"
+              type="email"
+              required
+              {...field("email")}
+            />
+            <Select
+              label="Role"
+              value={form.role}
+              onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
+              items={inviteRoleItems(meRole)}
+            />
+            <TextField
+              label="Department"
+              required
+              minLength={1}
+              maxLength={80}
+              {...field("department")}
+            />
+            <TextField
+              label="Title"
+              description="Optional"
+              maxLength={80}
+              {...field("title")}
+            />
+            <div className="flex justify-end gap-2">
+              <Dialog.Close render={<Button variant="ghost" />}>
+                Cancel
+              </Dialog.Close>
+              <Button type="submit" loading={invite.isPending}>
+                Send invite
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog.Root>
+  );
+}
+
+function PendingInvites({ meRole }: { meRole: Role }) {
+  const trpc = useTRPC();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const list = useQuery(trpc.invites.list.queryOptions());
+  const revoke = useMutation(
+    trpc.invites.revoke.mutationOptions({
+      onSuccess: () => toast.success("Invite revoked"),
+      onError: (e) => toast.error(e.message),
+      onSettled: () => qc.invalidateQueries(trpc.invites.pathFilter()),
+    }),
+  );
+  const open = (list.data ?? []).filter((i) => !i.acceptedAt);
+  if (open.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-muted-foreground">
+        Pending invites
+      </h2>
+      <Card className="divide-y divide-border p-0">
+        {open.map((i) => {
+          const expired = new Date(i.expiresAt) < new Date();
+          return (
+            <div key={i.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-medium">{i.email}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {ROLE_LABEL[i.role]} · {i.department}
+                  {expired
+                    ? " · Expired"
+                    : ` · Expires ${timeAgo(i.expiresAt)}`}
+                </span>
+              </div>
+              {(i.role !== "ADMIN" || meRole === "OWNER") && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="close"
+                  loading={revoke.isPending && revoke.variables?.id === i.id}
+                  onClick={() => revoke.mutate({ id: i.id })}
+                >
+                  Revoke
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+    </div>
   );
 }
 

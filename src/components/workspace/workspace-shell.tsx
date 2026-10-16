@@ -44,7 +44,7 @@ const SECTIONS: Section[] = [
   },
   {
     href: "/workspace/members",
-    label: "Members",
+    label: "Members & invites",
     icon: "badge",
     need: "admin",
   },

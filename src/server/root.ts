@@ -2,6 +2,7 @@ import { adminRouter } from "./routers/admin";
 import { authRouter } from "./routers/auth";
 import { commentRouter } from "./routers/comment";
 import { filesRouter } from "./routers/files";
+import { invitesRouter } from "./routers/invites";
 import { moderationRouter } from "./routers/moderation";
 import { notificationRouter } from "./routers/notification";
 import { platformRouter } from "./routers/platform";
@@ -23,6 +24,7 @@ export const appRouter = router({
   admin: adminRouter,
   platform: platformRouter,
   workspace: workspaceRouter,
+  invites: invitesRouter,
 });
 export type AppRouter = typeof appRouter;
 export const createCaller = createCallerFactory(appRouter);

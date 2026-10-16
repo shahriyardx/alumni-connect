@@ -93,13 +93,43 @@ export const auth = betterAuth({
               .where(eq(schema.user.studentIdHash, p.studentIdHash));
             if (existingById) return false;
           }
-          // OWNER rows only ever create a *new* PENDING university from an
-          // application — never ownership of an existing one.
-          // TODO(W5): accept OWNER rows created from an OWNER invite here.
-          const application = p.role === "OWNER" || !!p.applicationName;
-          if (application && (!p.applicationName || p.role !== "OWNER"))
-            return false;
-          if (!application && !p.universityId) return false;
+          // OWNER rows either create a *new* PENDING university from an
+          // application, or claim an existing one from a platform OWNER
+          // invite. ADMIN/MODERATOR/STAFF rows only ever come from a staff
+          // invite (invites.accept). Re-check the invite itself here (not
+          // just in invites.accept): it may have been revoked or accepted
+          // elsewhere in the gap between accept() writing this pending row
+          // and the user actually finishing sign-up.
+          const application = p.role === "OWNER" && !!p.applicationName;
+          const invited =
+            (p.role === "OWNER" ||
+              p.role === "ADMIN" ||
+              p.role === "MODERATOR" ||
+              p.role === "STAFF") &&
+            !application;
+          if (invited) {
+            if (!p.universityId || !p.inviteId) return false;
+            const [inv] = await withTenant(p.universityId, (tx) =>
+              tx
+                .select({
+                  role: schema.invite.role,
+                  email: schema.invite.email,
+                  acceptedAt: schema.invite.acceptedAt,
+                  expiresAt: schema.invite.expiresAt,
+                })
+                .from(schema.invite)
+                .where(eq(schema.invite.id, p.inviteId as string)),
+            );
+            if (
+              !inv ||
+              inv.role !== p.role ||
+              inv.email !== email ||
+              inv.acceptedAt ||
+              inv.expiresAt <= new Date()
+            )
+              return false;
+          }
+          if (!application && !invited && !p.universityId) return false;
           // Claim the row: mark it only if it is still exactly what was read.
           // A concurrent startSignup restart then either replaced it first
           // (this sign-up is refused) or sees it claimed and refuses to
@@ -138,6 +168,25 @@ export const auth = betterAuth({
               });
             });
             universityId = id;
+          }
+          if (invited) {
+            // Compare-and-set, mirroring the pending-row claim above: marks
+            // the invite single-use, and loses cleanly to a concurrent
+            // revoke/accept instead of racing it.
+            const [marked] = await withTenant(universityId as string, (tx) =>
+              tx
+                .update(schema.invite)
+                .set({ acceptedAt: new Date() })
+                .where(
+                  and(
+                    eq(schema.invite.id, p.inviteId as string),
+                    isNull(schema.invite.acceptedAt),
+                    gt(schema.invite.expiresAt, new Date()),
+                  ),
+                )
+                .returning({ id: schema.invite.id }),
+            );
+            if (!marked) return false;
           }
           if (!universityId) return false;
           return {

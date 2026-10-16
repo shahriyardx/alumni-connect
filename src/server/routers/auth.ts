@@ -111,7 +111,7 @@ const holdsCard = () =>
  * row points at it. Call inside the transaction that dropped the old
  * reference, after the write; remove the result only after commit.
  */
-async function unreferenced(tx: Tx | typeof db, keys: string[]) {
+export async function unreferenced(tx: Tx | typeof db, keys: string[]) {
   if (keys.length === 0) return [];
   const unis = [...new Set(keys.map((k) => k.split("/")[0]))];
   const users = await tx
@@ -128,7 +128,7 @@ async function unreferenced(tx: Tx | typeof db, keys: string[]) {
   return keys.filter((k) => !used.has(k));
 }
 
-const removeAll = (keys: string[]) =>
+export const removeAll = (keys: string[]) =>
   Promise.all(keys.map((k) => remove(k).catch(() => {})));
 
 /**
@@ -139,7 +139,7 @@ const removeAll = (keys: string[]) =>
  * is seen) or sees the new row (and fails its compare). Remove the returned
  * keys after commit.
  */
-async function upsertPending(
+export async function upsertPending(
   tx: Tx,
   values: typeof pendingSignup.$inferInsert,
 ): Promise<string[]> {
@@ -202,7 +202,7 @@ async function purgeExpiredPending() {
 const mimeEnum = z.enum(Object.keys(ALLOWED_MIME) as [AllowedMime]);
 
 /** Every optional pending_signup column, nulled: spread first so an upsert fully resets the row. */
-const BLANK_PENDING = {
+export const BLANK_PENDING = {
   universityId: null,
   applicationName: null,
   applicationWebsite: null,
@@ -214,6 +214,7 @@ const BLANK_PENDING = {
   idCardKey: null,
   rosterMatch: null,
   studentIdHint: null,
+  inviteId: null,
   claimedAt: null,
 } satisfies Partial<typeof pendingSignup.$inferInsert>;
 

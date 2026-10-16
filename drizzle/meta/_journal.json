@@ -43,6 +43,13 @@
       "when": 1792139000790,
       "tag": "0005_signup_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792142742609,
+      "tag": "0006_needy_daimon_hellstrom",
+      "breakpoints": true
     }
   ]
 }
