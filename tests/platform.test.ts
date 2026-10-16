@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { auditLog, invite, university, user } from "@/db/schema";
+import { auditLog, invite, pendingSignup, university, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import {
   adminDb,
@@ -23,17 +23,34 @@ const apply = (over: Partial<{ email: string; universityName: string }> = {}) =>
     ...over,
   });
 
-async function applyAndSignUp() {
-  const { universityId } = await apply();
-  await auth.api.signUpEmail({
-    body: { name: "Rep Person", email: "rep@eti.edu", password: "password123" },
+const signUp = (email = "rep@eti.edu") =>
+  auth.api.signUpEmail({
+    body: { name: "Rep Person", email, password: "password123" },
   });
+async function applyAndSignUp() {
+  await apply();
+  await signUp();
   // Stand-in for the OTP step.
-  await adminDb
+  const [u] = await adminDb
     .update(user)
     .set({ emailVerified: true })
-    .where(eq(user.email, "rep@eti.edu"));
-  return universityId;
+    .where(eq(user.email, "rep@eti.edu"))
+    .returning();
+  return u.universityId;
+}
+const pendingRow = (email: string) =>
+  adminDb
+    .select()
+    .from(pendingSignup)
+    .where(eq(pendingSignup.email, email))
+    .then((r) => r[0]);
+async function pendingUni(name: string) {
+  const u = await makeUniversity(name);
+  await adminDb
+    .update(university)
+    .set({ status: "PENDING" })
+    .where(eq(university.id, u.id));
+  return u.id;
 }
 const userByEmail = (email: string) =>
   adminDb
@@ -144,10 +161,8 @@ describe("applications", () => {
     await apply();
   });
   test("students can't startSignup into PENDING/REJECTED universities", async () => {
-    const pendingId = (await apply()).universityId;
-    const rejectedId = (
-      await apply({ email: "b@b.edu", universityName: "Bravo" })
-    ).universityId;
+    const pendingId = await pendingUni("Pend");
+    const rejectedId = await pendingUni("Rej");
     await platform.platform.reject({ universityId: rejectedId });
     for (const universityId of [pendingId, rejectedId]) {
       await expect(
@@ -170,16 +185,113 @@ describe("applications", () => {
     for (let i = 0; i < 3; i++) await apply({ email: "r@r.edu" });
     await expect(apply({ email: "r@r.edu" })).rejects.toThrow(/Too many/);
   });
-  test("re-applying replaces the earlier unfinished application", async () => {
-    const first = (await apply()).universityId;
-    const second = (await apply({ universityName: "Eastern Tech 2" }))
-      .universityId;
-    expect(second).toBe(first);
+  test("an application abandoned before sign-up creates no university", async () => {
+    await apply();
+    await apply({ universityName: "Eastern Tech 2" });
+    expect(await adminDb.select().from(university)).toHaveLength(1); // just Home
+    expect((await pendingRow("rep@eti.edu")).applicationName).toBe(
+      "Eastern Tech 2",
+    );
+  });
+  test("sign-up creates the PENDING university, audited with the application", async () => {
+    const uniId = await applyAndSignUp();
     const [uni] = await adminDb
       .select()
       .from(university)
-      .where(eq(university.id, first));
-    expect(uni.name).toBe("Eastern Tech 2");
+      .where(eq(university.id, uniId));
+    expect(uni).toMatchObject({
+      name: "Eastern Tech",
+      slug: "eastern-tech",
+      status: "PENDING",
+      website: "https://eti.edu",
+    });
+    const logs = await adminDb
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.universityId, uniId));
+    expect(logs.map((l) => l.action)).toEqual(["university.apply"]);
+  });
+  test("a stale unverified rep re-applying abandons the old application", async () => {
+    await apply();
+    await signUp();
+    const [stale] = await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(user.email, "rep@eti.edu"))
+      .returning();
+    await apply();
+    const [old] = await adminDb
+      .select()
+      .from(university)
+      .where(eq(university.id, stale.universityId));
+    expect(old.status).toBe("REJECTED");
+    expect(await userByEmail("rep@eti.edu")).toBeUndefined();
+  });
+  test("student row overwritten by an application keeps no student fields", async () => {
+    await callerFor(null).auth.startSignup({
+      universityId: home.id,
+      email: "rep@eti.edu",
+      studentId: "S-1",
+      batchNumber: 4,
+      graduationYear: 2030,
+      department: "CSE",
+    });
+    await apply();
+    expect(await pendingRow("rep@eti.edu")).toMatchObject({
+      universityId: null,
+      studentIdHash: null,
+      batchNumber: null,
+      graduationYear: null,
+      role: "OWNER",
+      applicationName: "Eastern Tech",
+    });
+  });
+  test("application overwritten by a student sign-up keeps no application fields", async () => {
+    await apply();
+    await callerFor(null).auth.startSignup({
+      universityId: home.id,
+      email: "rep@eti.edu",
+      studentId: "S-1",
+      batchNumber: 4,
+      graduationYear: 2030,
+      department: "CSE",
+    });
+    expect(await pendingRow("rep@eti.edu")).toMatchObject({
+      universityId: home.id,
+      title: null,
+      applicationName: null,
+      applicationWebsite: null,
+      role: "STUDENT",
+    });
+    await signUp();
+    expect(await userByEmail("rep@eti.edu")).toMatchObject({
+      universityId: home.id,
+      role: "STUDENT",
+      title: null,
+    });
+  });
+  test("an OWNER pending row without an application never grants ownership", async () => {
+    await adminDb.insert(pendingSignup).values({
+      email: "sneaky@x.edu",
+      universityId: home.id,
+      department: "Admin",
+      role: "OWNER",
+      status: "ACTIVE",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await expect(signUp("sneaky@x.edu")).rejects.toThrow();
+    expect(await userByEmail("sneaky@x.edu")).toBeUndefined();
+  });
+  test("approve refuses an application with no owner", async () => {
+    const id = await pendingUni("Ownerless");
+    await expect(
+      platform.platform.approve({ universityId: id }),
+    ).rejects.toThrow(/no owner/);
+    const [uni] = await adminDb
+      .select()
+      .from(university)
+      .where(eq(university.id, id));
+    expect(uni.status).toBe("PENDING");
   });
 });
 

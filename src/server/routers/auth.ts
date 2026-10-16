@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { and, count, eq, gt, lt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -14,7 +13,7 @@ import {
 } from "@/db/schema";
 import { hashStudentId, roleFor } from "../student-id";
 import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
-import { optionalUrl, uniqueSlug } from "./platform";
+import { optionalUrl } from "./platform";
 
 const email = z
   .string()
@@ -43,6 +42,51 @@ async function overLimit(key: string, max: number, windowMs = 10 * 60_000) {
     })
     .returning({ count: rateLimit.count });
   return r.count > max;
+}
+
+/** Every optional pending_signup column, nulled: spread first so an upsert fully resets the row. */
+const BLANK_PENDING = {
+  universityId: null,
+  applicationName: null,
+  applicationWebsite: null,
+  batchNumber: null,
+  graduationYear: null,
+  title: null,
+  studentIdHash: null,
+  signupTokenHash: null,
+  idCardKey: null,
+  rosterMatch: null,
+  studentIdHint: null,
+} satisfies Partial<typeof pendingSignup.$inferInsert>;
+
+/**
+ * Deletes a stale (unverified) account on this email. If it was the owner
+ * of a still-PENDING application, that university is marked REJECTED first
+ * (audit rows are append-only, so universities are never deleted).
+ */
+async function clearStaleUnverified(email: string) {
+  const [stale] = await db
+    .select({ id: user.id, universityId: user.universityId, role: user.role })
+    .from(user)
+    .where(and(eq(user.email, email), eq(user.emailVerified, false)));
+  if (!stale) return;
+  await withTenant(stale.universityId, async (tx) => {
+    if (stale.role === "OWNER") {
+      const [abandoned] = await tx
+        .update(university)
+        .set({ status: "REJECTED" })
+        .where(
+          and(
+            eq(university.id, stale.universityId),
+            eq(university.status, "PENDING"),
+          ),
+        )
+        .returning({ id: university.id });
+      if (abandoned)
+        await audit(tx, abandoned.id, null, "university.abandon", email);
+    }
+    await tx.delete(user).where(eq(user.id, stale.id));
+  });
 }
 
 export const authRouter = router({
@@ -118,59 +162,27 @@ export const authRouter = router({
           code: "CONFLICT",
           message: "This email is already registered",
         });
-      await db
-        .delete(user)
-        .where(and(eq(user.email, input.email), eq(user.emailVerified, false)));
-      // Re-applying reuses an earlier, never-finished application (audit
-      // rows are append-only, so universities are never deleted).
-      const [prev] = await db
-        .select({ id: university.id })
-        .from(pendingSignup)
-        .innerJoin(university, eq(university.id, pendingSignup.universityId))
-        .where(
-          and(
-            eq(pendingSignup.email, input.email),
-            eq(pendingSignup.role, "OWNER"),
-            eq(university.status, "PENDING"),
-            sql`not exists (select 1 from "user" m where m.university_id = ${university.id})`,
-          ),
-        );
+      await clearStaleUnverified(input.email);
 
-      const id = prev?.id ?? randomUUID();
-      const slug = await uniqueSlug(input.universityName);
-      await withTenant(id, async (tx) => {
-        const details = { name: input.universityName, website: input.website };
-        await tx
-          .insert(university)
-          .values({ id, slug, status: "PENDING", ...details })
-          .onConflictDoUpdate({ target: university.id, set: details });
-        const values = {
-          email: input.email,
-          universityId: id,
-          department: "Administration",
-          title: input.title,
-          role: "OWNER" as const,
-          status: "PENDING" as const,
-          expiresAt: new Date(Date.now() + 30 * 60_000),
-        };
-        await tx
-          .insert(pendingSignup)
-          .values(values)
-          .onConflictDoUpdate({ target: pendingSignup.email, set: values });
-        await audit(
-          tx,
-          id,
-          null,
-          "university.apply",
-          input.email,
-          {
-            name: input.universityName,
-            rep: input.name,
-          },
-          ctx.ip,
-        );
-      });
-      return { universityId: id };
+      // The university itself is created by the sign-up hook, so an
+      // abandoned application leaves nothing behind. Every column is set,
+      // so a same-email overwrite never carries stale student fields.
+      const values = {
+        ...BLANK_PENDING,
+        email: input.email,
+        applicationName: input.universityName,
+        applicationWebsite: input.website,
+        department: "Administration",
+        title: input.title,
+        role: "OWNER" as const,
+        status: "PENDING" as const,
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      };
+      await db
+        .insert(pendingSignup)
+        .values(values)
+        .onConflictDoUpdate({ target: pendingSignup.email, set: values });
+      return { ok: true };
     }),
 
   startSignup: publicProcedure
@@ -331,6 +343,7 @@ export const authRouter = router({
           );
 
         const values = {
+          ...BLANK_PENDING,
           email: input.email,
           universityId: uni.id,
           batchNumber: input.batchNumber,

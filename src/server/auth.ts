@@ -1,12 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { emailOTP } from "better-auth/plugins/email-otp";
 import { and, eq, gt } from "drizzle-orm";
-import { db } from "@/db";
+import { db, withTenant } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/env";
+import { clientIp } from "./client-ip";
 import { sendMail } from "./mail";
+import { insertUniversity } from "./university";
 
 const field = <T extends "string" | "number" | "date">(type: T) =>
   ({ type, required: false, input: false }) as const;
@@ -50,7 +53,7 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (u) => {
+        before: async (u, ctx) => {
           const email = u.email.toLowerCase();
           const [p] = await db
             .select()
@@ -62,24 +65,38 @@ export const auth = betterAuth({
               ),
             );
           if (!p) return false;
-          // Two different emails can each get a pending_signup row for the
-          // same studentIdHash (pending_signup is keyed by email, not ID).
-          // If a user with that hash already exists (e.g. the other
-          // pending email finished sign-up first), refuse cleanly instead
-          // of letting the unique constraint on user.student_id_hash throw
-          // a raw 500.
-          if (p.studentIdHash) {
-            const [existingById] = await db
-              .select({ id: schema.user.id })
-              .from(schema.user)
-              .where(eq(schema.user.studentIdHash, p.studentIdHash));
-            if (existingById) return false;
+          let universityId = p.universityId;
+          if (p.role === "OWNER" || p.applicationName) {
+            // OWNER rows only ever create a *new* PENDING university from an
+            // application — never ownership of an existing one.
+            // TODO(W5): accept OWNER rows created from an OWNER invite here.
+            if (!p.applicationName || p.role !== "OWNER") return false;
+            const id = randomUUID();
+            const name = p.applicationName;
+            await withTenant(id, async (tx) => {
+              await insertUniversity(tx, {
+                id,
+                name,
+                website: p.applicationWebsite,
+                status: "PENDING",
+              });
+              // Inline audit(): importing ../trpc here would be circular.
+              await tx.insert(schema.auditLog).values({
+                universityId: id,
+                action: "university.apply",
+                target: email,
+                meta: { name, rep: u.name },
+                ip: ctx?.headers ? clientIp(ctx.headers) : undefined,
+              });
+            });
+            universityId = id;
           }
+          if (!universityId) return false;
           return {
             data: {
               ...u,
               email,
-              universityId: p.universityId,
+              universityId,
               role: p.role,
               graduationYear: p.graduationYear,
               batchNumber: p.batchNumber,

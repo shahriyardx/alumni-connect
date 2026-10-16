@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   bigint,
   boolean,
+  check,
   customType,
   foreignKey,
   index,
@@ -177,22 +178,37 @@ export const rateLimit = pgTable("rate_limit", {
 });
 
 // Holds verified roster data between auth.startSignup and better-auth sign-up (no RLS: read by auth hook).
-export const pendingSignup = pgTable("pending_signup", {
-  email: text("email").primaryKey(),
-  universityId: universityRef(),
-  batchNumber: integer("batch_number"),
-  graduationYear: integer("graduation_year"),
-  department: text("department").notNull(),
-  title: text("title"),
-  studentIdHash: text("student_id_hash"),
-  signupTokenHash: text("signup_token_hash"),
-  idCardKey: text("id_card_key"),
-  rosterMatch: boolean("roster_match"),
-  studentIdHint: text("student_id_hint"),
-  role: text("role", { enum: ROLES }).notNull(),
-  status: text("status", { enum: STATUSES }).notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-});
+export const pendingSignup = pgTable(
+  "pending_signup",
+  {
+    email: text("email").primaryKey(),
+    // Null for a university application: the university is created by the
+    // sign-up hook, so abandoned applications leave no university rows.
+    universityId: uuid("university_id").references(() => university.id, {
+      onDelete: "cascade",
+    }),
+    applicationName: text("application_name"),
+    applicationWebsite: text("application_website"),
+    batchNumber: integer("batch_number"),
+    graduationYear: integer("graduation_year"),
+    department: text("department").notNull(),
+    title: text("title"),
+    studentIdHash: text("student_id_hash"),
+    signupTokenHash: text("signup_token_hash"),
+    idCardKey: text("id_card_key"),
+    rosterMatch: boolean("roster_match"),
+    studentIdHint: text("student_id_hint"),
+    role: text("role", { enum: ROLES }).notNull(),
+    status: text("status", { enum: STATUSES }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (t) => [
+    check(
+      "pending_signup_target_ck",
+      sql`${t.universityId} is not null or ${t.applicationName} is not null`,
+    ),
+  ],
+);
 
 // ---- tenant tables (RLS) ----
 export const batch = pgTable(

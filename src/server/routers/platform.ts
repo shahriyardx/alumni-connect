@@ -2,32 +2,12 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, withTenant } from "@/db";
-import {
-  invite,
-  pendingSignup,
-  UNIVERSITY_STATUSES,
-  university,
-  user,
-} from "@/db/schema";
+import { db, type Tx, withTenant } from "@/db";
+import { invite, UNIVERSITY_STATUSES, university, user } from "@/db/schema";
 import { env } from "@/env";
 import { sendMail } from "../mail";
 import { audit, platformProcedure, router } from "../trpc";
-
-/** Slug from a name; random suffix when taken (the unique index is the backstop). */
-export async function uniqueSlug(name: string) {
-  const base =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 48) || "university";
-  const [taken] = await db
-    .select({ id: university.id })
-    .from(university)
-    .where(eq(university.slug, base));
-  return taken ? `${base}-${randomBytes(3).toString("hex")}` : base;
-}
+import { insertUniversity } from "../university";
 
 export const optionalUrl = z
   .union([z.literal(""), z.string().url().max(200)])
@@ -46,6 +26,20 @@ async function pendingUniversity(universityId: string) {
       message: "Application already decided",
     });
   return uni;
+}
+
+/** PENDING → decided; the status guard makes concurrent decisions fail cleanly. */
+async function decide(tx: Tx, id: string, status: "ACTIVE" | "REJECTED") {
+  const [row] = await tx
+    .update(university)
+    .set({ status })
+    .where(and(eq(university.id, id), eq(university.status, "PENDING")))
+    .returning({ id: university.id });
+  if (!row)
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Application already decided",
+    });
 }
 
 export const platformRouter = router({
@@ -91,28 +85,17 @@ export const platformRouter = router({
     .mutation(async ({ ctx, input }) => {
       const uni = await pendingUniversity(input.universityId);
       await withTenant(uni.id, async (tx) => {
-        await tx
-          .update(university)
-          .set({ status: "ACTIVE" })
-          .where(eq(university.id, uni.id));
-        const owners = and(
-          eq(user.universityId, uni.id),
-          eq(user.role, "OWNER"),
-        );
-        await tx
+        await decide(tx, uni.id, "ACTIVE");
+        const owners = await tx
           .update(user)
           .set({ status: "ACTIVE", decidedAt: new Date() })
-          .where(owners);
-        // A rep still mid-sign-up lands ACTIVE when they finish.
-        await tx
-          .update(pendingSignup)
-          .set({ status: "ACTIVE" })
-          .where(
-            and(
-              eq(pendingSignup.universityId, uni.id),
-              eq(pendingSignup.role, "OWNER"),
-            ),
-          );
+          .where(and(eq(user.universityId, uni.id), eq(user.role, "OWNER")))
+          .returning({ id: user.id });
+        if (owners.length === 0)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This application has no owner",
+          });
         await audit(
           tx,
           uni.id,
@@ -133,16 +116,10 @@ export const platformRouter = router({
     .mutation(async ({ ctx, input }) => {
       const uni = await pendingUniversity(input.universityId);
       await withTenant(uni.id, async (tx) => {
-        await tx
-          .update(university)
-          .set({ status: "REJECTED" })
-          .where(eq(university.id, uni.id));
+        await decide(tx, uni.id, "REJECTED");
         await tx
           .delete(user)
           .where(and(eq(user.universityId, uni.id), eq(user.role, "OWNER")));
-        await tx
-          .delete(pendingSignup)
-          .where(eq(pendingSignup.universityId, uni.id));
         await audit(
           tx,
           uni.id,
@@ -182,13 +159,13 @@ export const platformRouter = router({
           message: "That email already has an account",
         });
       const token = randomBytes(32).toString("base64url");
-      const slug = await uniqueSlug(input.name);
       const id = randomUUID();
       const uni = await withTenant(id, async (tx) => {
-        const [uni] = await tx
-          .insert(university)
-          .values({ id, name: input.name, slug, website: input.website })
-          .returning();
+        const uni = await insertUniversity(tx, {
+          id,
+          name: input.name,
+          website: input.website,
+        });
         await tx.insert(invite).values({
           universityId: uni.id,
           email: input.ownerEmail,

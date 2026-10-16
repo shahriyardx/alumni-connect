@@ -127,7 +127,7 @@ function UniversityList({ items }: { items: Row[] }) {
           {u.status === "PENDING" && (
             <div className="ml-auto flex gap-2">
               <Decide u={u} action="reject" />
-              <Decide u={u} action="approve" />
+              {u.owner && <Decide u={u} action="approve" />}
             </div>
           )}
         </Card>
