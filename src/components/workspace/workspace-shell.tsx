@@ -1,8 +1,9 @@
 "use client";
+import { Dialog } from "@base-ui/react/dialog";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { isAdmin, isMod, type Role } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
@@ -161,6 +162,100 @@ function Count({ n, active }: { n: number; active?: boolean }) {
   );
 }
 
+type Badges = ReturnType<typeof useBadges>;
+
+/** Brand + section links, shared by the desktop sidebar and the phone sheet. */
+function SidebarBody({
+  sections,
+  badges,
+}: {
+  sections: Section[];
+  badges: Badges;
+}) {
+  const pathname = usePathname();
+  const { me } = useMe();
+  return (
+    <>
+      <div className="flex items-center gap-3 px-2 py-1">
+        <UniversityMark />
+        <div className="flex min-w-0 flex-col">
+          <span className="line-clamp-2 text-[15px] leading-tight font-semibold tracking-tight">
+            {me?.universityName ?? " "}
+          </span>
+          <span className="text-xs text-muted-foreground">Workspace</span>
+        </div>
+      </div>
+      <nav aria-label="Workspace" className="flex flex-col gap-0.5">
+        {sections.map((s) => {
+          const active = s.href === pathname;
+          return (
+            <Link
+              key={s.href}
+              href={s.href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                focusRing,
+                "flex h-10 items-center gap-3 rounded-full px-3.5 text-sm font-medium transition-colors duration-150",
+                active
+                  ? "bg-primary/12 font-semibold text-primary"
+                  : "text-foreground/80 hover:bg-primary/6 hover:text-foreground",
+              )}
+            >
+              <Icon
+                name={s.icon}
+                filled={active}
+                size={20}
+                className={active ? undefined : "text-muted-foreground"}
+              />
+              <span className="flex-1 truncate">{s.label}</span>
+              {s.badge && <Count n={badges[s.badge]} active={active} />}
+            </Link>
+          );
+        })}
+      </nav>
+      <p className="mt-auto px-3.5 text-xs text-muted-foreground">
+        Alumni Connect
+      </p>{" "}
+    </>
+  );
+}
+
+/** Phone/tablet: menu button that slides the sidebar in as a sheet. */
+function MobileNav({
+  sections,
+  badges,
+}: {
+  sections: Section[];
+  badges: Badges;
+}) {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  // Close after navigating.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on route change
+  useEffect(() => setOpen(false), [pathname]);
+  if (sections.length < 2) return null;
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger
+        aria-label="Open menu"
+        className={cn(
+          focusRing,
+          "-ml-1.5 grid size-10 shrink-0 place-items-center rounded-full text-foreground hover:bg-muted lg:hidden",
+        )}
+      >
+        <Icon name="menu" size={22} />
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] transition-opacity duration-200 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 lg:hidden" />
+        <Dialog.Popup className="fixed inset-y-3 left-3 z-50 flex w-[min(18rem,calc(100vw-4rem))] flex-col gap-5 overflow-y-auto rounded-[2rem] bg-surface px-3 py-4 shadow-xl shadow-black/20 outline-none transition-[translate,opacity] duration-200 ease-out data-[ending-style]:-translate-x-[110%] data-[starting-style]:-translate-x-[110%] lg:hidden">
+          <Dialog.Title className="sr-only">Workspace menu</Dialog.Title>
+          <SidebarBody sections={sections} badges={badges} />
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -180,51 +275,13 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh bg-background">
       {/* Sidebar (≥ 1024px) */}
       <aside className="fixed inset-y-3 left-3 z-30 hidden w-64 flex-col gap-5 rounded-[2rem] bg-surface px-3 py-4 shadow-sm shadow-black/5 lg:flex">
-        <div className="flex items-center gap-3 px-2 py-1">
-          <UniversityMark />
-          <div className="flex min-w-0 flex-col">
-            <span className="line-clamp-2 text-[15px] leading-tight font-semibold tracking-tight">
-              {me?.universityName ?? " "}
-            </span>
-            <span className="text-xs text-muted-foreground">Workspace</span>
-          </div>
-        </div>
-        <nav aria-label="Workspace" className="flex flex-col gap-0.5">
-          {sections.map((s) => {
-            const active = s.href === pathname;
-            return (
-              <Link
-                key={s.href}
-                href={s.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  focusRing,
-                  "flex h-10 items-center gap-3 rounded-full px-3.5 text-sm font-medium transition-colors duration-150",
-                  active
-                    ? "bg-primary/12 font-semibold text-primary"
-                    : "text-foreground/80 hover:bg-primary/6 hover:text-foreground",
-                )}
-              >
-                <Icon
-                  name={s.icon}
-                  filled={active}
-                  size={20}
-                  className={active ? undefined : "text-muted-foreground"}
-                />
-                <span className="flex-1 truncate">{s.label}</span>
-                {s.badge && <Count n={badges[s.badge]} active={active} />}
-              </Link>
-            );
-          })}
-        </nav>
-        <p className="mt-auto px-3.5 text-xs text-muted-foreground">
-          Alumni Connect
-        </p>
+        <SidebarBody sections={sections} badges={badges} />
       </aside>
 
       <div className="lg:pl-[17.5rem]">
         <header className="sticky top-0 z-20 bg-background/85 backdrop-blur-xl">
           <div className="flex h-14 items-center gap-3 px-4 lg:px-8">
+            <MobileNav sections={sections} badges={badges} />
             <div className="flex min-w-0 items-center gap-2.5 lg:hidden">
               <UniversityMark size={30} />
               <span className="truncate text-sm font-semibold tracking-tight">
@@ -238,34 +295,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               <UserMenu />
             </div>
           </div>
-          {/* Phone/tablet: sections as a scrollable pill row. */}
-          {sections.length > 1 && (
-            <nav
-              aria-label="Workspace"
-              className="flex gap-1.5 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none] lg:hidden"
-            >
-              {sections.map((s) => {
-                const active = s.href === pathname;
-                return (
-                  <Link
-                    key={s.href}
-                    href={s.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      focusRing,
-                      "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap transition-colors duration-150",
-                      active
-                        ? "bg-primary/12 text-primary"
-                        : "bg-surface text-foreground/80",
-                    )}
-                  >
-                    {s.label}
-                    {s.badge && <Count n={badges[s.badge]} active={active} />}
-                  </Link>
-                );
-              })}
-            </nav>
-          )}
         </header>
         <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-2 pb-16 lg:px-8 lg:pt-4">
           <StatusGate>
