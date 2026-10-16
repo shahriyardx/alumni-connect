@@ -252,6 +252,18 @@ export const invite = pgTable(
       to: appUser,
       using: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
     }),
+    // Lets findInvite() recover an invite whose accepted_at was set by a
+    // sign-up that never verified and is now abandoned (see
+    // routers/invites.ts): it resets accepted_at back to null on the one
+    // row it already holds the secret for. Same token-hash gate as above,
+    // just for UPDATE instead of SELECT.
+    pgPolicy("invite_token_recover", {
+      as: "permissive",
+      for: "update",
+      to: appUser,
+      using: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
+      withCheck: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
+    }),
   ],
 ).enableRLS();
 

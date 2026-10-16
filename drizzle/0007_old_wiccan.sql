@@ -1,0 +1,1 @@
+CREATE POLICY "invite_token_recover" ON "invite" AS PERMISSIVE FOR UPDATE TO "app_user" USING ("invite"."token_hash" = nullif(current_setting('app.lookup_token_hash', true), '')) WITH CHECK ("invite"."token_hash" = nullif(current_setting('app.lookup_token_hash', true), ''));

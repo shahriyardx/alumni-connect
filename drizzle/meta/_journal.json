@@ -50,6 +50,13 @@
       "when": 1792142742609,
       "tag": "0006_needy_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792143927564,
+      "tag": "0007_old_wiccan",
+      "breakpoints": true
     }
   ]
 }

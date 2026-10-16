@@ -48,7 +48,11 @@ const email = z
  * limits that span tenants — audit_log is tenant-scoped, so it can't count
  * one IP's attempts across freshly created universities.
  */
-async function overLimit(key: string, max: number, windowMs = 10 * 60_000) {
+export async function overLimit(
+  key: string,
+  max: number,
+  windowMs = 10 * 60_000,
+) {
   const now = Date.now();
   const stale = sql`${rateLimit.lastRequest} < ${now - windowMs}`;
   const [r] = await db
@@ -225,7 +229,10 @@ export const BLANK_PENDING = {
  * deleted). Runs in the caller's transaction and restores its tenant.
  * Returns the deleted users' ID card keys.
  */
-async function clearStaleUnverified(tx: Tx, where: SQL): Promise<string[]> {
+export async function clearStaleUnverified(
+  tx: Tx,
+  where: SQL,
+): Promise<string[]> {
   const stale = await tx
     .select({
       id: user.id,

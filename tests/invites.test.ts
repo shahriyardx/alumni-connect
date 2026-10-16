@@ -161,6 +161,23 @@ describe("invites.list / revoke", () => {
     ).rejects.toThrow(/owner/i);
     expect(r.inviteUrl).toBeTruthy();
   });
+
+  test("an ADMIN can't replace (or delete-by-replacing) an open ADMIN invite", async () => {
+    await callerFor(owner.id).invites.create({
+      email: "openadmin@x.edu",
+      role: "ADMIN",
+      department: "CSE",
+    });
+    await expect(
+      callerFor(admin.id).invites.create({
+        email: "openadmin@x.edu",
+        role: "STAFF",
+        department: "CSE",
+      }),
+    ).rejects.toThrow(/owner/i);
+    const row = await inviteByEmail("openadmin@x.edu");
+    expect(row.role).toBe("ADMIN"); // untouched
+  });
 });
 
 describe("invite accept lifecycle", () => {
@@ -301,5 +318,130 @@ describe("invite accept lifecycle", () => {
     });
     const invRow = await inviteByEmail("newowner@x.edu");
     expect(invRow.acceptedAt).not.toBeNull();
+  });
+});
+
+describe("the sign-up hook's own invite guards (not just invites.* NOT_FOUND)", () => {
+  /** A hand-crafted pending_signup row, as invites.accept would have written it. */
+  const plantPending = (over: Partial<typeof pendingSignup.$inferInsert>) =>
+    adminDb.insert(pendingSignup).values({
+      email: "x@x.edu",
+      universityId: uniId,
+      department: "CSE",
+      role: "STAFF",
+      status: "ACTIVE",
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+      ...over,
+    });
+
+  test("a pending row whose email doesn't match the invite's email is refused", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "real@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const invRow = await inviteByEmail("real@x.edu");
+    await plantPending({
+      email: "spoofed@x.edu",
+      inviteId: invRow.id,
+      role: "STAFF",
+    });
+    await expect(signUp("spoofed@x.edu", "Spoof")).rejects.toThrow();
+    expect(await userByEmail("spoofed@x.edu")).toBeUndefined();
+    expect(r.inviteUrl).toBeTruthy();
+  });
+
+  test("an invite that expires between accept() and sign-up is refused", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "expgap@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "X" });
+    await adminDb
+      .update(invite)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(invite.email, "expgap@x.edu"));
+    await expect(signUp("expgap@x.edu", "X")).rejects.toThrow();
+    expect(await userByEmail("expgap@x.edu")).toBeUndefined();
+  });
+
+  test("a role mismatch between the pending row and the invite is refused", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "rolemismatch@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "X" });
+    await adminDb
+      .update(pendingSignup)
+      .set({ role: "ADMIN" })
+      .where(eq(pendingSignup.email, "rolemismatch@x.edu"));
+    await expect(signUp("rolemismatch@x.edu", "X")).rejects.toThrow();
+    expect(await userByEmail("rolemismatch@x.edu")).toBeUndefined();
+  });
+
+  test("a pending row for an invite already marked accepted is refused (the hook's own guard, independent of invites.* NOT_FOUND)", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "racer@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "X" });
+    // Simulate a concurrent request that already claimed this invite via
+    // the hook's own compare-and-set (see auth.ts) — the pending row is
+    // untouched, only the invite's accepted_at changed underneath it.
+    await adminDb
+      .update(invite)
+      .set({ acceptedAt: new Date() })
+      .where(eq(invite.email, "racer@x.edu"));
+    await expect(signUp("racer@x.edu", "X")).rejects.toThrow();
+    expect(await userByEmail("racer@x.edu")).toBeUndefined();
+  });
+
+  test("an abandoned (never-verified) accept recovers: the invite can be re-accepted past the grace window", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "abandoned@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "First Try" });
+    await signUp("abandoned@x.edu", "First Try"); // unverified user; invite marked accepted
+    expect((await inviteByEmail("abandoned@x.edu")).acceptedAt).not.toBeNull();
+
+    // Still within the 15-minute grace window: genuinely in-flight, so the
+    // invite stays "used" rather than reopening under someone else.
+    await expect(callerFor(null).invites.lookup({ token })).rejects.toThrow(
+      /NOT_FOUND/,
+    );
+
+    // Backdate past the grace window — this sign-up was abandoned.
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(user.email, "abandoned@x.edu"));
+
+    const look = await callerFor(null).invites.lookup({ token });
+    expect(look.email).toBe("abandoned@x.edu");
+
+    await callerFor(null).invites.accept({ token, name: "Second Try" });
+    await signUp("abandoned@x.edu", "Second Try");
+    const u = await userByEmail("abandoned@x.edu");
+    expect(u).toMatchObject({
+      role: "STAFF",
+      department: "CSE",
+      status: "ACTIVE",
+    });
+    // The stale account was cleared, not duplicated: exactly one user row.
+    expect(
+      await adminDb
+        .select()
+        .from(user)
+        .where(eq(user.email, "abandoned@x.edu")),
+    ).toHaveLength(1);
   });
 });
