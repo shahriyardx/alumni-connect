@@ -4,6 +4,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 import { db, type Tx, withTenant } from "@/db";
 import { auditLog, user } from "@/db/schema";
+import { isSuspendedNow } from "@/lib/account-status";
 import { auth } from "./auth";
 
 export type Context = { userId: string | null; ip: string };
@@ -56,12 +57,7 @@ export function activeStatusError(
 ): string | null {
   if (me.status === "BANNED") return "Account banned";
   if (me.status === "PENDING") return "Account awaiting approval";
-  if (
-    me.status === "SUSPENDED" &&
-    (!me.suspendedUntil || me.suspendedUntil > new Date())
-  ) {
-    return "Account suspended";
-  }
+  if (isSuspendedNow(me)) return "Account suspended";
   return null;
 }
 

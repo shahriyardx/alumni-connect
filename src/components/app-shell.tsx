@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { Role } from "@/db/schema";
+import { isActiveNow, isSuspendedNow } from "@/lib/account-status";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { useLiveEvents } from "@/lib/live";
@@ -156,8 +157,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { me } = useMe();
   const trpc = useTRPC();
-  const active = me?.status === "ACTIVE";
-  useLiveEvents(active);
+  const active = !!me && isActiveNow(me);
+  useLiveEvents(active ? me.id : undefined);
   // Live "notification" events invalidate this; no polling.
   const { data: unread = 0 } = useQuery(
     trpc.notification.unreadCount.queryOptions(undefined, { enabled: active }),
@@ -237,9 +238,7 @@ function StatusGate({ children }: { children: React.ReactNode }) {
     else if (me && !pending && pathname === "/pending") router.replace("/feed");
   }, [me, isLoading, pending, pathname, router]);
 
-  const suspended =
-    me?.status === "SUSPENDED" &&
-    (!me.suspendedUntil || new Date(me.suspendedUntil) > new Date());
+  const suspended = !!me && isSuspendedNow(me);
   const blocked = me?.status === "BANNED" || suspended;
   const waiting = isLoading || !me || (pending && pathname !== "/pending");
 

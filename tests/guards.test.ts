@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
+import { isActiveNow } from "@/lib/account-status";
 import {
   adminProcedure,
   createCallerFactory,
@@ -59,4 +60,19 @@ test("role guards", async () => {
   expect(await as(m.id).mod()).toBe("ok");
   await expect(as(m.id).admin()).rejects.toThrow(/FORBIDDEN/);
   expect(await as(a.id).admin()).toBe("ok");
+});
+
+test("isActiveNow (client shell): expired suspension counts as active", () => {
+  const past = new Date(Date.now() - 1000).toISOString();
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  expect(isActiveNow({ status: "ACTIVE" })).toBe(true);
+  expect(isActiveNow({ status: "SUSPENDED", suspendedUntil: past })).toBe(true);
+  expect(isActiveNow({ status: "SUSPENDED", suspendedUntil: future })).toBe(
+    false,
+  );
+  expect(isActiveNow({ status: "SUSPENDED", suspendedUntil: null })).toBe(
+    false,
+  );
+  expect(isActiveNow({ status: "BANNED" })).toBe(false);
+  expect(isActiveNow({ status: "PENDING" })).toBe(false);
 });
