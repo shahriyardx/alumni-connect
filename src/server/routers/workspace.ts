@@ -22,7 +22,6 @@ import {
   ownerProcedure,
   router,
 } from "../trpc";
-import { optionalUrl } from "./platform";
 
 const CARD_TTL_MS = 30 * 86_400_000;
 
@@ -215,20 +214,26 @@ export const workspaceRouter = router({
       .limit(100)
       .for("update");
     if (expired.length) {
-      await ctx.db
-        .update(user)
-        .set({ idCardKey: null })
-        .where(
-          and(
-            eq(user.universityId, uni),
-            inArray(
-              user.id,
-              expired.map((e) => e.id),
-            ),
-          ),
-        );
+      // Only rows whose object is really gone drop the key; failures stay
+      // referenced so the next purge retries them.
       // ponytail: objects go before commit; a rolled-back tx leaves a row pointing at a gone card (404, harmless).
-      await removeAll(expired.map((e) => e.key as string));
+      const results = await Promise.allSettled(
+        expired.map((e) => remove(e.key as string)),
+      );
+      const done = expired.filter((_, i) => results[i].status === "fulfilled");
+      if (done.length)
+        await ctx.db
+          .update(user)
+          .set({ idCardKey: null })
+          .where(
+            and(
+              eq(user.universityId, uni),
+              inArray(
+                user.id,
+                done.map((e) => e.id),
+              ),
+            ),
+          );
     }
     return ctx.db
       .select({
@@ -306,10 +311,23 @@ export const workspaceRouter = router({
           code: "NOT_FOUND",
           message: "Pick an active member",
         });
-      await ctx.db
+      // Row lock + role check: a concurrent second transfer finds no OWNER.
+      const [demoted] = await ctx.db
         .update(user)
         .set({ role: "ADMIN" })
-        .where(and(eq(user.id, ctx.me.id), eq(user.universityId, uni)));
+        .where(
+          and(
+            eq(user.id, ctx.me.id),
+            eq(user.universityId, uni),
+            eq(user.role, "OWNER"),
+          ),
+        )
+        .returning({ id: user.id });
+      if (!demoted)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "You're no longer the owner",
+        });
       await ctx.db
         .update(user)
         .set({ role: "OWNER" })
@@ -337,7 +355,11 @@ export const workspaceRouter = router({
     .input(
       z.object({
         name: z.string().trim().min(2).max(120),
-        website: optionalUrl,
+        // Omitted keeps the current value; "" or null clears it.
+        website: z
+          .union([z.literal(""), z.string().url().max(200)])
+          .nullable()
+          .optional(),
         logoKey: z.string().max(300).nullable().optional(),
       }),
     )
@@ -360,14 +382,34 @@ export const workspaceRouter = router({
             message: "Upload not found",
           });
       }
+      const [cur] = await ctx.db
+        .select({ logoKey: university.logoKey })
+        .from(university)
+        .where(eq(university.id, uni))
+        .for("update");
       await ctx.db
         .update(university)
         .set({
           name: input.name,
-          website: input.website,
+          ...(input.website !== undefined && {
+            website: input.website || null,
+          }),
           ...(input.logoKey !== undefined && { logoKey: input.logoKey }),
         })
         .where(eq(university.id, uni));
+      // A replaced or removed logo is gone for good: row and object.
+      const old = cur?.logoKey;
+      if (input.logoKey !== undefined && old && old !== input.logoKey) {
+        await ctx.db
+          .delete(attachment)
+          .where(
+            and(
+              eq(attachment.objectKey, old),
+              eq(attachment.universityId, uni),
+            ),
+          );
+        await removeAll([old]);
+      }
       await audit(ctx.db, uni, ctx.me.id, "settings.update", uni, {
         name: input.name,
       });

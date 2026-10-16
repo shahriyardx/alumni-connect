@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { rosterEntry, university, user } from "@/db/schema";
+import { attachment, rosterEntry, university, user } from "@/db/schema";
 import { env } from "@/env";
 import { minio, stat } from "@/server/storage";
 import {
@@ -97,6 +97,25 @@ describe("approvals", () => {
     expect(await stat(oldCard)).toBeNull();
     expect((await row(fresh.id)).idCardKey).toBe(freshCard);
     expect(await stat(freshCard)).not.toBeNull();
+  });
+
+  test("purge keeps the key when the object can't be removed", async () => {
+    const orig = minio.removeObject.bind(minio);
+    const card = await putCard();
+    const u = await makeUser(uniId, {
+      idCardKey: card,
+      decidedAt: new Date(Date.now() - 31 * 86_400_000),
+    });
+    minio.removeObject = (() =>
+      Promise.reject(new Error("down"))) as typeof minio.removeObject;
+    try {
+      await callerFor(admin.id).workspace.approvals();
+    } finally {
+      minio.removeObject = orig;
+    }
+    expect((await row(u.id)).idCardKey).toBe(card);
+    await callerFor(admin.id).workspace.approvals();
+    expect((await row(u.id)).idCardKey).toBeNull();
   });
 
   test("moderators and members can't reach admin procedures", async () => {
@@ -246,6 +265,21 @@ describe("owner protections", () => {
     expect((await row(admin.id)).status).toBe("SUSPENDED");
   });
 
+  test("concurrent transfers leave exactly one owner", async () => {
+    const o = callerFor(owner.id);
+    const results = await Promise.allSettled([
+      o.workspace.transferOwnership({ userId: student.id }),
+      o.workspace.transferOwnership({ userId: admin.id }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const owners = await adminDb
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.role, "OWNER"));
+    expect(owners).toHaveLength(1);
+    expect((await row(owner.id)).role).toBe("ADMIN");
+  });
+
   test("transfer ownership", async () => {
     const o = callerFor(owner.id);
     await expect(
@@ -319,7 +353,16 @@ describe("settings", () => {
     expect((await callerFor(student.id).auth.me())?.universityLogoKey).toBe(
       att.key,
     );
+    // Omitted website keeps its value; removing the logo deletes row + object.
     await o.workspace.updateSettings({ name: "New Name", logoKey: null });
+    expect((await o.workspace.settings()).website).toBe("https://new.edu");
+    expect(
+      await adminDb
+        .select()
+        .from(attachment)
+        .where(eq(attachment.objectKey, att.key)),
+    ).toEqual([]);
+    expect(await stat(att.key)).toBeNull();
     const [u] = await adminDb
       .select()
       .from(university)

@@ -80,8 +80,9 @@ export function BatchesPanel() {
             <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs">
               student_id, department, name
             </code>{" "}
-            (name optional). Student IDs are stored hashed; re-uploading moves
-            an ID to that batch.
+            (name optional). Format the student ID column as Text in Excel to
+            keep leading zeros. Student IDs are stored hashed; re-uploading
+            moves an ID to that batch.
           </span>
         </div>
         <a

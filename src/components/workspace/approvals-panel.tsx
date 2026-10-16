@@ -137,17 +137,7 @@ function ApprovalCard({ u }: { u: Pending }) {
             )}
           </Fact>
           <Fact label="Roster">
-            <span
-              className={cn(
-                "inline-flex h-5 items-center gap-1 rounded-full pr-2 pl-1.5 text-xs font-medium",
-                u.rosterMatch
-                  ? "bg-tonal text-tonal-fg"
-                  : "bg-destructive/10 text-destructive",
-              )}
-            >
-              <Icon name={u.rosterMatch ? "check" : "close"} size={14} />
-              {u.rosterMatch ? "On roster" : "Not found"}
-            </span>
+            <RosterChip match={u.rosterMatch} />
           </Fact>
         </dl>
         <span className="text-xs text-muted-foreground">
@@ -210,5 +200,26 @@ function Fact({
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="truncate">{children}</dd>
     </div>
+  );
+}
+
+/** true = on that batch's roster, false = roster exists but no match, null = batch had no roster. */
+function RosterChip({ match }: { match: boolean | null }) {
+  const [tone, icon, label] =
+    match === true
+      ? ["bg-tonal text-tonal-fg", "check", "On roster"]
+      : match === false
+        ? ["bg-destructive/10 text-destructive", "close", "Not found"]
+        : ["bg-muted text-muted-foreground", "remove", "No roster"];
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 items-center gap-1 rounded-full pr-2 pl-1.5 text-xs font-medium",
+        tone,
+      )}
+    >
+      <Icon name={icon} size={14} />
+      {label}
+    </span>
   );
 }

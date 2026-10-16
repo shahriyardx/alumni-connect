@@ -264,7 +264,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-2 pb-16 lg:px-8 lg:pt-4">
           <StatusGate>
             <UniversityPendingBanner />
-            {me && !ok && !toQueue ? (
+            {/* Children mount only once the role is known and allowed, so no
+                forbidden query fires (e.g. a moderator on the overview). */}
+            {!me || toQueue ? null : !ok ? (
               <EmptyState
                 icon="block"
                 title="403 · Staff only"
@@ -280,9 +282,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 }
               />
             ) : (
-              <div className="flex flex-col gap-6" hidden={!ok}>
-                {children}
-              </div>
+              <div className="flex flex-col gap-6">{children}</div>
             )}
           </StatusGate>
         </main>

@@ -626,6 +626,16 @@ export const authRouter = router({
                 ),
               )
           : [];
+        // null = nothing to compare against (no batch yet, or empty roster).
+        const [anyRoster] =
+          b && !hit
+            ? await tx
+                .select({ id: rosterEntry.id })
+                .from(rosterEntry)
+                .where(eq(rosterEntry.batchId, b.id))
+                .limit(1)
+            : [];
+        const rosterMatch = hit ? true : anyRoster ? false : null;
         const role = roleFor({ graduationYear });
 
         // Clear any *stale* unverified account squatting on this email or ID
@@ -651,7 +661,7 @@ export const authRouter = router({
           department: input.department,
           studentIdHash: idHash,
           signupTokenHash: sha256(signupToken),
-          rosterMatch: !!hit,
+          rosterMatch,
           studentIdHint: normalizeStudentId(input.studentId).slice(-4),
           role,
           status: "PENDING" as const,

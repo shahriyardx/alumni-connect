@@ -427,7 +427,7 @@ export const moderationRouter = router({
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       assertCanAct(ctx.me, target);
 
-      // PENDING accounts are an admin-approval concern (admin.approveUser),
+      // PENDING accounts are an admin-approval concern (workspace.decide),
       // not something a moderator can flip straight to ACTIVE.
       if (target.status === "PENDING") {
         throw new TRPCError({

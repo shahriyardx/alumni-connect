@@ -68,3 +68,19 @@ test("rowsToCsv: spreadsheet rows survive the round trip", () => {
     errors: [],
   });
 });
+
+test("rowsToCsv: long numeric IDs stay exact; empty rows and trailing cells", () => {
+  const csv = rowsToCsv([
+    ["student_id", "department", null],
+    ["0012345678901234567", "CSE", null, ""],
+    [null, "", null],
+    ["1234567890123456789", "EEE", ""],
+  ]);
+  expect(csv).toBe(
+    "student_id,department\n0012345678901234567,CSE\n\n1234567890123456789,EEE",
+  );
+  expect(parseRosterCsv(csv).rows.map((r) => r.studentId)).toEqual([
+    "0012345678901234567",
+    "1234567890123456789",
+  ]);
+});

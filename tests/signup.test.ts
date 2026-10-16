@@ -142,7 +142,7 @@ describe("auth.startSignup", () => {
     expect(await pendingRow(base().email)).toMatchObject({
       batchNumber: 43,
       graduationYear: 2031,
-      rosterMatch: false,
+      rosterMatch: null, // nothing to compare against
     });
   });
   test("accepts a migrated batch number (number = year, e.g. 2018)", async () => {
