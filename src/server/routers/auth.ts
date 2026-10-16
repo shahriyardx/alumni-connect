@@ -6,6 +6,7 @@ import {
   eq,
   gt,
   inArray,
+  isNull,
   lt,
   or,
   type SQL,
@@ -91,6 +92,20 @@ const cardObjects = (p: {
     : []),
 ];
 
+/** A claimed row older than this whose user never appeared is abandoned (the insert failed). */
+const CLAIM_GRACE_MS = 5 * 60_000;
+const claimCutoff = () => new Date(Date.now() - CLAIM_GRACE_MS);
+
+/** Pending rows that still hold their card: live and unclaimed, or claimed recently. */
+const holdsCard = () =>
+  or(
+    and(
+      isNull(pendingSignup.claimedAt),
+      gt(pendingSignup.expiresAt, new Date()),
+    ),
+    gt(pendingSignup.claimedAt, claimCutoff()),
+  );
+
 /**
  * The subset of `keys` nothing still uses: no user row and no live pending
  * row points at it. Call inside the transaction that dropped the old
@@ -108,12 +123,7 @@ async function unreferenced(tx: Tx | typeof db, keys: string[]) {
   const pending = await tx
     .select({ k: pendingSignup.idCardKey })
     .from(pendingSignup)
-    .where(
-      and(
-        inArray(pendingSignup.idCardKey, keys),
-        gt(pendingSignup.expiresAt, new Date()),
-      ),
-    );
+    .where(and(inArray(pendingSignup.idCardKey, keys), holdsCard()));
   const used = new Set([...users, ...pending].map((r) => r.k));
   return keys.filter((k) => !used.has(k));
 }
@@ -138,6 +148,12 @@ async function upsertPending(
     .from(pendingSignup)
     .where(eq(pendingSignup.email, values.email))
     .for("update");
+  // Sign-up is creating the user from this row right now.
+  if (old?.claimedAt && old.claimedAt > claimCutoff())
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "This email is already registered",
+    });
   await tx
     .insert(pendingSignup)
     .values(values)
@@ -150,17 +166,31 @@ async function upsertPending(
  * sign-up, so delete them (100 per call) and their unreferenced card objects.
  */
 async function purgeExpiredPending() {
+  // Expired unclaimed rows, and claimed rows whose user insert never landed
+  // (a successful one is deleted by the sign-up after-hook).
+  const dead = () =>
+    or(
+      and(
+        isNull(pendingSignup.claimedAt),
+        lt(pendingSignup.expiresAt, new Date()),
+      ),
+      lt(pendingSignup.claimedAt, claimCutoff()),
+    );
   const orphans = await db.transaction(async (tx) => {
     const rows = await tx
       .delete(pendingSignup)
       .where(
-        inArray(
-          pendingSignup.email,
-          tx
-            .select({ email: pendingSignup.email })
-            .from(pendingSignup)
-            .where(lt(pendingSignup.expiresAt, new Date()))
-            .limit(100),
+        and(
+          // Re-checked here: a row revived between subquery and delete stays.
+          dead(),
+          inArray(
+            pendingSignup.email,
+            tx
+              .select({ email: pendingSignup.email })
+              .from(pendingSignup)
+              .where(dead())
+              .limit(100),
+          ),
         ),
       )
       .returning();
@@ -184,6 +214,7 @@ const BLANK_PENDING = {
   idCardKey: null,
   rosterMatch: null,
   studentIdHint: null,
+  claimedAt: null,
 } satisfies Partial<typeof pendingSignup.$inferInsert>;
 
 /**
@@ -388,6 +419,7 @@ export const authRouter = router({
           and(
             eq(pendingSignup.email, input.email),
             gt(pendingSignup.expiresAt, new Date()),
+            isNull(pendingSignup.claimedAt),
           ),
         );
       const given = Buffer.from(sha256(input.signupToken), "hex");
@@ -416,23 +448,34 @@ export const authRouter = router({
       // Bound to the token hash: a concurrent restart or sign-up claim wins.
       const outcome = await db.transaction(async (tx) => {
         const [row] = await tx
-          .select({ idCardKey: pendingSignup.idCardKey })
+          .select({
+            idCardKey: pendingSignup.idCardKey,
+            tokenHash: pendingSignup.signupTokenHash,
+            claimedAt: pendingSignup.claimedAt,
+          })
           .from(pendingSignup)
-          .where(
-            and(
-              eq(pendingSignup.email, input.email),
-              eq(pendingSignup.signupTokenHash, p.signupTokenHash as string),
-            ),
-          )
+          .where(eq(pendingSignup.email, input.email))
           .for("update");
-        if (!row) return { stored: false, orphans: [final.key] };
+        if (
+          !row ||
+          row.tokenHash !== p.signupTokenHash ||
+          row.claimedAt !== null
+        )
+          return {
+            stored: false,
+            // A duplicate confirm that already stored this key keeps it.
+            orphans: row?.idCardKey === final.key ? [] : [final.key],
+          };
+        if (row.idCardKey === final.key) return { stored: true, orphans: [] };
         await tx
           .update(pendingSignup)
           .set({ idCardKey: final.key })
           .where(eq(pendingSignup.email, input.email));
         // A card of another type confirmed earlier for this token is replaced.
-        const old = row.idCardKey && row.idCardKey !== final.key;
-        return { stored: true, orphans: old ? [row.idCardKey as string] : [] };
+        return {
+          stored: true,
+          orphans: row.idCardKey ? [row.idCardKey] : [],
+        };
       });
       await removeAll(await unreferenced(db, outcome.orphans));
       if (!outcome.stored)

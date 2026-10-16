@@ -201,6 +201,9 @@ export const pendingSignup = pgTable(
     role: text("role", { enum: ROLES }).notNull(),
     status: text("status", { enum: STATUSES }).notNull(),
     expiresAt: timestamp("expires_at").notNull(),
+    // Set when better-auth's sign-up hook claims the row; the after-hook
+    // deletes it once the user exists.
+    claimedAt: timestamp("claimed_at"),
   },
   (t) => [
     check(

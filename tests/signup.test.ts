@@ -393,6 +393,60 @@ describe("ID card + v2 sign-up", () => {
       if (u) expect(await stat(u.idCardKey as string)).not.toBeNull();
     }
   });
+  test("claimed row: blocks restart and confirm, keeps its card; abandoned after 5 min it is purged with the card", async () => {
+    const r = await startWithCard();
+    const card = (await pendingRow(base().email)).idCardKey as string;
+    // As the sign-up hook leaves it when the user insert then fails.
+    await adminDb
+      .update(pendingSignup)
+      .set({ claimedAt: new Date(), expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(pendingSignup.email, base().email));
+    await expect(callerFor(null).auth.startSignup(base())).rejects.toThrow(
+      /already registered/i,
+    );
+    await expect(
+      callerFor(null).auth.confirmIdCard({
+        email: base().email,
+        signupToken: r.signupToken,
+        key: r.upload.key,
+      }),
+    ).rejects.toThrow(/expired/);
+    expect(await stat(card)).not.toBeNull();
+    expect((await apiError(signUp())).code).toBe("FAILED_TO_CREATE_USER");
+
+    await adminDb
+      .update(pendingSignup)
+      .set({ claimedAt: new Date(Date.now() - 6 * 60_000) })
+      .where(eq(pendingSignup.email, base().email));
+    // Any later startSignup (here another applicant's) purges it.
+    await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "other@north.edu",
+      studentId: "NU-2002",
+      batchNumber: 48,
+    });
+    expect(await pendingRow(base().email)).toBeUndefined();
+    expect(await stat(card)).toBeNull();
+  });
+  test("a refused sign-up never claims the row (shape checks run first)", async () => {
+    await adminDb.insert(pendingSignup).values({
+      email: "bad-owner@north.edu",
+      universityId: uni.id,
+      department: "Admin",
+      role: "OWNER",
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    expect((await apiError(signUp("bad-owner@north.edu"))).code).toBe(
+      "FAILED_TO_CREATE_USER",
+    );
+    expect((await pendingRow("bad-owner@north.edu")).claimedAt).toBeNull();
+  });
+  test("successful sign-up: claimed row is deleted by the after-hook", async () => {
+    await startWithCard();
+    await signUp();
+    expect(await pendingRow(base().email)).toBeUndefined();
+  });
   test("presigned POST: size-capped by MinIO, pinned key and content-type", async () => {
     const r = await callerFor(null).auth.startSignup(base());
     expect(r.upload.key.startsWith(`${uni.id}/staging/idcard/`)).toBe(true);

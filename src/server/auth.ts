@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { emailOTP } from "better-auth/plugins/email-otp";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db, withTenant } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/env";
@@ -64,7 +64,7 @@ export const auth = betterAuth({
           const [read] = await db
             .select({
               p: schema.pendingSignup,
-              // Row version, for the compare-and-delete claim below.
+              // Row version, for the compare-and-set claim below.
               version: sql<string>`${schema.pendingSignup}.xmin::text`,
             })
             .from(schema.pendingSignup)
@@ -72,6 +72,7 @@ export const auth = betterAuth({
               and(
                 eq(schema.pendingSignup.email, email),
                 gt(schema.pendingSignup.expiresAt, new Date()),
+                isNull(schema.pendingSignup.claimedAt),
               ),
             );
           if (!read) return false;
@@ -92,13 +93,22 @@ export const auth = betterAuth({
               .where(eq(schema.user.studentIdHash, p.studentIdHash));
             if (existingById) return false;
           }
-          // Claim the row: delete it only if it is still exactly what was
-          // read. A concurrent startSignup restart (which replaces the row
-          // and deletes its old card) then either sees no row to replace,
-          // or wins and this sign-up is refused — the user never ends up
-          // pointing at a card the restart removed.
+          // OWNER rows only ever create a *new* PENDING university from an
+          // application — never ownership of an existing one.
+          // TODO(W5): accept OWNER rows created from an OWNER invite here.
+          const application = p.role === "OWNER" || !!p.applicationName;
+          if (application && (!p.applicationName || p.role !== "OWNER"))
+            return false;
+          if (!application && !p.universityId) return false;
+          // Claim the row: mark it only if it is still exactly what was read.
+          // A concurrent startSignup restart then either replaced it first
+          // (this sign-up is refused) or sees it claimed and refuses to
+          // replace it. The row — and with it the card reference — stays
+          // until the after-hook deletes it, so if the user insert fails
+          // the purge still finds and removes the card (5 min later).
           const [claimed] = await db
-            .delete(schema.pendingSignup)
+            .update(schema.pendingSignup)
+            .set({ claimedAt: new Date() })
             .where(
               and(
                 eq(schema.pendingSignup.email, email),
@@ -108,11 +118,7 @@ export const auth = betterAuth({
             .returning({ email: schema.pendingSignup.email });
           if (!claimed) return false;
           let universityId = p.universityId;
-          if (p.role === "OWNER" || p.applicationName) {
-            // OWNER rows only ever create a *new* PENDING university from an
-            // application — never ownership of an existing one.
-            // TODO(W5): accept OWNER rows created from an OWNER invite here.
-            if (!p.applicationName || p.role !== "OWNER") return false;
+          if (application && p.applicationName) {
             const id = randomUUID();
             const name = p.applicationName;
             await withTenant(id, async (tx) => {
