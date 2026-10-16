@@ -5,29 +5,14 @@ import { z } from "zod";
 import { attachment } from "@/db/schema";
 import {
   ALLOWED_MIME,
-  copy,
+  EXT_TO_MIME,
+  finalKeyFor,
   MAX_BYTES,
   presignPut,
-  readHead,
+  promoteUpload,
   remove,
-  stat,
 } from "../storage";
 import { memberProcedure, router } from "../trpc";
-
-const EXT_TO_MIME = Object.fromEntries(
-  Object.entries(ALLOWED_MIME).map(([mime, ext]) => [ext, mime]),
-) as Record<string, keyof typeof ALLOWED_MIME>;
-
-/** First bytes that identify each allowed image format, regardless of what Content-Type the uploader claimed. */
-const MAGIC: Record<keyof typeof ALLOWED_MIME, (head: Buffer) => boolean> = {
-  "image/png": (h) =>
-    h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4e && h[3] === 0x47,
-  "image/jpeg": (h) => h[0] === 0xff && h[1] === 0xd8 && h[2] === 0xff,
-  "image/gif": (h) => h.subarray(0, 4).toString("ascii") === "GIF8",
-  "image/webp": (h) =>
-    h.subarray(0, 4).toString("ascii") === "RIFF" &&
-    h.subarray(8, 12).toString("ascii") === "WEBP",
-};
 
 export const filesRouter = router({
   createUpload: memberProcedure
@@ -99,8 +84,7 @@ export const filesRouter = router({
       // key that was never uploaded to). While an attachment row DOES exist
       // for the final key, every later confirm call for that staging key is
       // idempotent and returns the same attachment.
-      const segments = input.key.split("/");
-      const finalKey = [segments[0], segments[1], "f", segments[2]].join("/");
+      const finalKey = finalKeyFor(input.key);
 
       const [existingRow] = await ctx.db
         .select({ id: attachment.id, objectKey: attachment.objectKey })
@@ -110,50 +94,7 @@ export const filesRouter = router({
         await remove(input.key).catch(() => {});
         return { id: existingRow.id, key: existingRow.objectKey };
       }
-      // A final object without a row can only mean a previous confirm
-      // crashed between the copy and the insert (or is racing concurrently,
-      // see below). Either way, never re-copy over it.
-      if (await stat(finalKey)) {
-        await remove(input.key).catch(() => {});
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "Upload already confirmed",
-        });
-      }
-
-      if (!(await stat(input.key))) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Upload not found",
-        });
-      }
-
-      await copy(input.key, finalKey);
-      await remove(input.key).catch(() => {});
-
-      const finalInfo = await stat(finalKey);
-      if (!finalInfo) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Upload not found",
-        });
-      }
-      if (finalInfo.size > MAX_BYTES) {
-        await remove(finalKey);
-        throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
-      }
-      // Don't trust the Content-Type the uploader sent with the PUT, or the
-      // extension in the key: sniff the real bytes so a .png key can't be
-      // used to serve e.g. HTML/script content back out of /api/files. Both
-      // checks run against the FINAL (immutable) object, not the staging one.
-      const head = await readHead(finalKey, 16);
-      if (!MAGIC[mime](head) || finalInfo.contentType !== mime) {
-        await remove(finalKey);
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "File is not a valid image",
-        });
-      }
+      const finalInfo = await promoteUpload(input.key, mime);
 
       // Two concurrent confirms racing on the same still-present staging
       // key both get here, both copy identical source bytes to the same

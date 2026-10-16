@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { Client, CopyDestinationOptions, CopySourceOptions } from "minio";
 import { env } from "@/env";
 import { ALLOWED_MIME, MAX_BYTES } from "@/lib/uploads";
@@ -79,4 +80,74 @@ export async function copy(sourceKey: string, destKey: string): Promise<void> {
     new CopySourceOptions({ Bucket: env.S3_BUCKET, Object: sourceKey }),
     new CopyDestinationOptions({ Bucket: env.S3_BUCKET, Object: destKey }),
   );
+}
+
+export type AllowedMime = keyof typeof ALLOWED_MIME;
+
+export const EXT_TO_MIME = Object.fromEntries(
+  Object.entries(ALLOWED_MIME).map(([mime, ext]) => [ext, mime]),
+) as Record<string, AllowedMime>;
+
+/** First bytes that identify each allowed image format, regardless of what Content-Type the uploader claimed. */
+const MAGIC: Record<AllowedMime, (head: Buffer) => boolean> = {
+  "image/png": (h) =>
+    h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4e && h[3] === 0x47,
+  "image/jpeg": (h) => h[0] === 0xff && h[1] === 0xd8 && h[2] === 0xff,
+  "image/gif": (h) => h.subarray(0, 4).toString("ascii") === "GIF8",
+  "image/webp": (h) =>
+    h.subarray(0, 4).toString("ascii") === "RIFF" &&
+    h.subarray(8, 12).toString("ascii") === "WEBP",
+};
+
+/** `${uni}/${kind}/${id}.${ext}` (staging) → `${uni}/${kind}/f/${id}.${ext}` (server-only). */
+export function finalKeyFor(stagingKey: string): string {
+  const [uni, kind, file] = stagingKey.split("/");
+  return [uni, kind, "f", file].join("/");
+}
+
+const notFound = () =>
+  new TRPCError({ code: "BAD_REQUEST", message: "Upload not found" });
+
+/**
+ * Copies a staging upload to its server-only final key and validates the
+ * FINAL copy (size, magic bytes, stored content-type). Validating the copy,
+ * not the staging object, closes the TOCTOU window left by the still-valid
+ * presigned PUT (minio can't scope a presign to one PUT). Never overwrites an
+ * existing final: callers check their own row first, and a final without a
+ * row means a crashed or concurrent confirm → CONFLICT. Returns the final
+ * key and size; throws TRPCError otherwise (the bad final is removed).
+ */
+export async function promoteUpload(
+  stagingKey: string,
+  mime: AllowedMime,
+): Promise<{ key: string; size: number }> {
+  const finalKey = finalKeyFor(stagingKey);
+  if (await stat(finalKey)) {
+    await remove(stagingKey).catch(() => {});
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "Upload already confirmed",
+    });
+  }
+  if (!(await stat(stagingKey))) throw notFound();
+
+  await copy(stagingKey, finalKey);
+  await remove(stagingKey).catch(() => {});
+
+  const info = await stat(finalKey);
+  if (!info) throw notFound();
+  if (info.size > MAX_BYTES) {
+    await remove(finalKey);
+    throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
+  }
+  // Sniff the real bytes so a .png key can't carry HTML/script content.
+  const head = await readHead(finalKey, 16);
+  if (!MAGIC[mime](head) || info.contentType !== mime) {
+    await remove(finalKey);
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "File is not a valid image",
+    });
+  }
+  return { key: finalKey, size: info.size };
 }

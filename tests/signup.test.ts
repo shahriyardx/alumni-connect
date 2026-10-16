@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { batch, pendingSignup, rosterEntry, user } from "@/db/schema";
+import {
+  batch,
+  pendingSignup,
+  rosterEntry,
+  university,
+  user,
+} from "@/db/schema";
 import { auth } from "@/server/auth";
+import { stat } from "@/server/storage";
 import { hashStudentId } from "@/server/student-id";
 import {
   adminDb,
@@ -17,9 +24,41 @@ const base = () => ({
   email: `alice@${uni.emailDomain}`,
   studentId: "NU-1001",
   batchNumber: 42,
-  graduationYear: 2022,
   department: "CSE",
+  idCardMime: "image/png" as const,
 });
+const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const put = async (url: string, body: BodyInit = PNG) =>
+  expect(
+    (
+      await fetch(url, {
+        method: "PUT",
+        body,
+        headers: { "Content-Type": "image/png" },
+      })
+    ).ok,
+  ).toBe(true);
+const pendingRow = async (email: string) =>
+  (
+    await adminDb
+      .select()
+      .from(pendingSignup)
+      .where(eq(pendingSignup.email, email))
+  )[0];
+const signUp = (email = base().email, name = "Alice") =>
+  auth.api.signUpEmail({ body: { name, email, password: "password123" } });
+/** startSignup → PUT the card → confirmIdCard: everything before better-auth. */
+async function startWithCard(over: Partial<ReturnType<typeof base>> = {}) {
+  const input = { ...base(), ...over };
+  const r = await callerFor(null).auth.startSignup(input);
+  await put(r.upload.url);
+  await callerFor(null).auth.confirmIdCard({
+    email: input.email,
+    signupToken: r.signupToken,
+    key: r.upload.key,
+  });
+  return r;
+}
 
 beforeEach(async () => {
   await resetDb();
@@ -48,75 +87,87 @@ beforeEach(async () => {
 });
 
 describe("auth.startSignup", () => {
-  test("accepts any email domain", async () => {
+  test("any email domain; always PENDING; roster match is stored, never returned", async () => {
     const r = await callerFor(null).auth.startSignup({
       ...base(),
       email: "alice@gmail.com",
     });
-    expect(r.status).toBe("ACTIVE");
+    expect(Object.keys(r).sort()).toEqual(["role", "signupToken", "upload"]);
+    expect(r.upload.key).toMatch(
+      new RegExp(`^${uni.id}/idcard/[0-9a-f]{32}\\.png$`),
+    );
+    expect(await pendingRow("alice@gmail.com")).toMatchObject({
+      status: "PENDING",
+      rosterMatch: true,
+      studentIdHint: "1001",
+      batchNumber: 42,
+      graduationYear: 2022,
+      idCardKey: null,
+    });
   });
-  test("rejects ID not in roster", async () => {
-    await expect(
-      callerFor(null).auth.startSignup({ ...base(), studentId: "NU-9999" }),
-    ).rejects.toThrow(/roster/i);
+  test("ID not in that batch's roster → still PENDING, rosterMatch false", async () => {
+    await callerFor(null).auth.startSignup({ ...base(), studentId: "NU-9999" });
+    await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "b@north.edu",
+      studentId: "NU-2002", // on batch 48's roster, not 42's
+    });
+    expect((await pendingRow(base().email)).rosterMatch).toBe(false);
+    expect((await pendingRow("b@north.edu")).rosterMatch).toBe(false);
   });
-  test("rejects batch number mismatch", async () => {
-    await expect(
-      callerFor(null).auth.startSignup({ ...base(), batchNumber: 43 }),
-    ).rejects.toThrow(/batch/i);
-  });
-  test("matches ID typed with spaces/lowercase; past graduation year → ALUMNUS", async () => {
+  test("normalized ID matches; batch's year wins over input; past year → ALUMNUS", async () => {
     const r = await callerFor(null).auth.startSignup({
       ...base(),
       studentId: " nu-10 01 ",
+      graduationYear: 2030,
     });
-    expect(r).toEqual({ role: "ALUMNUS", status: "ACTIVE" });
+    expect(r.role).toBe("ALUMNUS");
+    expect(await pendingRow(base().email)).toMatchObject({
+      rosterMatch: true,
+      studentIdHint: "1001",
+      graduationYear: 2022,
+      role: "ALUMNUS",
+    });
   });
   test("future graduation year → STUDENT", async () => {
     const r = await callerFor(null).auth.startSignup({
       ...base(),
-      email: "bob@north.edu",
       studentId: "NU-2002",
       batchNumber: 48,
-      graduationYear: 2028,
-      department: "EEE",
     });
     expect(r.role).toBe("STUDENT");
   });
-  test("accepts a migrated batch number (number = year, e.g. 2018)", async () => {
-    const [b] = await adminDb
-      .insert(batch)
-      .values({ universityId: uni.id, number: 2018, graduationYear: 2018 })
-      .returning();
-    await adminDb.insert(rosterEntry).values({
-      universityId: uni.id,
-      batchId: b.id,
-      studentIdHash: hashStudentId(uni.id, "NU-3003"),
-      department: "CSE",
-    });
+  test("batch that doesn't exist requires graduationYear", async () => {
+    await expect(
+      callerFor(null).auth.startSignup({ ...base(), batchNumber: 43 }),
+    ).rejects.toThrow(/graduation year/i);
     const r = await callerFor(null).auth.startSignup({
       ...base(),
-      email: "old@north.edu",
-      studentId: "NU-3003",
-      batchNumber: 2018,
-      graduationYear: 2018,
+      batchNumber: 43,
+      graduationYear: 2031,
     });
-    expect(r).toEqual({ role: "ALUMNUS", status: "ACTIVE" });
+    expect(r.role).toBe("STUDENT");
+    expect(await pendingRow(base().email)).toMatchObject({
+      batchNumber: 43,
+      graduationYear: 2031,
+      rosterMatch: false,
+    });
+  });
+  test("accepts a migrated batch number (number = year, e.g. 2018)", async () => {
+    await adminDb
+      .insert(batch)
+      .values({ universityId: uni.id, number: 2018, graduationYear: 2018 });
+    const r = await callerFor(null).auth.startSignup({
+      ...base(),
+      batchNumber: 2018,
+    });
+    expect(r.role).toBe("ALUMNUS");
   });
   test("rejects an ID already used by an account", async () => {
     await makeUser(uni.id, { studentIdHash: hashStudentId(uni.id, "NU-1001") });
     await expect(callerFor(null).auth.startSignup(base())).rejects.toThrow(
       /already/i,
     );
-  });
-  test("university with no roster → PENDING (admin approval)", async () => {
-    const open = await makeUniversity("Open", "open.edu");
-    const r = await callerFor(null).auth.startSignup({
-      ...base(),
-      universityId: open.id,
-      email: "x@open.edu",
-    });
-    expect(r.status).toBe("PENDING");
   });
   test("rate limits repeated attempts from one IP", async () => {
     const c = callerFor(null);
@@ -137,6 +188,138 @@ describe("auth.startSignup", () => {
         .startSignup({ ...base(), studentId: `BAD-${i}` })
         .catch(() => {});
     await expect(c.auth.startSignup(base())).rejects.toThrow(/too many/i);
+  });
+  test("rate limits repeated attempts for the same student ID", async () => {
+    const c = callerFor(null);
+    for (let i = 0; i < 5; i++)
+      await c.auth
+        .startSignup({ ...base(), email: `id-${i}@north.edu` })
+        .catch(() => {});
+    await expect(
+      c.auth.startSignup({ ...base(), email: "id-x@north.edu" }),
+    ).rejects.toThrow(/too many/i);
+  });
+});
+
+describe("auth.batches", () => {
+  test("lists an ACTIVE university's batches; nothing for others", async () => {
+    expect(
+      await callerFor(null).auth.batches({ universityId: uni.id }),
+    ).toEqual([
+      { number: 42, graduationYear: 2022 },
+      { number: 48, graduationYear: 2028 },
+    ]);
+    await adminDb
+      .update(university)
+      .set({ status: "PENDING" })
+      .where(eq(university.id, uni.id));
+    expect(
+      await callerFor(null).auth.batches({ universityId: uni.id }),
+    ).toEqual([]);
+  });
+});
+
+describe("ID card + v2 sign-up", () => {
+  test("happy path: user is PENDING with card, hint and roster match", async () => {
+    await startWithCard();
+    await signUp();
+    const [u] = await adminDb
+      .select()
+      .from(user)
+      .where(eq(user.email, base().email));
+    expect(u).toMatchObject({
+      universityId: uni.id,
+      role: "ALUMNUS",
+      status: "PENDING",
+      emailVerified: false,
+      batchNumber: 42,
+      graduationYear: 2022,
+      rosterMatch: true,
+      studentIdHint: "1001",
+    });
+    expect(u.idCardKey).toMatch(
+      new RegExp(`^${uni.id}/idcard/f/[0-9a-f]{32}\\.png$`),
+    );
+    expect(await stat(u.idCardKey as string)).not.toBeNull();
+    expect(await adminDb.select().from(pendingSignup)).toEqual([]);
+  });
+  test("sign-up without a confirmed card is refused", async () => {
+    const r = await callerFor(null).auth.startSignup(base());
+    await put(r.upload.url); // uploaded but never confirmed
+    expect((await apiError(signUp())).code).toBe("FAILED_TO_CREATE_USER");
+    expect(
+      await adminDb.select().from(user).where(eq(user.email, base().email)),
+    ).toEqual([]);
+  });
+  test("wrong or missing token is rejected", async () => {
+    const r = await callerFor(null).auth.startSignup(base());
+    await put(r.upload.url);
+    const confirm = (email: string, signupToken: string) =>
+      callerFor(null).auth.confirmIdCard({
+        email,
+        signupToken,
+        key: r.upload.key,
+      });
+    await expect(confirm(base().email, `${r.signupToken}x`)).rejects.toThrow(
+      /FORBIDDEN|expired/,
+    );
+    await expect(confirm("nobody@north.edu", r.signupToken)).rejects.toThrow(
+      /expired/,
+    );
+    expect((await pendingRow(base().email)).idCardKey).toBeNull();
+  });
+  test("a key issued to another signup is rejected", async () => {
+    const mine = await callerFor(null).auth.startSignup(base());
+    const theirs = await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "bob@north.edu",
+      studentId: "NU-2002",
+      batchNumber: 48,
+    });
+    await put(theirs.upload.url);
+    await expect(
+      callerFor(null).auth.confirmIdCard({
+        email: base().email,
+        signupToken: mine.signupToken,
+        key: theirs.upload.key,
+      }),
+    ).rejects.toThrow(/not found/i);
+    expect((await pendingRow(base().email)).idCardKey).toBeNull();
+  });
+  test("HTML disguised as a PNG is rejected and removed", async () => {
+    const r = await callerFor(null).auth.startSignup(base());
+    await fetch(r.upload.url, {
+      method: "PUT",
+      body: "<html><script>alert(1)</script></html>",
+      headers: { "Content-Type": "image/png" },
+    });
+    await expect(
+      callerFor(null).auth.confirmIdCard({
+        email: base().email,
+        signupToken: r.signupToken,
+        key: r.upload.key,
+      }),
+    ).rejects.toThrow(/not a valid image/i);
+    expect((await pendingRow(base().email)).idCardKey).toBeNull();
+    expect(
+      await stat(r.upload.key.replace("/idcard/", "/idcard/f/")),
+    ).toBeNull();
+  });
+  test("confirm is idempotent; restarting sign-up resets the card and old token", async () => {
+    const r = await startWithCard();
+    const again = {
+      email: base().email,
+      signupToken: r.signupToken,
+      key: r.upload.key,
+    };
+    expect(await callerFor(null).auth.confirmIdCard(again)).toEqual({
+      ok: true,
+    });
+    await callerFor(null).auth.startSignup(base());
+    expect(await pendingRow(base().email)).toMatchObject({ idCardKey: null });
+    await expect(callerFor(null).auth.confirmIdCard(again)).rejects.toThrow(
+      /expired/,
+    );
   });
 });
 
@@ -163,8 +346,9 @@ describe("better-auth sign-up gate", () => {
       universityId: uni.id,
       department: "CSE",
       studentIdHash: hash,
+      idCardKey: `${uni.id}/idcard/f/x.png`,
       role: "STUDENT" as const,
-      status: "ACTIVE" as const,
+      status: "PENDING" as const,
       expiresAt: new Date(Date.now() + 60_000),
     });
     await adminDb
@@ -204,7 +388,7 @@ describe("better-auth sign-up gate", () => {
     ).toEqual([]);
   });
   test("sign-up with an expired pending_signup row is refused", async () => {
-    await callerFor(null).auth.startSignup(base());
+    await startWithCard();
     await adminDb
       .update(pendingSignup)
       .set({ expiresAt: new Date(Date.now() - 1000) })
@@ -220,7 +404,7 @@ describe("better-auth sign-up gate", () => {
     ).toEqual([]);
   });
   test("sign-up for a pending_signup row under a different email is refused", async () => {
-    await callerFor(null).auth.startSignup(base());
+    await startWithCard();
     const err = await apiError(
       auth.api.signUpEmail({
         body: {
@@ -238,32 +422,12 @@ describe("better-auth sign-up gate", () => {
         .where(eq(user.email, "mallory@north.edu")),
     ).toEqual([]);
   });
-  test("sign-up after startSignup creates a tenant-bound unverified user", async () => {
-    await callerFor(null).auth.startSignup(base());
-    await auth.api.signUpEmail({
-      body: {
-        name: "Alice",
-        email: `alice@${uni.emailDomain}`,
-        password: "password123",
-      },
-    });
-    const [u] = await adminDb
-      .select()
-      .from(user)
-      .where(eq(user.email, "alice@north.edu"));
-    expect(u.universityId).toBe(uni.id);
-    expect(u.role).toBe("ALUMNUS");
-    expect(u.emailVerified).toBe(false);
-    expect(await adminDb.select().from(pendingSignup)).toEqual([]);
-  });
   test("a fresh unverified squatter still blocks the real owner (CONFLICT), row untouched", async () => {
     // Attacker knows the victim's roster ID and email; starts sign-up and
     // creates the account but never verifies it — this just happened, so
     // it might still be the victim's own in-progress verification.
-    await callerFor(null).auth.startSignup(base());
-    await auth.api.signUpEmail({
-      body: { name: "Attacker", email: base().email, password: "password123" },
-    });
+    await startWithCard();
+    await signUp(base().email, "Attacker");
     const squatter = await adminDb
       .select()
       .from(user)
@@ -279,10 +443,8 @@ describe("better-auth sign-up gate", () => {
     ).toHaveLength(1);
   });
   test("a stale (>15min) unverified squatter does not block the real owner, and is swept away", async () => {
-    await callerFor(null).auth.startSignup(base());
-    await auth.api.signUpEmail({
-      body: { name: "Attacker", email: base().email, password: "password123" },
-    });
+    await startWithCard();
+    await signUp(base().email, "Attacker");
     await adminDb
       .update(user)
       .set({ createdAt: new Date(Date.now() - 16 * 60_000) })
@@ -290,7 +452,7 @@ describe("better-auth sign-up gate", () => {
 
     // The real owner starts sign-up with the same ID/email: not CONFLICT.
     const r = await callerFor(null).auth.startSignup(base());
-    expect(r).toEqual({ role: "ALUMNUS", status: "ACTIVE" });
+    expect(r.role).toBe("ALUMNUS");
     expect(
       await adminDb.select().from(user).where(eq(user.email, base().email)),
     ).toEqual([]);

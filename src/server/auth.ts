@@ -11,8 +11,11 @@ import { clientIp } from "./client-ip";
 import { sendMail } from "./mail";
 import { insertUniversity } from "./university";
 
-const field = <T extends "string" | "number" | "date">(type: T) =>
+const field = <T extends "string" | "number" | "date" | "boolean">(type: T) =>
   ({ type, required: false, input: false }) as const;
+/** Approver-only fields: never sent back in the session. */
+const hidden = <T extends "string" | "boolean">(type: T) =>
+  ({ ...field(type), returned: false }) as const;
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -33,6 +36,9 @@ export const auth = betterAuth({
       department: field("string"),
       title: field("string"),
       studentIdHash: field("string"),
+      idCardKey: hidden("string"),
+      rosterMatch: hidden("boolean"),
+      studentIdHint: hidden("string"),
       bio: field("string"),
       avatarKey: field("string"),
       status: { type: [...schema.STATUSES], required: false, input: false },
@@ -65,6 +71,9 @@ export const auth = betterAuth({
               ),
             );
           if (!p) return false;
+          // Students must have confirmed an ID card photo (confirmIdCard).
+          if ((p.role === "STUDENT" || p.role === "ALUMNUS") && !p.idCardKey)
+            return false;
           // Two different emails can each get a pending_signup row for the
           // same studentIdHash (pending_signup is keyed by email, not ID).
           // If a user with that hash already exists (e.g. the other
@@ -116,6 +125,9 @@ export const auth = betterAuth({
               department: p.department,
               title: p.title,
               studentIdHash: p.studentIdHash,
+              idCardKey: p.idCardKey,
+              rosterMatch: p.rosterMatch,
+              studentIdHint: p.studentIdHint,
               status: p.status,
             },
           };

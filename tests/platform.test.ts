@@ -172,6 +172,7 @@ describe("applications", () => {
           studentId: "S-1",
           batchNumber: 1,
           graduationYear: 2030,
+          idCardMime: "image/png",
           department: "CSE",
         }),
       ).rejects.toThrow(/NOT_FOUND|not found/);
@@ -234,6 +235,7 @@ describe("applications", () => {
       studentId: "S-1",
       batchNumber: 4,
       graduationYear: 2030,
+      idCardMime: "image/png",
       department: "CSE",
     });
     await apply();
@@ -242,19 +244,34 @@ describe("applications", () => {
       studentIdHash: null,
       batchNumber: null,
       graduationYear: null,
+      signupTokenHash: null,
+      idCardKey: null,
+      rosterMatch: null,
+      studentIdHint: null,
       role: "OWNER",
       applicationName: "Eastern Tech",
     });
   });
   test("application overwritten by a student sign-up keeps no application fields", async () => {
     await apply();
-    await callerFor(null).auth.startSignup({
+    const r = await callerFor(null).auth.startSignup({
       universityId: home.id,
       email: "rep@eti.edu",
       studentId: "S-1",
       batchNumber: 4,
       graduationYear: 2030,
+      idCardMime: "image/png",
       department: "CSE",
+    });
+    await fetch(r.upload.url, {
+      method: "PUT",
+      body: new Uint8Array([137, 80, 78, 71]),
+      headers: { "Content-Type": "image/png" },
+    });
+    await callerFor(null).auth.confirmIdCard({
+      email: "rep@eti.edu",
+      signupToken: r.signupToken,
+      key: r.upload.key,
     });
     expect(await pendingRow("rep@eti.edu")).toMatchObject({
       universityId: home.id,
@@ -314,6 +331,7 @@ describe("applications", () => {
       studentId: "S-9",
       batchNumber: 4,
       graduationYear: 2030,
+      idCardMime: "image/png",
       department: "CSE",
     });
     expect(await userByEmail("rep@eti.edu")).toBeUndefined();

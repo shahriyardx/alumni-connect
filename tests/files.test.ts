@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { resolveFileAccess } from "@/app/api/files/[...key]/route";
+import { resolveIdCardAccess } from "@/app/api/id-cards/[userId]/route";
 import { stat } from "@/server/storage";
 import { callerFor, makeUniversity, makeUser, resetDb } from "./helpers";
 
@@ -194,4 +195,48 @@ test("TOCTOU: replaying the staging presigned PUT after confirm doesn't touch th
   const reconfirm = await c.files.confirm({ key: stagingKey });
   expect(reconfirm).toEqual(att);
   expect(await stat(att.key)).toEqual(before);
+});
+
+test("resolveIdCardAccess: only OWNER/ADMIN of the same university, or a platform admin", async () => {
+  const uni = a.universityId;
+  const applicant = await makeUser(uni, {
+    status: "PENDING",
+    idCardKey: `${uni}/idcard/f/${"a".repeat(32)}.jpg`,
+  });
+  const owner = await makeUser(uni, { role: "OWNER" });
+  const admin = await makeUser(uni, { role: "ADMIN" });
+  const otherAdmin = await makeUser(b.universityId, { role: "ADMIN" });
+  const platform = await makeUser(b.universityId, {
+    email: "platform@test.edu",
+  });
+
+  expect(await resolveIdCardAccess(null, applicant.id)).toMatchObject({
+    status: 401,
+  });
+  expect(await resolveIdCardAccess(a.id, applicant.id)).toMatchObject({
+    status: 403,
+  });
+  expect(await resolveIdCardAccess(otherAdmin.id, applicant.id)).toMatchObject({
+    status: 404,
+  });
+  // Same-tenant admin, but the target has no card.
+  expect(await resolveIdCardAccess(admin.id, owner.id)).toMatchObject({
+    status: 404,
+  });
+  for (const viewer of [owner, admin, platform]) {
+    const r = await resolveIdCardAccess(viewer.id, applicant.id);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const u = new URL(r.url);
+      expect(u.pathname.endsWith(applicant.idCardKey as string)).toBe(true);
+      expect(u.searchParams.get("response-content-type")).toBe("image/jpeg");
+    }
+  }
+  const bannedAdmin = await makeUser(uni, {
+    role: "ADMIN",
+    status: "BANNED",
+  });
+  expect(await resolveIdCardAccess(bannedAdmin.id, applicant.id)).toMatchObject(
+    { status: 403 },
+  );
 });

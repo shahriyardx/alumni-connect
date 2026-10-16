@@ -18,7 +18,7 @@ export function PendingNotice() {
       body={
         me?.role === "OWNER"
           ? `We're reviewing ${me.universityName}. You'll get access as soon as it's approved — just come back and sign in.`
-          : `${me?.universityName ?? "Your university"} hasn't uploaded a student roster yet, so an administrator has to confirm your account by hand. You'll get full access as soon as they approve it — just come back and sign in.`
+          : `A university admin will check your ID card. You'll get access to ${me?.universityName ?? "your university"} as soon as they approve it — just come back and sign in.`
       }
       action={
         <Button variant="tonal" icon="logout" onClick={signOut}>

@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
   and,
@@ -21,7 +22,15 @@ import {
   university,
   user,
 } from "@/db/schema";
-import { hashStudentId, roleFor } from "../student-id";
+import {
+  ALLOWED_MIME,
+  type AllowedMime,
+  EXT_TO_MIME,
+  finalKeyFor,
+  presignPut,
+  promoteUpload,
+} from "../storage";
+import { hashStudentId, normalizeStudentId, roleFor } from "../student-id";
 import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
 import { optionalUrl } from "./platform";
 
@@ -53,6 +62,17 @@ async function overLimit(key: string, max: number, windowMs = 10 * 60_000) {
     .returning({ count: rateLimit.count });
   return r.count > max;
 }
+
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/**
+ * The ID card's staging key is derived from the signup token, so a key
+ * issued to another signup (even in the same university) never matches.
+ */
+const idCardStem = (universityId: string, token: string) =>
+  `${universityId}/idcard/${sha256(`idcard:${token}`).slice(0, 32)}`;
+
+const mimeEnum = z.enum(Object.keys(ALLOWED_MIME) as [AllowedMime]);
 
 /** Every optional pending_signup column, nulled: spread first so an upsert fully resets the row. */
 const BLANK_PENDING = {
@@ -213,6 +233,89 @@ export const authRouter = router({
       return { ok: true };
     }),
 
+  batches: publicProcedure
+    .input(z.object({ universityId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const [uni] = await db
+        .select({ id: university.id })
+        .from(university)
+        .where(
+          and(
+            eq(university.id, input.universityId),
+            eq(university.status, "ACTIVE"),
+          ),
+        );
+      if (!uni) return [];
+      return withTenant(uni.id, (tx) =>
+        tx
+          .select({
+            number: batch.number,
+            graduationYear: batch.graduationYear,
+          })
+          .from(batch)
+          .orderBy(batch.number),
+      );
+    }),
+
+  confirmIdCard: publicProcedure
+    .input(
+      z.object({
+        email,
+        signupToken: z.string().min(1).max(100),
+        key: z.string().min(1).max(200),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (await overLimit(`app:confirm-idcard:ip:${ctx.ip}`, 20))
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many attempts, try again later",
+        });
+      const [p] = await db
+        .select()
+        .from(pendingSignup)
+        .where(
+          and(
+            eq(pendingSignup.email, input.email),
+            gt(pendingSignup.expiresAt, new Date()),
+          ),
+        );
+      const given = Buffer.from(sha256(input.signupToken), "hex");
+      const stored = Buffer.from(p?.signupTokenHash ?? "", "hex");
+      if (
+        !p?.universityId ||
+        stored.length !== given.length ||
+        !timingSafeEqual(stored, given)
+      )
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Sign-up expired, start again",
+        });
+
+      const stem = idCardStem(p.universityId, input.signupToken);
+      const ext = input.key.slice(stem.length + 1);
+      const mime = EXT_TO_MIME[ext];
+      if (!input.key.startsWith(`${stem}.`) || !mime)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Upload not found",
+        });
+      // Idempotent once this signup's card is stored; never re-copies.
+      if (p.idCardKey === finalKeyFor(input.key)) return { ok: true };
+      const final = await promoteUpload(input.key, mime);
+      // Bound to the token hash: a concurrent startSignup reset wins.
+      await db
+        .update(pendingSignup)
+        .set({ idCardKey: final.key })
+        .where(
+          and(
+            eq(pendingSignup.email, input.email),
+            eq(pendingSignup.signupTokenHash, p.signupTokenHash as string),
+          ),
+        );
+      return { ok: true };
+    }),
+
   startSignup: publicProcedure
     .input(
       z.object({
@@ -226,8 +329,10 @@ export const authRouter = router({
           .min(1990)
           .refine((y) => y <= new Date().getFullYear() + 8, {
             message: "Invalid graduation year",
-          }),
+          })
+          .optional(),
         department: z.string().min(2).max(80),
+        idCardMime: mimeEnum,
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -322,37 +427,29 @@ export const authRouter = router({
             "duplicate",
           );
 
-        const [{ n: rosterSize }] = await tx
-          .select({ n: count() })
-          .from(rosterEntry);
-        // ponytail: interim roster check until sign-up v2 (W3) makes every signup PENDING.
-        let graduationYear = input.graduationYear;
-        let status: "ACTIVE" | "PENDING";
-        if (rosterSize > 0) {
-          const [row] = await tx
-            .select({
-              number: batch.number,
-              graduationYear: batch.graduationYear,
-            })
-            .from(rosterEntry)
-            .innerJoin(batch, eq(batch.id, rosterEntry.batchId))
-            .where(eq(rosterEntry.studentIdHash, idHash));
-          // Same external message for both failure modes so an attacker
-          // can't use it as an oracle to confirm a roster ID exists; the
-          // internal "reason" still distinguishes them in the audit log.
-          const notFound = () =>
-            fail(
-              "BAD_REQUEST",
-              "Student ID or batch not found in the university roster",
-              row ? "batch" : "roster",
-            );
-          if (!row) return notFound();
-          if (row.number !== input.batchNumber) return notFound();
-          graduationYear = row.graduationYear;
-          status = "ACTIVE";
-        } else {
-          status = "PENDING";
-        }
+        const [b] = await tx
+          .select({ id: batch.id, graduationYear: batch.graduationYear })
+          .from(batch)
+          .where(eq(batch.number, input.batchNumber));
+        const graduationYear = b?.graduationYear ?? input.graduationYear;
+        if (graduationYear === undefined)
+          return fail(
+            "BAD_REQUEST",
+            "Enter your graduation year",
+            "graduation-year",
+          );
+        // A hint for the approver only — never returned to the applicant.
+        const [hit] = b
+          ? await tx
+              .select({ id: rosterEntry.id })
+              .from(rosterEntry)
+              .where(
+                and(
+                  eq(rosterEntry.batchId, b.id),
+                  eq(rosterEntry.studentIdHash, idHash),
+                ),
+              )
+          : [];
         const role = roleFor({ graduationYear });
 
         // Clear any *stale* unverified account squatting on this email or ID
@@ -368,6 +465,7 @@ export const authRouter = router({
           ) as SQL,
         );
 
+        const signupToken = randomBytes(32).toString("base64url");
         const values = {
           ...BLANK_PENDING,
           email: input.email,
@@ -376,8 +474,11 @@ export const authRouter = router({
           graduationYear,
           department: input.department,
           studentIdHash: idHash,
+          signupTokenHash: sha256(signupToken),
+          rosterMatch: !!hit,
+          studentIdHint: normalizeStudentId(input.studentId).slice(-4),
           role,
-          status,
+          status: "PENDING" as const,
           expiresAt: new Date(Date.now() + 30 * 60_000),
         };
         await tx
@@ -393,10 +494,11 @@ export const authRouter = router({
           { ok: true, idHashPrefix: idHash.slice(0, 12) },
           ctx.ip,
         );
-        return { role, status };
+        return { role, signupToken };
       });
 
       if ("error" in outcome) throw outcome.error;
-      return outcome;
+      const key = `${idCardStem(uni.id, outcome.signupToken)}.${ALLOWED_MIME[input.idCardMime]}`;
+      return { ...outcome, upload: { key, url: await presignPut(key) } };
     }),
 });

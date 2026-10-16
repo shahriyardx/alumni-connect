@@ -49,7 +49,13 @@ export function AuthFrame({
           )}
         </aside>
 
-        <section className="lp-rise flex items-center rounded-[2.5rem] bg-surface p-6 [animation-delay:80ms] sm:p-10">
+        <section
+          className={cn(
+            "lp-rise flex rounded-[2.5rem] bg-surface p-6 [animation-delay:80ms] sm:p-10",
+            // Multi-step forms start at the top so steps don't jump around.
+            wide ? "items-start" : "items-center",
+          )}
+        >
           <div className={cn("mx-auto w-full", wide ? "max-w-lg" : "max-w-sm")}>
             {children}
           </div>

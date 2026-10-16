@@ -20,7 +20,9 @@ type Size = "sm" | "md" | "lg";
 const tonal = "bg-tonal text-tonal-fg hover:bg-tonal-hover";
 const ghost = "text-foreground hover:bg-muted";
 const variants: Record<Variant, string> = {
-  filled: "bg-primary text-primary-foreground hover:bg-primary/85",
+  // Disabled (not loading) reads as plainly unavailable, not a faded primary.
+  filled:
+    "bg-primary text-primary-foreground hover:bg-primary/85 data-[disabled]:not-aria-busy:bg-muted data-[disabled]:not-aria-busy:text-muted-foreground data-[disabled]:not-aria-busy:opacity-100",
   tonal,
   // Legacy names: kept so existing call sites work, mapped to the minimal set.
   elevated: tonal,
