@@ -172,7 +172,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background">
       {/* Sidebar (≥ 840px) */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-6 px-3 py-4 min-[840px]:flex">
+      <aside className="fixed inset-y-3 left-3 z-30 hidden w-60 flex-col gap-6 rounded-[2rem] bg-surface px-3 py-4 shadow-sm shadow-black/5 min-[840px]:flex">
         <Logo className="px-2 py-1" />
         <ButtonLink href="/new" icon="edit" className="mx-1">
           Ask
@@ -189,7 +189,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      <div className="min-[840px]:pl-60">
+      <div className="min-[840px]:pl-[16.5rem]">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 bg-background/85 px-4 backdrop-blur-xl min-[840px]:px-8">
           <Logo className="min-[840px]:hidden" />
           <div className="ml-auto">
