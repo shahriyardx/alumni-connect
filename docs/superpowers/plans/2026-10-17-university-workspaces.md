@@ -109,3 +109,11 @@
 - Use route group `src/app/(workspace)/workspace/...` with its own `layout.tsx`; the student `AppShell` must not wrap it. Remove "Admin" and "Moderation" from the student sidebar/bottom bar/user menu; staff roles (OWNER/ADMIN/MODERATOR) instead get one "Workspace" entry in the student shell, and the workspace shell has "View feed".
 - After sign-in, OWNER/ADMIN land on `/workspace` (not `/feed`); MODERATOR/STAFF/STUDENT/ALUMNUS land on `/feed`.
 - Each workspace section is a real page (`/workspace`, `/workspace/approvals`, `/workspace/batches`, `/workspace/members`, `/workspace/moderation`, `/workspace/audit`, `/workspace/settings`) rather than tabs, so the sidebar drives navigation.
+
+### Task W2b: Pending universities are fully usable by their staff (user feedback 2026-10-17; runs after W3, before W4)
+- The rep's OWNER account becomes **ACTIVE** as soon as their email is verified, even though the university is still PENDING (pending_signup for applications uses status ACTIVE; better-auth email verification is still required by memberProcedure).
+- A PENDING university works normally for its members (workspace, invites, rosters, feed). Only students can't find it: `auth.universities`/`auth.batches` list ACTIVE universities only and `startSignup` rejects non-ACTIVE (already true — keep tests).
+- `platform.approve` sets only the university ACTIVE (owner already active; still require a verified OWNER). `platform.reject` sets the university REJECTED and does **not** delete the owner anymore; members of a REJECTED university are blocked: memberProcedure/SSE/file routes return FORBIDDEN "University application was rejected" (extend the shared `activeStatusError`-style check with university status), and the UI StatusGate shows an "Application rejected" screen with sign-out.
+- `auth.me` returns `universityStatus`; `/pending` is only for PENDING *accounts* (students awaiting approval), not owners of pending universities.
+- Workspace (W4) shows a banner while `universityStatus === "PENDING"`: "Under review — students can't find your university yet."
+- Tests: owner of PENDING uni can call member/admin procedures after verification; students can't sign up to it; approve → visible in `auth.universities`; reject → owner FORBIDDEN with the rejection message; tenant isolation unaffected.
