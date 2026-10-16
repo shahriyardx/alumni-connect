@@ -64,7 +64,7 @@ export function ProfileView({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{u.name}</h1>
             <VerifiedMark />
-            <RoleBadge role={u.role} />
+            <RoleBadge role={u.role} title={u.title} />
           </div>
           <p className="text-sm text-muted-foreground">
             {u.batchNumber != null && `Batch ${u.batchNumber} · `}

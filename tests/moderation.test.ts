@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { auditLog, batch, post, report, session, user } from "@/db/schema";
+import { auditLog, post, report, session, user } from "@/db/schema";
 import {
   adminDb,
   callerFor,
@@ -110,44 +110,18 @@ test("nobody can suspend or ban the OWNER", async () => {
   }
 });
 
-test("admin: roster import, approve, roles, stats", async () => {
+test("admin: roles, stats, audit", async () => {
   const a = callerFor(admin.id);
-  const imp = await a.admin.importRoster({
-    csv: "student_id,department,name\nNU-1,CSE,Rahim",
-    batchNumber: 42,
-    graduationYear: 2022,
-  });
-  expect(imp).toMatchObject({ inserted: 1, updated: 0, errors: [] });
-  await a.admin.importRoster({
-    csv: "student_id,department\nNU-2,CSE",
-    batchNumber: 48,
-    graduationYear: 2028,
-  });
-  expect(
-    (
-      await a.admin.importRoster({
-        csv: "student_id,department\nNU-1,CSE",
-        batchNumber: 42,
-        graduationYear: 2022,
-      })
-    ).updated,
-  ).toBe(1);
-  expect(await a.admin.rosterStats()).toEqual({ total: 2, graduated: 1 });
-  const pending = await makeUser(uniId, { status: "PENDING" });
-  expect((await a.admin.pendingUsers()).map((u) => u.id)).toEqual([pending.id]);
-  await a.admin.approveUser({ userId: pending.id });
   await a.admin.setRole({ userId: student.id, role: "MODERATOR" });
   const owner = await makeUser(uniId, { role: "OWNER" });
   await expect(
     a.admin.setRole({ userId: student.id, role: "OWNER" }),
-  ).rejects.toThrow(/Ownership/);
+  ).rejects.toThrow(/transfer ownership/);
   await expect(
     a.admin.setRole({ userId: owner.id, role: "STUDENT" }),
-  ).rejects.toThrow(/Ownership/);
+  ).rejects.toThrow(/owner's role/);
   // OWNER passes every admin gate.
-  expect(
-    (await callerFor(owner.id).admin.pendingUsers()).length,
-  ).toBeGreaterThanOrEqual(0);
+  expect((await callerFor(owner.id).admin.stats()).members.OWNER).toBe(1);
   await expect(
     a.admin.setRole({ userId: admin.id, role: "STUDENT" }),
   ).rejects.toThrow(/BAD_REQUEST/);
@@ -157,17 +131,6 @@ test("admin: roster import, approve, roles, stats", async () => {
   expect(st.postsPerWeek).toHaveLength(8);
   expect((await a.admin.audit({})).items.map((i) => i.action)).toContain(
     "user.role",
-  );
-});
-
-test("approveUser requires a pending account", async () => {
-  const a = callerFor(admin.id);
-  await expect(a.admin.approveUser({ userId: student.id })).rejects.toThrow(
-    /No pending account/,
-  );
-  const banned = await makeUser(uniId, { status: "BANNED" });
-  await expect(a.admin.approveUser({ userId: banned.id })).rejects.toThrow(
-    /No pending account/,
   );
 });
 
@@ -337,64 +300,22 @@ test("resolve: suspend does not downgrade an already-banned user", async () => {
   expect(reportRow.status).toBe("RESOLVED");
 });
 
-test("admin.importRoster dedupes duplicate student IDs instead of crashing", async () => {
+test("admin.importRoster dedupes duplicate student IDs and reports bad rows", async () => {
   const a = callerFor(admin.id);
-  const res = await a.admin.importRoster({
-    csv: "student_id,department\nNU-9,CSE\nnu-9,EEE",
-    batchNumber: 42,
+  const { id: batchId } = await a.workspace.saveBatch({
+    number: 42,
     graduationYear: 2022,
+  });
+  const res = await a.admin.importRoster({
+    batchId,
+    csv: "student_id,department\nNU-9,CSE\nnu-9,EEE\nNU-8,",
   });
   expect(res.inserted).toBe(1);
   expect(res.updated).toBe(0);
   expect(res.errors).toEqual([
     { line: 3, message: "Duplicate student ID (also on line 2)" },
+    expect.objectContaining({ line: 4 }),
   ]);
-});
-
-test("admin.importRoster: migrated batch numbers (2018), kept year note, no batch for empty imports", async () => {
-  const a = callerFor(admin.id);
-  const first = await a.admin.importRoster({
-    csv: "student_id,department\nNU-7,CSE",
-    batchNumber: 2018,
-    graduationYear: 2018,
-  });
-  expect(first).toMatchObject({ inserted: 1, note: null });
-  const again = await a.admin.importRoster({
-    csv: "student_id,department\nNU-6,CSE",
-    batchNumber: 2018,
-    graduationYear: 2020,
-  });
-  expect(again.note).toBe(
-    "Batch 2018 already has graduation year 2018; kept it",
-  );
-  await a.admin.importRoster({
-    csv: "student_id,department\nNU-5,",
-    batchNumber: 77,
-    graduationYear: 2020,
-  });
-  const batches = await adminDb
-    .select({ number: batch.number })
-    .from(batch)
-    .where(eq(batch.universityId, uniId));
-  expect(batches.map((b) => b.number)).toEqual([2018]);
-});
-
-test("admin.importRoster reports bad rows and rejects an out-of-range graduation year", async () => {
-  const a = callerFor(admin.id);
-  const res = await a.admin.importRoster({
-    csv: "student_id,department\nNU-8,",
-    batchNumber: 42,
-    graduationYear: 2022,
-  });
-  expect(res).toMatchObject({ inserted: 0, updated: 0 });
-  expect(res.errors[0]).toMatchObject({ line: 2 });
-  await expect(
-    a.admin.importRoster({
-      csv: "student_id,department\nNU-8,CSE",
-      batchNumber: 42,
-      graduationYear: 2200,
-    }),
-  ).rejects.toThrow(/BAD_REQUEST|graduationYear/);
 });
 
 test("admin.users escapes % and _ in search so they match literally", async () => {
@@ -432,7 +353,7 @@ test("admin.stats: pending counts only email-verified PENDING users", async () =
   await makeUser(uniId, { status: "PENDING" });
   await makeUser(uniId, { status: "PENDING", emailVerified: false });
   const st = await a.admin.stats();
-  expect(st.pending).toBe((await a.admin.pendingUsers()).length);
+  expect(st.pending).toBe((await a.workspace.approvals()).length);
   expect(st.pending).toBe(1);
 });
 

@@ -15,7 +15,11 @@ import { Fab } from "./ui/fab";
 import { Icon } from "./ui/icon";
 import { Spinner } from "./ui/spinner";
 import { focusRing } from "./ui/styles";
-import { UserMenu, useMe, useSignOut } from "./user-menu";
+import { homeFor, UserMenu, useMe, useSignOut } from "./user-menu";
+import {
+  UniversityMark,
+  UniversityPendingBanner,
+} from "./workspace/workspace-shell";
 
 type Dest = {
   href: string;
@@ -51,18 +55,11 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       icon: "person",
     },
     {
-      href: "/mod",
-      match: "/mod",
-      label: "Moderation",
-      icon: "shield",
+      href: "/workspace",
+      match: "/workspace",
+      label: "Workspace",
+      icon: "space_dashboard",
       roles: ["MODERATOR", "ADMIN", "OWNER"],
-    },
-    {
-      href: "/admin",
-      match: "/admin",
-      label: "Admin",
-      icon: "admin_panel_settings",
-      roles: ["ADMIN", "OWNER"],
     },
     {
       href: "/platform",
@@ -209,9 +206,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         {me?.universityName && (
-          <p className="mt-auto truncate px-3.5 text-xs text-muted-foreground">
-            {me.universityName}
-          </p>
+          <div className="mt-auto flex items-center gap-2.5 px-2.5">
+            <UniversityMark size={28} />
+            <span className="truncate text-xs text-muted-foreground">
+              {me.universityName}
+            </span>
+          </div>
         )}
       </aside>
 
@@ -229,7 +229,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             pathname === "/feed" && "xl:max-w-6xl",
           )}
         >
-          <StatusGate>{children}</StatusGate>
+          <StatusGate>
+            <UniversityPendingBanner />
+            {children}
+          </StatusGate>
         </main>
       </div>
 
@@ -254,7 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 /** Routes the user by account status. Real enforcement lives in tRPC guards. */
-function StatusGate({ children }: { children: React.ReactNode }) {
+export function StatusGate({ children }: { children: React.ReactNode }) {
   const { me, isLoading } = useMe();
   const router = useRouter();
   const pathname = usePathname();
@@ -267,7 +270,8 @@ function StatusGate({ children }: { children: React.ReactNode }) {
     if (me === null)
       void authClient.signOut().then(() => router.replace("/sign-in"));
     else if (pending && pathname !== "/pending") router.replace("/pending");
-    else if (me && !pending && pathname === "/pending") router.replace("/feed");
+    else if (me && !pending && pathname === "/pending")
+      router.replace(homeFor(me));
   }, [me, isLoading, pending, pathname, router]);
 
   const suspended = !!me && isSuspendedNow(me);

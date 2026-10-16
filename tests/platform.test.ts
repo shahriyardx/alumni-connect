@@ -133,7 +133,7 @@ describe("applications", () => {
     const owner = await userByEmail("rep@eti.edu");
     const as = callerFor(owner.id);
     expect(await as.notification.unreadCount()).toBe(0);
-    expect(await as.admin.rosterStats()).toEqual({ total: 0, graduated: 0 });
+    expect(await as.workspace.batches()).toEqual([]);
   });
   test("approve → university and owner ACTIVE, audited in tenant", async () => {
     const uniId = await applyAndSignUp();

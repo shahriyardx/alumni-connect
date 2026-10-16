@@ -8,6 +8,7 @@ import { Card } from "../ui/card";
 import { EmptyState } from "../ui/empty-state";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
+import { PageHeader } from "./workspace-shell";
 
 // Every action string the server writes (grep `audit(` in src/server).
 const ACTIONS = [
@@ -17,8 +18,16 @@ const ACTIONS = [
   "report.ban",
   "user.status",
   "user.approve",
+  "user.reject",
   "user.role",
+  "owner.transfer",
+  "batch.save",
+  "batch.delete",
   "roster.import",
+  "settings.update",
+  "university.approve",
+  "university.reject",
+  "university.create",
   "post.update",
   "post.remove",
   "comment.update",
@@ -51,6 +60,7 @@ export function AuditPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      <PageHeader title="Audit log" sub="Every staff action, newest first." />
       <Select
         label="Action"
         value={action}

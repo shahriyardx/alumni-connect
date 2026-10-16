@@ -10,7 +10,15 @@ import {
 
 let asA: ReturnType<typeof callerFor>;
 let adminA: ReturnType<typeof callerFor>;
-const bIds = {} as { userId: string; postId: string; commentId: string };
+let ownerA: ReturnType<typeof callerFor>;
+const bIds = {} as {
+  userId: string;
+  postId: string;
+  commentId: string;
+  pendingId: string;
+  batchId: string;
+  uniId: string;
+};
 
 beforeAll(async () => {
   await resetDb();
@@ -21,6 +29,7 @@ beforeAll(async () => {
   const ub = await makeUser(b.id, { createdAt: old });
   asA = callerFor(ua.id);
   adminA = callerFor((await makeUser(a.id, { role: "ADMIN" })).id);
+  ownerA = callerFor((await makeUser(a.id, { role: "OWNER" })).id);
   const asB = callerFor(ub.id);
   const p = await asB.post.create({
     title: "Secret B question",
@@ -39,7 +48,8 @@ beforeAll(async () => {
     targetId: p.id,
     reason: "B-only report",
   });
-  await makeUser(b.id, { status: "PENDING" });
+  bIds.pendingId = (await makeUser(b.id, { status: "PENDING" })).id;
+  bIds.uniId = b.id;
   const [bBatch] = await adminDb
     .insert(batch)
     .values({ universityId: b.id, number: 20, graduationYear: 2020 })
@@ -50,6 +60,7 @@ beforeAll(async () => {
     studentIdHash: "b-roster-hash",
     department: "CSE",
   });
+  bIds.batchId = bBatch.id;
   // Positive control: the B data really exists for B.
   expect(await asB.notification.unreadCount()).toBeGreaterThan(0);
   expect((await asB.social.bookmarks({})).items).toHaveLength(1);
@@ -116,10 +127,49 @@ describe("cross-tenant reads are impossible", () => {
     expect(
       adminA.admin.setRole({ userId: bIds.userId, role: "ADMIN" }),
     ).rejects.toThrow(/NOT_FOUND/));
-  test("admin.approveUser B user", () =>
-    expect(adminA.admin.approveUser({ userId: bIds.userId })).rejects.toThrow(
-      /No pending account/,
+  test("workspace.decide B user", async () => {
+    for (const action of ["approve", "reject"] as const)
+      await expect(
+        adminA.workspace.decide({ userId: bIds.pendingId, action }),
+      ).rejects.toThrow(/No pending account/);
+  });
+  test("workspace.transferOwnership to B user", () =>
+    expect(
+      ownerA.workspace.transferOwnership({ userId: bIds.userId }),
+    ).rejects.toThrow(/Pick an active member/));
+  test("workspace.saveBatch edits B batch", () =>
+    expect(
+      adminA.workspace.saveBatch({
+        id: bIds.batchId,
+        number: 21,
+        graduationYear: 2000,
+      }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("workspace.saveBatch: B's batch number is free in A", async () => {
+    const { id } = await adminA.workspace.saveBatch({
+      number: 20,
+      graduationYear: 2030,
+    });
+    await adminA.workspace.deleteBatch({ id });
+  });
+  test("workspace.deleteBatch B batch", () =>
+    expect(adminA.workspace.deleteBatch({ id: bIds.batchId })).rejects.toThrow(
+      /NOT_FOUND/,
     ));
+  test("admin.importRoster into B batch", () =>
+    expect(
+      adminA.admin.importRoster({
+        batchId: bIds.batchId,
+        csv: "student_id,department\nX-1,CSE",
+      }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("workspace.updateSettings can't use a B logo", () =>
+    expect(
+      ownerA.workspace.updateSettings({
+        name: "Uni A",
+        logoKey: `${bIds.uniId}/logo/f/${bIds.batchId}.png`,
+      }),
+    ).rejects.toThrow(/Upload not found/));
   test("moderation.setUserStatus B user", async () => {
     const modA = adminA; // admin is also a mod
     await expect(
@@ -138,11 +188,20 @@ describe("cross-tenant reads are impossible", () => {
     expect(await asA.notification.unreadCount()).toBe(0));
   test("moderation.queue excludes B", async () =>
     expect((await adminA.moderation.queue({})).items).toEqual([]));
-  test("admin.pendingUsers excludes B", async () =>
-    expect(await adminA.admin.pendingUsers()).toEqual([]));
+  test("workspace.approvals excludes B", async () =>
+    expect(await adminA.workspace.approvals()).toEqual([]));
+  test("workspace.batches excludes B", async () =>
+    expect(await adminA.workspace.batches()).toEqual([]));
+  test("workspace.counts excludes B", async () =>
+    expect(await adminA.workspace.counts()).toEqual({
+      approvals: 0,
+      reports: 0,
+    }));
+  test("workspace.settings is A's", async () =>
+    expect((await ownerA.workspace.settings()).name).toBe("A"));
   test("admin.stats excludes B", async () => {
     const s = await adminA.admin.stats();
-    expect(s.members).toMatchObject({ STUDENT: 1, ADMIN: 1 });
+    expect(s.members).toMatchObject({ STUDENT: 1, ADMIN: 1, OWNER: 1 });
     expect(s.pending).toBe(0);
     expect(s.totalPosts).toBe(0);
     expect(s.openReports).toBe(0);
@@ -150,11 +209,9 @@ describe("cross-tenant reads are impossible", () => {
       true,
     );
   });
-  test("admin.rosterStats excludes B", async () =>
-    expect(await adminA.admin.rosterStats()).toEqual({
-      total: 0,
-      graduated: 0,
-    }));
-  test("admin.audit excludes B", async () =>
-    expect((await adminA.admin.audit({})).items).toEqual([]));
+  test("admin.audit excludes B", async () => {
+    // Only A's own batch.save/delete from the test above.
+    const actions = (await adminA.admin.audit({})).items.map((i) => i.action);
+    expect(actions.sort()).toEqual(["batch.delete", "batch.save"]);
+  });
 });

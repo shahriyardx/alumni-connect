@@ -1,8 +1,5 @@
-import type { Metadata } from "next";
-import { ModView } from "./mod-view";
-
-export const metadata: Metadata = { title: "Moderation" };
+import { redirect } from "next/navigation";
 
 export default function ModPage() {
-  return <ModView />;
+  redirect("/workspace/moderation");
 }

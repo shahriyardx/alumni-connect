@@ -12,15 +12,19 @@ import {
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { TextField } from "@/components/ui/text-field";
-import { useRedirectIfSignedIn } from "@/components/user-menu";
+import { homeFor, useRedirectIfSignedIn } from "@/components/user-menu";
 import { authClient } from "@/lib/auth-client";
 import { safeNext } from "@/lib/safe-next";
+import { useTRPC } from "@/lib/trpc";
 
 export function SignInForm() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const next = safeNext(useSearchParams().get("next"));
+  const nextParam = useSearchParams().get("next");
+  // No explicit `next`: land by role (homeFor).
+  const next = nextParam ? safeNext(nextParam) : undefined;
   useRedirectIfSignedIn(next);
+  const trpc = useTRPC();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
@@ -29,9 +33,12 @@ export function SignInForm() {
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const done = () => {
+  const done = async () => {
     queryClient.clear();
-    router.push(next);
+    const me = next
+      ? null
+      : await queryClient.fetchQuery(trpc.auth.me.queryOptions());
+    router.push(next ?? (me ? homeFor(me) : "/feed"));
   };
 
   const sendCode = () =>

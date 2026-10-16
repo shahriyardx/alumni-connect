@@ -2,7 +2,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { isAdmin, isMod } from "@/db/schema";
+import { isAdmin, isMod, type Role } from "@/db/schema";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
 import { Avatar } from "./ui/avatar";
@@ -16,12 +16,16 @@ export function useMe() {
   return { me: data, isLoading };
 }
 
-/** Leave sign-in/sign-up only for a real session; a cookie alone may be stale. */
-export function useRedirectIfSignedIn(to: string, enabled = true) {
+/** Where an account lands after sign-in: OWNER/ADMIN run the workspace, everyone else reads the feed. */
+export const homeFor = (me: { role: Role; status: string }) =>
+  isAdmin(me.role) && me.status === "ACTIVE" ? "/workspace" : "/feed";
+
+/** Leave sign-in/sign-up only for a real session; a cookie alone may be stale. `to` defaults to homeFor(me). */
+export function useRedirectIfSignedIn(to?: string, enabled = true) {
   const { me } = useMe();
   const router = useRouter();
   useEffect(() => {
-    if (enabled && me) router.replace(to);
+    if (enabled && me) router.replace(to ?? homeFor(me));
   }, [enabled, me, router, to]);
 }
 
@@ -69,20 +73,11 @@ export function UserMenu() {
         {/* Phones have no rail, so the role-gated destinations live here. */}
         {isMod(me.role) && (
           <MenuItem
-            icon="shield"
+            icon="space_dashboard"
             className="min-[840px]:hidden"
-            onClick={() => router.push("/mod")}
+            onClick={() => router.push("/workspace")}
           >
-            Moderation
-          </MenuItem>
-        )}
-        {isAdmin(me.role) && (
-          <MenuItem
-            icon="admin_panel_settings"
-            className="min-[840px]:hidden"
-            onClick={() => router.push("/admin")}
-          >
-            Admin
+            Workspace
           </MenuItem>
         )}
         {me.isPlatformAdmin && (

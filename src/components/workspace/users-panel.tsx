@@ -15,28 +15,34 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Chip } from "../ui/chip";
+import { Dialog, DialogContent } from "../ui/dialog";
 import { EmptyState } from "../ui/empty-state";
 import { IconButton } from "../ui/icon-button";
-import { Menu, MenuContent } from "../ui/menu";
+import { Menu, MenuContent, MenuItem } from "../ui/menu";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { TextField } from "../ui/text-field";
 import { useToast } from "../ui/toast";
+import { useMe } from "../user-menu";
+import { PageHeader } from "./workspace-shell";
 
 const ROLE_LABEL: Record<Role, string> = {
   OWNER: "Owner",
   ADMIN: "Admin",
   MODERATOR: "Moderator",
-  STAFF: "Staff",
+  STAFF: "Faculty",
   STUDENT: "Student",
   ALUMNUS: "Alumnus",
 };
-// OWNER is never assignable here (server refuses); ownership transfer lands in W4.
-const ROLE_ITEMS = ROLES.filter((r) => r !== "OWNER").map((r) => ({
-  value: r,
-  label: ROLE_LABEL[r],
-}));
-const OWNER_ITEMS = [{ value: "OWNER" as Role, label: ROLE_LABEL.OWNER }];
+// OWNER is never assignable here (transfer ownership instead); only the OWNER hands out ADMIN.
+const roleItems = (viewer: Role, target: Role) =>
+  target === "OWNER"
+    ? [{ value: "OWNER" as Role, label: ROLE_LABEL.OWNER }]
+    : ROLES.filter(
+        (r) =>
+          r !== "OWNER" &&
+          (viewer === "OWNER" || r !== "ADMIN" || target === r),
+      ).map((r) => ({ value: r, label: ROLE_LABEL[r] }));
 
 const STATUS_TONE: Record<string, string> = {
   ACTIVE: "bg-muted text-muted-foreground",
@@ -45,7 +51,18 @@ const STATUS_TONE: Record<string, string> = {
   BANNED: "bg-destructive/10 text-destructive",
 };
 
-export function UsersPanel({ meId }: { meId: string }) {
+export function MembersPanel() {
+  const { me } = useMe();
+  if (!me) return null;
+  return (
+    <>
+      <PageHeader title="Members" sub="Roles, account status and ownership." />
+      <UsersPanel meId={me.id} meRole={me.role} />
+    </>
+  );
+}
+
+function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
@@ -149,7 +166,7 @@ export function UsersPanel({ meId }: { meId: string }) {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-2 max-sm:ml-12 max-sm:p-0">
+                  <td className="px-3 py-2 max-sm:p-0 max-sm:pl-3">
                     <span
                       className={cn(
                         "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
@@ -159,7 +176,7 @@ export function UsersPanel({ meId }: { meId: string }) {
                       {u.status.toLowerCase()}
                     </span>
                   </td>
-                  <td className="px-3 py-2 max-sm:ml-auto max-sm:p-0">
+                  <td className="px-3 py-2 max-sm:min-w-0 max-sm:flex-1 max-sm:p-0">
                     <Select
                       label={`Role for ${u.name}`}
                       hideLabel
@@ -167,9 +184,10 @@ export function UsersPanel({ meId }: { meId: string }) {
                       disabled={
                         u.id === meId ||
                         u.role === "OWNER" ||
+                        (u.role === "ADMIN" && meRole !== "OWNER") ||
                         setUserRole.isPending
                       }
-                      items={u.role === "OWNER" ? OWNER_ITEMS : ROLE_ITEMS}
+                      items={roleItems(meRole, u.role)}
                       onValueChange={(next) =>
                         next !== u.role &&
                         setUserRole.mutate({ userId: u.id, role: next })
@@ -177,7 +195,11 @@ export function UsersPanel({ meId }: { meId: string }) {
                     />
                   </td>
                   <td className="px-1 py-2 max-sm:p-0">
-                    <RowStatusMenu user={u} self={u.id === meId} />
+                    <RowStatusMenu
+                      user={u}
+                      self={u.id === meId}
+                      canTransfer={meRole === "OWNER" && u.status === "ACTIVE"}
+                    />
                   </td>
                 </tr>
               ))}
@@ -202,16 +224,41 @@ export function UsersPanel({ meId }: { meId: string }) {
 function RowStatusMenu({
   user,
   self,
+  canTransfer,
 }: {
   user: Parameters<typeof useAccountStatusActions>[0];
   self: boolean;
+  canTransfer: boolean;
 }) {
+  const trpc = useTRPC();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [transfer, setTransfer] = useState(false);
   const { items, dialogs } = useAccountStatusActions(user);
+  const move = useMutation(
+    trpc.workspace.transferOwnership.mutationOptions({
+      onSuccess: () => {
+        toast.success(`${user.name} is now the owner`);
+        setTransfer(false);
+      },
+      onError: (e) => toast.error(e.message),
+      // My own role changed too: refresh everything role-gated.
+      onSettled: () => qc.invalidateQueries(),
+    }),
+  );
+  const all = canTransfer
+    ? [
+        ...items,
+        <MenuItem key="owner" icon="key" onClick={() => setTransfer(true)}>
+          Make owner…
+        </MenuItem>,
+      ]
+    : items;
   return (
     <>
       <Menu.Root>
         <Menu.Trigger
-          disabled={self || items.length === 0}
+          disabled={self || all.length === 0}
           render={
             <IconButton
               icon="more_vert"
@@ -219,9 +266,27 @@ function RowStatusMenu({
             />
           }
         />
-        <MenuContent>{items}</MenuContent>
+        <MenuContent>{all}</MenuContent>
       </Menu.Root>
       {dialogs}
+      <Dialog.Root open={transfer} onOpenChange={setTransfer}>
+        <DialogContent
+          title={`Make ${user.name} the owner?`}
+          description="They get full control, including settings and admin roles. You become an admin."
+        >
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button variant="ghost" />}>
+              Cancel
+            </Dialog.Close>
+            <Button
+              loading={move.isPending}
+              onClick={() => move.mutate({ userId: user.id })}
+            >
+              Transfer ownership
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog.Root>
     </>
   );
 }

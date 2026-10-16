@@ -1,15 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   auditLog,
@@ -58,43 +48,36 @@ function isoWeekKey(d: Date): string {
 
 export const adminRouter = router({
   importRoster: adminProcedure
-    // ponytail: interim — batch picked by number (created if missing; an existing batch keeps its year). W4 moves this to workspace batches.
     .input(
       z.object({
+        batchId: z.string().uuid(),
         csv: z.string().max(2_000_000),
-        batchNumber: z.number().int().min(1).max(9999),
-        graduationYear: z.number().int().min(1950).max(2100),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const [b] = await ctx.db
+        .select({ id: batch.id, number: batch.number })
+        .from(batch)
+        .where(
+          and(
+            eq(batch.id, input.batchId),
+            eq(batch.universityId, ctx.me.universityId),
+          ),
+        );
+      if (!b) throw new TRPCError({ code: "NOT_FOUND" });
       const { rows, errors } = parseRosterCsv(input.csv);
       let inserted = 0;
       let updated = 0;
-      if (rows.length === 0) return { inserted, updated, errors, note: null };
-      const [{ id: batchId, graduationYear }] = await ctx.db
-        .insert(batch)
-        .values({
-          universityId: ctx.me.universityId,
-          number: input.batchNumber,
-          graduationYear: input.graduationYear,
-        })
-        .onConflictDoUpdate({
-          target: [batch.universityId, batch.number],
-          set: { number: sql`excluded.number` },
-        })
-        .returning({ id: batch.id, graduationYear: batch.graduationYear });
-      const note =
-        graduationYear === input.graduationYear
-          ? null
-          : `Batch ${input.batchNumber} already has graduation year ${graduationYear}; kept it`;
+      if (rows.length === 0) return { inserted, updated, errors };
 
       for (const part of chunk(rows, IMPORT_CHUNK)) {
+        // An ID already on the roster moves to this batch.
         const results = await ctx.db
           .insert(rosterEntry)
           .values(
             part.map((r) => ({
               universityId: ctx.me.universityId,
-              batchId,
+              batchId: b.id,
               studentIdHash: hashStudentId(ctx.me.universityId, r.studentId),
               department: r.department,
             })),
@@ -118,91 +101,11 @@ export const adminRouter = router({
         ctx.me.universityId,
         ctx.me.id,
         "roster.import",
-        undefined,
-        {
-          batchNumber: input.batchNumber,
-          inserted,
-          updated,
-          errors: errors.length,
-        },
+        b.id,
+        { batchNumber: b.number, inserted, updated, errors: errors.length },
       );
 
-      return { inserted, updated, errors, note };
-    }),
-
-  rosterStats: adminProcedure.query(async ({ ctx }) => {
-    const [row] = await ctx.db
-      .select({
-        total: sql<number>`count(*)`,
-        graduated: sql<number>`count(*) filter (where ${batch.graduationYear} < extract(year from now()))`,
-      })
-      .from(rosterEntry)
-      .innerJoin(batch, eq(batch.id, rosterEntry.batchId));
-    return { total: Number(row.total), graduated: Number(row.graduated) };
-  }),
-
-  pendingUsers: adminProcedure.query(async ({ ctx }) => {
-    return ctx.db
-      .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        batchNumber: user.batchNumber,
-        graduationYear: user.graduationYear,
-        department: user.department,
-        role: user.role,
-        createdAt: user.createdAt,
-      })
-      .from(user)
-      .where(
-        and(
-          eq(user.universityId, ctx.me.universityId),
-          eq(user.status, "PENDING"),
-          eq(user.emailVerified, true),
-        ),
-      )
-      .orderBy(asc(user.createdAt));
-  }),
-
-  approveUser: adminProcedure
-    .input(z.object({ userId: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      const [target] = await ctx.db
-        .select({ id: user.id })
-        .from(user)
-        .where(
-          and(
-            eq(user.id, input.userId),
-            eq(user.universityId, ctx.me.universityId),
-            eq(user.status, "PENDING"),
-          ),
-        );
-      if (!target) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No pending account",
-        });
-      }
-
-      await ctx.db
-        .update(user)
-        .set({ status: "ACTIVE" })
-        .where(
-          and(
-            eq(user.id, input.userId),
-            eq(user.universityId, ctx.me.universityId),
-            eq(user.status, "PENDING"),
-          ),
-        );
-
-      await audit(
-        ctx.db,
-        ctx.me.universityId,
-        ctx.me.id,
-        "user.approve",
-        input.userId,
-      );
-      return { ok: true as const };
+      return { inserted, updated, errors };
     }),
 
   users: adminProcedure
@@ -272,11 +175,24 @@ export const adminRouter = router({
           ),
         );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
-      // Ownership only moves via an explicit transfer (W4); nobody edits an OWNER here.
-      if (input.role === "OWNER" || target.role === "OWNER")
+      // Ownership only moves via workspace.transferOwnership.
+      if (target.role === "OWNER")
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "Ownership can't be changed here",
+          message: "The owner's role can't be changed",
+        });
+      if (input.role === "OWNER")
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Use transfer ownership instead",
+        });
+      if (
+        (target.role === "ADMIN" || input.role === "ADMIN") &&
+        ctx.me.role !== "OWNER"
+      )
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the owner can change admin roles",
         });
 
       await ctx.db

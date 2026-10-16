@@ -16,8 +16,10 @@ export function ImageUploader({
   kind,
   onUploaded,
   multiple,
+  label = "Add image",
 }: {
-  kind: "avatar" | "attachment";
+  kind: "avatar" | "attachment" | "logo";
+  label?: string;
   onUploaded: (a: { id: string; key: string }) => void;
   multiple?: boolean;
 }) {
@@ -81,7 +83,7 @@ export function ImageUploader({
         icon="add_photo_alternate"
         onClick={() => inputRef.current?.click()}
       >
-        Add image
+        {label}
       </Button>
       {pending.map((p) => (
         <span

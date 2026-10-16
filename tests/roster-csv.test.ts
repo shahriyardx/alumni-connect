@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { rowsToCsv } from "@/lib/roster-file";
 import { parseRosterCsv } from "@/server/roster-csv";
 
 test("parses valid rows, quoted fields, case-insensitive header, optional name", () => {
@@ -51,4 +52,19 @@ test("handles a UTF-8 BOM, CRLF line endings, doubled-quote escapes, and a trail
     { studentId: "NU-2", department: "CSE" },
   ]);
   expect(r.errors).toEqual([{ line: 4, message: "Expected 2 fields, got 4" }]);
+});
+
+test("rowsToCsv: spreadsheet rows survive the round trip", () => {
+  const csv = rowsToCsv([
+    ["student_id", "department", "name"],
+    [20300001, "CSE", 'Rahim "R", Uddin'],
+    ["NU-2", "EEE\nevening", null],
+  ]);
+  expect(parseRosterCsv(csv)).toEqual({
+    rows: [
+      { studentId: "20300001", department: "CSE", name: 'Rahim "R", Uddin' },
+      { studentId: "NU-2", department: "EEE evening" },
+    ],
+    errors: [],
+  });
 });

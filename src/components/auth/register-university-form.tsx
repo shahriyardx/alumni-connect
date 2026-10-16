@@ -28,7 +28,7 @@ export function RegisterUniversityForm() {
   const queryClient = useQueryClient();
   const register = useMutation(trpc.auth.registerUniversity.mutationOptions());
   const [step, setStep] = useState(0);
-  useRedirectIfSignedIn("/feed", step === 0);
+  useRedirectIfSignedIn(undefined, step === 0);
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState<string>();
   const [otp, setOtp] = useState("");

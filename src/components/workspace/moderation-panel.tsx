@@ -16,35 +16,21 @@ import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { useMe } from "@/components/user-menu";
-import { isMod } from "@/db/schema";
 import { type RouterOutputs, useTRPC } from "@/lib/trpc";
+import { PageHeader } from "./workspace-shell";
 
 type Status = "OPEN" | "RESOLVED" | "DISMISSED";
 type Report = RouterOutputs["moderation"]["queue"]["items"][number];
 
 const DAYS = ["1", "3", "7", "30", "90"] as const;
 
-export function ModView() {
-  const { me, isLoading } = useMe();
-  if (isLoading)
-    return (
-      <div className="grid place-items-center py-24">
-        <Spinner />
-      </div>
-    );
-  if (!me || !isMod(me.role))
-    return (
-      <EmptyState
-        icon="block"
-        title="403 · Moderators only"
-        body="You don't have access to the moderation queue."
-      />
-    );
-
+export function ModerationPanel() {
   return (
-    <div className="flex flex-col gap-5 pt-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Moderation</h1>
+    <>
+      <PageHeader
+        title="Moderation"
+        sub="Reports from members, oldest first."
+      />
       <TabsRoot defaultValue="OPEN">
         <TabsList>
           <Tab value="OPEN">Open</Tab>
@@ -57,7 +43,7 @@ export function ModView() {
           </TabsPanel>
         ))}
       </TabsRoot>
-    </div>
+    </>
   );
 }
 
@@ -142,6 +128,7 @@ function ReportCard({ r }: { r: Report }) {
       onError: (e) => toast.error(e.message),
       onSettled: () => {
         void qc.invalidateQueries(trpc.moderation.queue.pathFilter());
+        void qc.invalidateQueries(trpc.workspace.counts.queryFilter());
         void qc.invalidateQueries(trpc.post.pathFilter());
       },
     }),

@@ -18,12 +18,14 @@ export const filesRouter = router({
   createUpload: memberProcedure
     .input(
       z.object({
-        kind: z.enum(["avatar", "attachment"]),
+        kind: z.enum(["avatar", "attachment", "logo"]),
         mime: z.enum(Object.keys(ALLOWED_MIME) as [keyof typeof ALLOWED_MIME]),
         size: z.number().int().min(1).max(MAX_BYTES),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      if (input.kind === "logo" && ctx.me.role !== "OWNER")
+        throw new TRPCError({ code: "FORBIDDEN" });
       const ext = ALLOWED_MIME[input.mime];
       const key = `${ctx.me.universityId}/${input.kind}/${randomUUID()}.${ext}`;
       const url = await presignPut(key);
@@ -37,7 +39,7 @@ export const filesRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const shapeRe = new RegExp(
-        `^${ctx.me.universityId}/(avatar|attachment)/[0-9a-f-]{36}\\.(png|jpg|webp|gif)$`,
+        `^${ctx.me.universityId}/(avatar|attachment|logo)/[0-9a-f-]{36}\\.(png|jpg|webp|gif)$`,
       );
       if (!shapeRe.test(input.key)) {
         throw new TRPCError({
@@ -45,6 +47,12 @@ export const filesRouter = router({
           message: "Upload not found",
         });
       }
+
+      if (
+        input.key.startsWith(`${ctx.me.universityId}/logo/`) &&
+        ctx.me.role !== "OWNER"
+      )
+        throw new TRPCError({ code: "FORBIDDEN" });
 
       const ext = input.key.slice(input.key.lastIndexOf(".") + 1);
       const mime = EXT_TO_MIME[ext];

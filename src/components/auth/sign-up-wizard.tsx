@@ -43,7 +43,7 @@ export function SignUpWizard() {
 
   const [step, setStep] = useState(0);
   // Only before the wizard starts: after OTP verify the user is signed in on purpose.
-  useRedirectIfSignedIn("/feed", step === 0);
+  useRedirectIfSignedIn(undefined, step === 0);
   const [universityId, setUniversityId] = useState("");
   const [form, setForm] = useState<Form>({
     studentId: "",

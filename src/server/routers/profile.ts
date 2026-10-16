@@ -15,6 +15,7 @@ export const profileRouter = router({
           role: user.role,
           batchNumber: user.batchNumber,
           department: user.department,
+          title: user.title,
           avatarKey: user.avatarKey,
           bio: user.bio,
           createdAt: user.createdAt,

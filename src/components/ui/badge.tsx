@@ -14,15 +14,18 @@ const roles: Record<Role, { label: string; icon?: string; tone: string }> = {
   STAFF: { label: "Faculty", icon: "badge", tone: neutral },
 };
 
+/** `title` (a staff position, e.g. "Lecturer") shows as a tooltip. */
 export function RoleBadge({
   role,
+  title,
   className,
 }: {
   role: Role;
+  title?: string | null;
   className?: string;
 }) {
   const r = roles[role];
-  return (
+  const badge = (
     <span
       className={cn(
         "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-xs font-medium whitespace-nowrap",
@@ -35,6 +38,7 @@ export function RoleBadge({
       {r.label}
     </span>
   );
+  return title ? <Tip label={title}>{badge}</Tip> : badge;
 }
 
 export function VerifiedMark({ className }: { className?: string }) {

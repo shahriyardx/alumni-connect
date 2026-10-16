@@ -8,6 +8,7 @@ import { platformRouter } from "./routers/platform";
 import { postRouter } from "./routers/post";
 import { profileRouter } from "./routers/profile";
 import { socialRouter } from "./routers/social";
+import { workspaceRouter } from "./routers/workspace";
 import { createCallerFactory, router } from "./trpc";
 
 export const appRouter = router({
@@ -21,6 +22,7 @@ export const appRouter = router({
   moderation: moderationRouter,
   admin: adminRouter,
   platform: platformRouter,
+  workspace: workspaceRouter,
 });
 export type AppRouter = typeof appRouter;
 export const createCaller = createCallerFactory(appRouter);

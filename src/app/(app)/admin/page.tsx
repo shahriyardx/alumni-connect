@@ -1,8 +1,5 @@
-import type { Metadata } from "next";
-import { AdminView } from "./admin-view";
-
-export const metadata: Metadata = { title: "Admin" };
+import { redirect } from "next/navigation";
 
 export default function AdminPage() {
-  return <AdminView />;
+  redirect("/workspace");
 }

@@ -105,7 +105,7 @@ async function resolveTargetUserId(
   return row?.authorId ?? null;
 }
 
-/** Nobody can act on themselves; a MODERATOR cannot suspend/ban a MODERATOR or ADMIN. */
+/** Nobody acts on themselves or the OWNER; ADMINs only by the OWNER; a MODERATOR not on MODERATOR/ADMIN. */
 function assertCanAct(me: Me, target: { id: string; role: Role }) {
   if (target.id === me.id) {
     throw new TRPCError({
@@ -117,6 +117,12 @@ function assertCanAct(me: Me, target: { id: string; role: Role }) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "The owner's account can't be moderated",
+    });
+  }
+  if (me.role === "ADMIN" && target.role === "ADMIN") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only the owner can act on admins",
     });
   }
   if (me.role === "MODERATOR" && isMod(target.role)) {

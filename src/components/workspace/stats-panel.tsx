@@ -1,17 +1,21 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ROLES } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { type RouterOutputs, useTRPC } from "@/lib/trpc";
 import { Card } from "../ui/card";
+import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
+import { focusRing } from "../ui/styles";
+import { PageHeader } from "./workspace-shell";
 
 type Week = RouterOutputs["admin"]["stats"]["postsPerWeek"][number];
 
 const ROLE_LABEL = {
   OWNER: "Owners",
-  STAFF: "Staff",
+  STAFF: "Faculty",
   STUDENT: "Students",
   ALUMNUS: "Alumni",
   MODERATOR: "Moderators",
@@ -33,91 +37,191 @@ const SERIES = [
 export function StatsPanel() {
   const trpc = useTRPC();
   const stats = useQuery(trpc.admin.stats.queryOptions());
+  const batches = useQuery(trpc.workspace.batches.queryOptions());
+  const header = (
+    <PageHeader title="Overview" sub="Your university at a glance." />
+  );
   if (stats.isError)
     return (
-      <p className="py-16 text-center text-sm text-destructive">
-        {stats.error.message}
-      </p>
+      <>
+        {header}
+        <p className="py-16 text-center text-sm text-destructive">
+          {stats.error.message}
+        </p>
+      </>
     );
   if (!stats.data)
     return (
-      <div className="grid place-items-center py-16">
-        <Spinner />
-      </div>
+      <>
+        {header}
+        <div className="grid place-items-center py-16">
+          <Spinner />
+        </div>
+      </>
     );
   const s = stats.data;
   const members = ROLES.reduce((n, r) => n + s.members[r], 0);
+  const b = batches.data ?? [];
+  const roster = b.reduce((n, x) => n + x.rosterCount, 0);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Members" value={members} />
-        <Stat label="Pending approval" value={s.pending} />
-        <Stat label="Open reports" value={s.openReports} />
-        <Stat label="Answered by alumni" value={`${s.alumniAnsweredPct}%`} />
-      </div>
-      <Card className="flex flex-wrap gap-x-6 gap-y-2 p-5 text-sm">
-        {ROLES.map((r) => (
-          <span key={r}>
-            <span className="font-semibold tabular-nums">{s.members[r]}</span>{" "}
-            <span className="text-muted-foreground">{ROLE_LABEL[r]}</span>
+    <>
+      {header}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card className="col-span-2 flex flex-col justify-between gap-4 p-5">
+          <span className="text-sm text-muted-foreground">Members</span>
+          <span className="text-5xl font-semibold tracking-tighter tabular-nums">
+            {members}
           </span>
-        ))}
-        <span className="ml-auto text-muted-foreground">
-          {s.totalPosts} posts total
-        </span>
-      </Card>
-      <Card className="flex flex-col gap-4 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold tracking-tight">
-            Activity, last 8 weeks
-          </h2>
-          <div className="flex gap-4 text-xs text-muted-foreground">
-            {SERIES.map((x) => (
-              <span key={x.key} className="flex items-center gap-1.5">
-                <span className={cn("size-2.5 rounded-sm", x.swatch)} />
-                {x.label}
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            {ROLES.filter((r) => s.members[r] > 0).map((r) => (
+              <span key={r}>
+                <span className="font-semibold tabular-nums">
+                  {s.members[r]}
+                </span>{" "}
+                <span className="text-muted-foreground">{ROLE_LABEL[r]}</span>
               </span>
             ))}
           </div>
-        </div>
-        <WeeklyBars weeks={s.postsPerWeek} />
-        <details className="text-sm">
-          <summary className="cursor-pointer text-muted-foreground">
-            Show as table
-          </summary>
-          <table className="mt-2 w-full text-left tabular-nums">
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                <th className="py-1 font-medium">Week</th>
-                <th className="py-1 font-medium">Posts</th>
-                <th className="py-1 font-medium">Comments</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.postsPerWeek.map((w) => (
-                <tr key={w.week}>
-                  <td className="py-1">{w.week}</td>
-                  <td className="py-1">{w.posts}</td>
-                  <td className="py-1">{w.comments}</td>
-                </tr>
+        </Card>
+        <LinkTile
+          href="/workspace/approvals"
+          label="Waiting for approval"
+          value={s.pending}
+          cta="Review"
+          hot={s.pending > 0}
+        />
+        <LinkTile
+          href="/workspace/moderation"
+          label="Open reports"
+          value={s.openReports}
+          cta="Open queue"
+          hot={s.openReports > 0}
+        />
+
+        <Card className="col-span-2 flex flex-col gap-4 p-5 lg:col-span-3 lg:row-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold tracking-tight">
+              Activity, last 8 weeks
+            </h2>
+            <div className="flex gap-4 text-xs text-muted-foreground">
+              {SERIES.map((x) => (
+                <span key={x.key} className="flex items-center gap-1.5">
+                  <span className={cn("size-2.5 rounded-sm", x.swatch)} />
+                  {x.label}
+                </span>
               ))}
-            </tbody>
-          </table>
-        </details>
-      </Card>
-    </div>
+            </div>
+          </div>
+          <WeeklyBars weeks={s.postsPerWeek} />
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted-foreground">
+              Show as table
+            </summary>
+            <table className="mt-2 w-full text-left tabular-nums">
+              <thead className="text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-1 font-medium">Week</th>
+                  <th className="py-1 font-medium">Posts</th>
+                  <th className="py-1 font-medium">Comments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.postsPerWeek.map((w) => (
+                  <tr key={w.week}>
+                    <td className="py-1">{w.week}</td>
+                    <td className="py-1">{w.posts}</td>
+                    <td className="py-1">{w.comments}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        </Card>
+        <Stat
+          label="Answered by alumni"
+          value={`${s.alumniAnsweredPct}%`}
+          foot={`of ${s.totalPosts} posts`}
+        />
+        <Link
+          href="/workspace/batches"
+          className={cn(focusRing, "rounded-3xl")}
+        >
+          <Stat
+            label="Batches"
+            value={b.length}
+            foot={`${roster} on rosters`}
+            className="h-full transition-shadow duration-150 hover:shadow-sm hover:shadow-black/5"
+          />
+        </Link>
+      </div>
+    </>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+function Stat({
+  label,
+  value,
+  foot,
+  className,
+}: {
+  label: string;
+  value: number | string;
+  foot?: string;
+  className?: string;
+}) {
   return (
-    <Card className="flex flex-col gap-1 p-5">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <Card className={cn("flex flex-col gap-1 p-5", className)}>
+      <span className="text-sm text-muted-foreground">{label}</span>
       <span className="text-3xl font-semibold tracking-tighter tabular-nums">
         {value}
       </span>
+      {foot && <span className="text-xs text-muted-foreground">{foot}</span>}
     </Card>
+  );
+}
+
+function LinkTile({
+  href,
+  label,
+  value,
+  cta,
+  hot,
+}: {
+  href: string;
+  label: string;
+  value: number;
+  cta: string;
+  hot: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        focusRing,
+        "group flex flex-col justify-between gap-4 rounded-3xl p-5 transition-colors duration-150",
+        hot
+          ? "bg-tonal text-tonal-fg hover:bg-tonal-hover"
+          : "bg-surface hover:shadow-sm hover:shadow-black/5",
+      )}
+    >
+      <span
+        className={cn("text-sm", hot ? "opacity-80" : "text-muted-foreground")}
+      >
+        {label}
+      </span>
+      <span className="text-5xl font-semibold tracking-tighter tabular-nums">
+        {value}
+      </span>
+      <span className="flex items-center gap-1 text-sm font-medium">
+        {cta}
+        <Icon
+          name="arrow_forward"
+          size={16}
+          className="transition-transform duration-150 group-hover:translate-x-0.5"
+        />
+      </span>
+    </Link>
   );
 }
 

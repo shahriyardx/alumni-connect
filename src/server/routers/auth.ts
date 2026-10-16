@@ -301,6 +301,7 @@ export const authRouter = router({
         universityId: user.universityId,
         universityName: university.name,
         universityStatus: university.status,
+        universityLogoKey: university.logoKey,
         avatarKey: user.avatarKey,
       })
       .from(user)
