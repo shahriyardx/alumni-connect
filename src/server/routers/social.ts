@@ -81,7 +81,7 @@ export const socialRouter = router({
       if (target.authorId === ctx.me.id) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "You can't vote on your own post",
+          message: `You can't vote on your own ${input.targetType === "POST" ? "post" : "comment"}`,
         });
       }
 

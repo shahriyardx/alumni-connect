@@ -65,7 +65,7 @@ test("votes: up, change, clear, no self-vote", async () => {
       targetId: p.id,
       value: 1,
     }),
-  ).rejects.toThrow(/own/);
+  ).rejects.toThrow(/your own post/);
   expect((await callerFor(bob.id).post.byId({ id: p.id })).myVote).toBe(0);
 });
 
@@ -139,6 +139,13 @@ test("votes on a comment", async () => {
       value: 1,
     }),
   ).toEqual({ score: 1, myVote: 1 });
+  await expect(
+    callerFor(alice.id).social.vote({
+      targetType: "COMMENT",
+      targetId: c.id,
+      value: 1,
+    }),
+  ).rejects.toThrow(/your own comment/);
 });
 
 test("vote on a deleted post is NOT_FOUND", async () => {
@@ -266,9 +273,14 @@ test("live events are published on commit", async () => {
   });
   await new Promise((r) => setTimeout(r, 300));
   off();
-  expect(got.some((e) => e.kind === "post" && e.universityId === uniId)).toBe(
-    true,
-  );
+  expect(
+    got.some(
+      (e) =>
+        e.kind === "post" &&
+        e.universityId === uniId &&
+        e.authorId === alice.id,
+    ),
+  ).toBe(true);
   expect(
     got.some((e) => e.kind === "notification" && e.userId === bob.id),
   ).toBe(true);

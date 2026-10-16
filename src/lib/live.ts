@@ -7,6 +7,7 @@ import { useTRPC } from "./trpc";
 type LiveEvent = {
   kind: "post" | "comment" | "notification";
   postId?: string;
+  authorId?: string;
 };
 
 // "N new posts" counter: a module store instead of a context provider — one
@@ -31,14 +32,17 @@ export function useNewPosts(): [number, () => void] {
   return [n, () => setNewPosts(0)];
 }
 
-/** Opens the SSE stream once (in AppShell) and fans events out to the query cache. */
-export function useLiveEvents(enabled: boolean) {
+/**
+ * Opens the SSE stream once (in AppShell) and fans events out to the query cache.
+ * `meId` undefined = disabled (not signed in / not active).
+ */
+export function useLiveEvents(meId: string | undefined) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!meId) return;
     // EventSource reconnects on its own after network drops.
     const es = new EventSource("/api/events");
     es.onmessage = (m) => {
@@ -49,7 +53,8 @@ export function useLiveEvents(enabled: boolean) {
         return;
       }
       if (e.kind === "post") {
-        setNewPosts(newPosts + 1);
+        // My own post: refresh the feed, but no "new posts" pill.
+        if (e.authorId !== meId) setNewPosts(newPosts + 1);
         void qc.invalidateQueries(trpc.post.feed.pathFilter());
       } else if (e.kind === "comment" && e.postId) {
         void qc.invalidateQueries({
@@ -64,5 +69,5 @@ export function useLiveEvents(enabled: boolean) {
       }
     };
     return () => es.close();
-  }, [enabled, trpc, qc, toast]);
+  }, [meId, trpc, qc, toast]);
 }

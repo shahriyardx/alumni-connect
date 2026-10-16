@@ -7,6 +7,8 @@ export type LiveEvent = {
   kind: "post" | "comment" | "notification";
   userId?: string;
   postId?: string;
+  /** kind "post" only: lets the author's own client skip the "new posts" pill. */
+  authorId?: string;
 };
 
 const g = globalThis as unknown as {

@@ -48,7 +48,11 @@ export async function GET(req: Request) {
       unsubscribe = subscribe((e) => {
         if (e.universityId !== me.universityId) return;
         if (e.kind === "notification" && e.userId !== me.id) return;
-        send({ kind: e.kind, postId: e.postId });
+        send({
+          kind: e.kind,
+          postId: e.postId,
+          ...(e.kind === "post" && { authorId: e.authorId }),
+        });
       });
       ping = setInterval(() => enqueue(": ping\n\n"), 15000);
       req.signal.addEventListener("abort", () => {

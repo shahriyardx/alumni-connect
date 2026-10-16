@@ -195,7 +195,12 @@ export const postRouter = router({
         );
       }
 
-      await publish(ctx.db, { universityId, kind: "post", postId: row.id });
+      await publish(ctx.db, {
+        universityId,
+        kind: "post",
+        postId: row.id,
+        authorId: ctx.me.id,
+      });
       for (const userId of recipients.keys()) {
         await publish(ctx.db, { universityId, kind: "notification", userId });
       }
