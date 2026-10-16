@@ -7,7 +7,9 @@ import {
   notification,
   tag,
 } from "@/db/schema";
+import { assertCanPostLinks } from "@/server/links";
 import { normalizeTags } from "@/server/tags";
+import type { Me } from "@/server/trpc";
 import {
   adminDb,
   callerFor,
@@ -282,4 +284,18 @@ describe("comments", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ actorId: mod.id, target: c1.id });
   });
+});
+
+test("link gate catches protocol-relative markdown links and mailto:", () => {
+  const fresh = { createdAt: new Date() } as Me;
+  for (const t of [
+    "see [here](//evil.example)",
+    "mail mailto:x@y.z",
+    "MAILTO:x@y.z",
+  ]) {
+    expect(() => assertCanPostLinks(fresh, t)).toThrow(/links/);
+  }
+  expect(() =>
+    assertCanPostLinks(fresh, "a/b // comment, no link"),
+  ).not.toThrow();
 });
