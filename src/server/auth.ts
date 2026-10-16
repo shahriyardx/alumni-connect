@@ -65,6 +65,19 @@ export const auth = betterAuth({
               ),
             );
           if (!p) return false;
+          // Two different emails can each get a pending_signup row for the
+          // same studentIdHash (pending_signup is keyed by email, not ID).
+          // If a user with that hash already exists (e.g. the other
+          // pending email finished sign-up first), refuse cleanly instead
+          // of letting the unique constraint on user.student_id_hash throw
+          // a raw 500.
+          if (p.studentIdHash) {
+            const [existingById] = await db
+              .select({ id: schema.user.id })
+              .from(schema.user)
+              .where(eq(schema.user.studentIdHash, p.studentIdHash));
+            if (existingById) return false;
+          }
           let universityId = p.universityId;
           if (p.role === "OWNER" || p.applicationName) {
             // OWNER rows only ever create a *new* PENDING university from an

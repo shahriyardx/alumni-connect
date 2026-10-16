@@ -60,24 +60,17 @@ export const platformRouter = router({
           website: university.website,
           createdAt: university.createdAt,
           members: sql<number>`coalesce(${members.n}, 0)::int`,
-          ownerName: sql<
-            string | null
-          >`(select name from "user" o where o.university_id = ${university.id} and o.role = 'OWNER' order by o.created_at limit 1)`,
-          ownerEmail: sql<
-            string | null
-          >`(select email from "user" o where o.university_id = ${university.id} and o.role = 'OWNER' order by o.created_at limit 1)`,
+          owner: sql<{
+            name: string;
+            email: string;
+            verified: boolean;
+          } | null>`(select json_build_object('name', o.name, 'email', o.email, 'verified', o.email_verified) from "user" o where o.university_id = ${university.id} and o.role = 'OWNER' order by o.email_verified desc, o.created_at limit 1)`,
         })
         .from(university)
         .leftJoin(members, eq(members.universityId, university.id))
         .where(input.status ? eq(university.status, input.status) : undefined)
         .orderBy(desc(university.createdAt));
-      return rows.map(({ ownerName, ownerEmail, ...r }) => ({
-        ...r,
-        owner:
-          ownerEmail !== null
-            ? { name: ownerName ?? "", email: ownerEmail }
-            : null,
-      }));
+      return rows;
     }),
 
   approve: platformProcedure
@@ -90,11 +83,16 @@ export const platformRouter = router({
           .update(user)
           .set({ status: "ACTIVE", decidedAt: new Date() })
           .where(and(eq(user.universityId, uni.id), eq(user.role, "OWNER")))
-          .returning({ id: user.id });
+          .returning({ verified: user.emailVerified });
         if (owners.length === 0)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "This application has no owner",
+          });
+        if (!owners.some((o) => o.verified))
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Owner hasn't verified their email",
           });
         await audit(
           tx,

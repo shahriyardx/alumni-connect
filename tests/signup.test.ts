@@ -156,6 +156,38 @@ async function apiError(p: Promise<unknown>) {
 }
 
 describe("better-auth sign-up gate", () => {
+  test("two pending rows sharing a studentIdHash: the second sign-up is refused cleanly", async () => {
+    const hash = hashStudentId(uni.id, "NU-1001");
+    const row = (email: string) => ({
+      email,
+      universityId: uni.id,
+      department: "CSE",
+      studentIdHash: hash,
+      role: "STUDENT" as const,
+      status: "ACTIVE" as const,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await adminDb
+      .insert(pendingSignup)
+      .values([row("first@north.edu"), row("second@north.edu")]);
+    const signUp = (email: string) =>
+      auth.api.signUpEmail({
+        body: { name: "Twin", email, password: "password123" },
+      });
+    await signUp("first@north.edu");
+    const err = await apiError(signUp("second@north.edu"));
+    expect(err).toEqual({
+      status: "BAD_REQUEST",
+      code: "FAILED_TO_CREATE_USER",
+      message: "Failed to create user",
+    });
+    expect(
+      await adminDb
+        .select()
+        .from(user)
+        .where(eq(user.email, "second@north.edu")),
+    ).toEqual([]);
+  });
   test("sign-up without startSignup is refused with FAILED_TO_CREATE_USER, no user row created", async () => {
     const err = await apiError(
       auth.api.signUpEmail({

@@ -91,7 +91,7 @@ type Row = {
   website: string | null;
   createdAt: Date;
   members: number;
-  owner: { name: string; email: string } | null;
+  owner: { name: string; email: string; verified: boolean } | null;
 };
 
 function UniversityList({ items }: { items: Row[] }) {
@@ -104,7 +104,9 @@ function UniversityList({ items }: { items: Row[] }) {
           <div className="flex min-w-48 flex-1 flex-col gap-0.5">
             <span className="truncate text-sm font-semibold">{u.name}</span>
             <span className="truncate text-xs text-muted-foreground">
-              {u.owner ? `${u.owner.name} · ${u.owner.email}` : "No owner yet"}
+              {u.owner
+                ? `${u.owner.name} · ${u.owner.email}${u.owner.verified ? "" : " · Email not verified yet"}`
+                : "No owner yet"}
             </span>
             <span className="truncate text-xs text-muted-foreground">
               {u.website && (
@@ -127,7 +129,7 @@ function UniversityList({ items }: { items: Row[] }) {
           {u.status === "PENDING" && (
             <div className="ml-auto flex gap-2">
               <Decide u={u} action="reject" />
-              {u.owner && <Decide u={u} action="approve" />}
+              {u.owner?.verified && <Decide u={u} action="approve" />}
             </div>
           )}
         </Card>

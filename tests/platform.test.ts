@@ -282,6 +282,55 @@ describe("applications", () => {
     await expect(signUp("sneaky@x.edu")).rejects.toThrow();
     expect(await userByEmail("sneaky@x.edu")).toBeUndefined();
   });
+  test("unverified owner: listed as unverified, approve refused", async () => {
+    await apply();
+    await signUp();
+    const [{ universityId }] = await adminDb
+      .select()
+      .from(user)
+      .where(eq(user.email, "rep@eti.edu"));
+    const [row] = await platform.platform.universities({ status: "PENDING" });
+    expect(row.owner).toEqual({
+      name: "Rep Person",
+      email: "rep@eti.edu",
+      verified: false,
+    });
+    await expect(platform.platform.approve({ universityId })).rejects.toThrow(
+      /hasn't verified/,
+    );
+    expect((await userByEmail("rep@eti.edu")).status).toBe("PENDING");
+  });
+  test("startSignup's stale cleanup rejects the abandoned application it orphans", async () => {
+    await apply();
+    await signUp();
+    const [stale] = await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(user.email, "rep@eti.edu"))
+      .returning();
+    await callerFor(null).auth.startSignup({
+      universityId: home.id,
+      email: "rep@eti.edu",
+      studentId: "S-9",
+      batchNumber: 4,
+      graduationYear: 2030,
+      department: "CSE",
+    });
+    expect(await userByEmail("rep@eti.edu")).toBeUndefined();
+    const [old] = await adminDb
+      .select()
+      .from(university)
+      .where(eq(university.id, stale.universityId));
+    expect(old.status).toBe("REJECTED");
+    const [log] = await adminDb
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "university.reject"));
+    expect(log).toMatchObject({
+      universityId: old.id,
+      meta: { reason: "abandoned" },
+    });
+  });
   test("approve refuses an application with no owner", async () => {
     const id = await pendingUni("Ownerless");
     await expect(

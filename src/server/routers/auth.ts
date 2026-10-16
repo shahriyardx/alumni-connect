@@ -1,7 +1,17 @@
 import { TRPCError } from "@trpc/server";
-import { and, count, eq, gt, lt, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gt,
+  inArray,
+  lt,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
-import { db, withTenant } from "@/db";
+import { db, type Tx, withTenant } from "@/db";
 import {
   auditLog,
   batch,
@@ -60,33 +70,49 @@ const BLANK_PENDING = {
 } satisfies Partial<typeof pendingSignup.$inferInsert>;
 
 /**
- * Deletes a stale (unverified) account on this email. If it was the owner
- * of a still-PENDING application, that university is marked REJECTED first
- * (audit rows are append-only, so universities are never deleted).
+ * Deletes stale (unverified) accounts matching `where`. One that owned a
+ * still-PENDING application gets that university REJECTED first, audited in
+ * its own tenant (audit rows are append-only, so universities are never
+ * deleted). Runs in the caller's transaction and restores its tenant.
  */
-async function clearStaleUnverified(email: string) {
-  const [stale] = await db
+async function clearStaleUnverified(tx: Tx, where: SQL) {
+  const stale = await tx
     .select({ id: user.id, universityId: user.universityId, role: user.role })
     .from(user)
-    .where(and(eq(user.email, email), eq(user.emailVerified, false)));
-  if (!stale) return;
-  await withTenant(stale.universityId, async (tx) => {
-    if (stale.role === "OWNER") {
-      const [abandoned] = await tx
-        .update(university)
-        .set({ status: "REJECTED" })
-        .where(
-          and(
-            eq(university.id, stale.universityId),
-            eq(university.status, "PENDING"),
-          ),
-        )
-        .returning({ id: university.id });
-      if (abandoned)
-        await audit(tx, abandoned.id, null, "university.abandon", email);
-    }
-    await tx.delete(user).where(eq(user.id, stale.id));
-  });
+    .where(and(eq(user.emailVerified, false), where));
+  if (stale.length === 0) return;
+  const [{ tenant }] = await tx.execute<{ tenant: string | null }>(
+    sql`select current_setting('app.university_id', true) as tenant`,
+  );
+  for (const s of stale) {
+    if (s.role !== "OWNER") continue;
+    const [abandoned] = await tx
+      .update(university)
+      .set({ status: "REJECTED" })
+      .where(
+        and(
+          eq(university.id, s.universityId),
+          eq(university.status, "PENDING"),
+        ),
+      )
+      .returning({ id: university.id });
+    if (!abandoned) continue;
+    await tx.execute(
+      sql`select set_config('app.university_id', ${abandoned.id}, true)`,
+    );
+    await audit(tx, abandoned.id, null, "university.reject", s.id, {
+      reason: "abandoned",
+    });
+  }
+  await tx.execute(
+    sql`select set_config('app.university_id', ${tenant ?? ""}, true)`,
+  );
+  await tx.delete(user).where(
+    inArray(
+      user.id,
+      stale.map((s) => s.id),
+    ),
+  );
 }
 
 export const authRouter = router({
@@ -162,7 +188,9 @@ export const authRouter = router({
           code: "CONFLICT",
           message: "This email is already registered",
         });
-      await clearStaleUnverified(input.email);
+      await db.transaction((tx) =>
+        clearStaleUnverified(tx, eq(user.email, input.email)),
+      );
 
       // The university itself is created by the sign-up hook, so an
       // abandoned application leaves nothing behind. Every column is set,
@@ -332,15 +360,13 @@ export const authRouter = router({
         // and email but never verified, past the 15-minute grace period
         // checked above). It never logged in, so nothing of value is lost;
         // session/account rows cascade with it.
-        await tx
-          .delete(user)
-          .where(
-            and(
-              eq(user.emailVerified, false),
-              lt(user.createdAt, unverifiedGraceCutoff),
-              or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
-            ),
-          );
+        await clearStaleUnverified(
+          tx,
+          and(
+            lt(user.createdAt, unverifiedGraceCutoff),
+            or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
+          ) as SQL,
+        );
 
         const values = {
           ...BLANK_PENDING,
