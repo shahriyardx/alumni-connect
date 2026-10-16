@@ -55,7 +55,7 @@ export const authRouter = router({
           .max(200)
           .transform((e) => e.toLowerCase()),
         studentId: z.string().min(3).max(40),
-        batchNumber: z.number().int().min(1).max(999),
+        batchNumber: z.number().int().min(1).max(9999),
         graduationYear: z
           .number()
           .int()

@@ -65,14 +65,14 @@ describe("auth.startSignup", () => {
       callerFor(null).auth.startSignup({ ...base(), batchNumber: 43 }),
     ).rejects.toThrow(/batch/i);
   });
-  test("matches ID typed with spaces/lowercase; graduated → ALUMNUS", async () => {
+  test("matches ID typed with spaces/lowercase; past graduation year → ALUMNUS", async () => {
     const r = await callerFor(null).auth.startSignup({
       ...base(),
       studentId: " nu-10 01 ",
     });
     expect(r).toEqual({ role: "ALUMNUS", status: "ACTIVE" });
   });
-  test("not graduated → STUDENT", async () => {
+  test("future graduation year → STUDENT", async () => {
     const r = await callerFor(null).auth.startSignup({
       ...base(),
       email: "bob@north.edu",
@@ -82,6 +82,26 @@ describe("auth.startSignup", () => {
       department: "EEE",
     });
     expect(r.role).toBe("STUDENT");
+  });
+  test("accepts a migrated batch number (number = year, e.g. 2018)", async () => {
+    const [b] = await adminDb
+      .insert(batch)
+      .values({ universityId: uni.id, number: 2018, graduationYear: 2018 })
+      .returning();
+    await adminDb.insert(rosterEntry).values({
+      universityId: uni.id,
+      batchId: b.id,
+      studentIdHash: hashStudentId(uni.id, "NU-3003"),
+      department: "CSE",
+    });
+    const r = await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "old@north.edu",
+      studentId: "NU-3003",
+      batchNumber: 2018,
+      graduationYear: 2018,
+    });
+    expect(r).toEqual({ role: "ALUMNUS", status: "ACTIVE" });
   });
   test("rejects an ID already used by an account", async () => {
     await makeUser(uni.id, { studentIdHash: hashStudentId(uni.id, "NU-1001") });

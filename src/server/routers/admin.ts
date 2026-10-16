@@ -62,7 +62,7 @@ export const adminRouter = router({
     .input(
       z.object({
         csv: z.string().max(2_000_000),
-        batchNumber: z.number().int().min(1).max(999),
+        batchNumber: z.number().int().min(1).max(9999),
         graduationYear: z.number().int().min(1950).max(2100),
       }),
     )
@@ -70,7 +70,8 @@ export const adminRouter = router({
       const { rows, errors } = parseRosterCsv(input.csv);
       let inserted = 0;
       let updated = 0;
-      const [{ id: batchId }] = await ctx.db
+      if (rows.length === 0) return { inserted, updated, errors, note: null };
+      const [{ id: batchId, graduationYear }] = await ctx.db
         .insert(batch)
         .values({
           universityId: ctx.me.universityId,
@@ -81,7 +82,11 @@ export const adminRouter = router({
           target: [batch.universityId, batch.number],
           set: { number: sql`excluded.number` },
         })
-        .returning({ id: batch.id });
+        .returning({ id: batch.id, graduationYear: batch.graduationYear });
+      const note =
+        graduationYear === input.graduationYear
+          ? null
+          : `Batch ${input.batchNumber} already has graduation year ${graduationYear}; kept it`;
 
       for (const part of chunk(rows, IMPORT_CHUNK)) {
         const results = await ctx.db
@@ -122,7 +127,7 @@ export const adminRouter = router({
         },
       );
 
-      return { inserted, updated, errors };
+      return { inserted, updated, errors, note };
     }),
 
   rosterStats: adminProcedure.query(async ({ ctx }) => {

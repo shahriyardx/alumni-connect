@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { auditLog, post, report, session, user } from "@/db/schema";
+import { auditLog, batch, post, report, session, user } from "@/db/schema";
 import {
   adminDb,
   callerFor,
@@ -349,6 +349,34 @@ test("admin.importRoster dedupes duplicate student IDs instead of crashing", asy
   expect(res.errors).toEqual([
     { line: 3, message: "Duplicate student ID (also on line 2)" },
   ]);
+});
+
+test("admin.importRoster: migrated batch numbers (2018), kept year note, no batch for empty imports", async () => {
+  const a = callerFor(admin.id);
+  const first = await a.admin.importRoster({
+    csv: "student_id,department\nNU-7,CSE",
+    batchNumber: 2018,
+    graduationYear: 2018,
+  });
+  expect(first).toMatchObject({ inserted: 1, note: null });
+  const again = await a.admin.importRoster({
+    csv: "student_id,department\nNU-6,CSE",
+    batchNumber: 2018,
+    graduationYear: 2020,
+  });
+  expect(again.note).toBe(
+    "Batch 2018 already has graduation year 2018; kept it",
+  );
+  await a.admin.importRoster({
+    csv: "student_id,department\nNU-5,",
+    batchNumber: 77,
+    graduationYear: 2020,
+  });
+  const batches = await adminDb
+    .select({ number: batch.number })
+    .from(batch)
+    .where(eq(batch.universityId, uniId));
+  expect(batches.map((b) => b.number)).toEqual([2018]);
 });
 
 test("admin.importRoster reports bad rows and rejects an out-of-range graduation year", async () => {

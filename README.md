@@ -55,7 +55,7 @@ All seeded accounts use the password **`password123`**. Every account except `ne
 | `student@demo.edu` | STUDENT | Demo Tech University | |
 | `rep@eti.edu` | OWNER (PENDING) | Eastern Tech Institute | pending university application |
 
-NUB has a 200-row roster (batches 2018–2029, CSE/EEE/BBA/LLB) so you can also sign up as a brand-new user — `bun run db:seed` prints three unused roster IDs each run for exactly this.
+NUB has a 200-row roster (batches 38–49 graduating 2018–2029, CSE/EEE/BBA/LLB) so you can also sign up as a brand-new user — `bun run db:seed` prints three unused roster IDs each run for exactly this.
 
 ### Where OTP codes show up
 

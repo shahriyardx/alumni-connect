@@ -70,20 +70,27 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (statusError) {
     throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }
-  // Lazy alumnus promotion: only ever STUDENT -> ALUMNUS.
-  if (
-    me.role === "STUDENT" &&
-    me.graduationYear !== null &&
-    me.graduationYear < new Date().getFullYear()
-  ) {
-    await db
-      .update(user)
-      .set({ role: "ALUMNUS" })
-      .where(and(eq(user.id, me.id), eq(user.role, "STUDENT")));
-    me.role = "ALUMNUS";
-  }
   return withTenant(me.universityId, async (tx) => {
-    const res = await next({ ctx: { db: tx, me } });
+    // Lazy alumnus promotion: only ever STUDENT -> ALUMNUS.
+    let role = me.role;
+    if (
+      role === "STUDENT" &&
+      me.graduationYear !== null &&
+      me.graduationYear < new Date().getFullYear()
+    ) {
+      await tx
+        .update(user)
+        .set({ role: "ALUMNUS" })
+        .where(
+          and(
+            eq(user.id, me.id),
+            eq(user.universityId, me.universityId),
+            eq(user.role, "STUDENT"),
+          ),
+        );
+      role = "ALUMNUS";
+    }
+    const res = await next({ ctx: { db: tx, me: { ...me, role } } });
     if (!res.ok) throw res.error; // roll the transaction back on any procedure error
     return res;
   });
@@ -117,6 +124,10 @@ export const platformProcedure = t.procedure.use(async ({ ctx, next }) => {
   const [me] = await db.select().from(user).where(eq(user.id, ctx.userId));
   if (!me) throw new TRPCError({ code: "UNAUTHORIZED" });
   if (!isPlatformAdmin(me)) throw new TRPCError({ code: "FORBIDDEN" });
+  const statusError = activeStatusError(me);
+  if (statusError) {
+    throw new TRPCError({ code: "FORBIDDEN", message: statusError });
+  }
   return next({ ctx: { db, me } });
 });
 

@@ -211,7 +211,7 @@ export function SignUpWizard() {
                 inputMode="numeric"
                 required
                 min={1}
-                max={999}
+                max={9999}
                 placeholder="42"
                 {...field("batchNumber")}
               />

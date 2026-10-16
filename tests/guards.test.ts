@@ -15,6 +15,7 @@ import { adminDb, makeUniversity, makeUser, resetDb } from "./helpers";
 
 const probe = router({
   member: memberProcedure.query(({ ctx }) => ctx.me.id),
+  role: memberProcedure.query(({ ctx }) => ctx.me.role),
   mod: modProcedure.query(() => "ok"),
   admin: adminProcedure.query(() => "ok"),
   owner: ownerProcedure.query(() => "ok"),
@@ -99,6 +100,9 @@ test("memberProcedure lazily promotes a STUDENT whose graduation year passed", a
   expect(await roleOf(grad.id)).toBe("ALUMNUS");
   expect(await roleOf(cur.id)).toBe("STUDENT");
   expect(await roleOf(mod.id)).toBe("MODERATOR");
+  // The promoted role is visible to the same request.
+  const fresh = await makeUser(uniId, { graduationYear: year - 1 });
+  expect(await as(fresh.id).role()).toBe("ALUMNUS");
 });
 
 test("platformProcedure: verified + email listed in PLATFORM_ADMIN_EMAILS only", async () => {
@@ -110,6 +114,11 @@ test("platformProcedure: verified + email listed in PLATFORM_ADMIN_EMAILS only",
     .set({ emailVerified: false })
     .where(eq(schema.user.id, ok.id));
   await expect(as(ok.id).platform()).rejects.toThrow(/FORBIDDEN|UNAUTHORIZED/);
+  const banned = await makeUser(uniId, {
+    email: "platform@test.edu",
+    status: "BANNED",
+  });
+  await expect(as(banned.id).platform()).rejects.toThrow(/banned/i);
   const owner = await makeUser(uniId, { role: "OWNER" });
   await expect(as(owner.id).platform()).rejects.toThrow(/FORBIDDEN/);
   await expect(as(null).platform()).rejects.toThrow(/UNAUTHORIZED/);

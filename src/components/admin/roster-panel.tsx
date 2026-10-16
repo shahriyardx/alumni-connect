@@ -24,7 +24,7 @@ export function RosterPanel() {
   const [graduationYear, setGraduationYear] = useState("");
   const batchOk =
     Number(batchNumber) >= 1 &&
-    Number(batchNumber) <= 999 &&
+    Number(batchNumber) <= 9999 &&
     Number(graduationYear) >= 1950 &&
     Number(graduationYear) <= 2100;
   const stats = useQuery(trpc.admin.rosterStats.queryOptions());
@@ -87,7 +87,7 @@ export function RosterPanel() {
             type="number"
             inputMode="numeric"
             min={1}
-            max={999}
+            max={9999}
             value={batchNumber}
             onChange={(e) => setBatchNumber(e.target.value)}
           />
@@ -140,6 +140,7 @@ export function RosterPanel() {
                 {r.errors.length} errors
               </span>
             </p>
+            {r.note && <p className="text-muted-foreground">{r.note}</p>}
             {r.errors.length > 0 && (
               <table className="w-full text-left">
                 <thead className="text-xs text-muted-foreground">
