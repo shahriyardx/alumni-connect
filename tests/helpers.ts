@@ -74,3 +74,14 @@ export async function makePost(
     .returning();
   return p;
 }
+
+/** Multipart POST to a presigned POST policy (the ID card upload). */
+export function postUpload(
+  upload: { url: string; fields: Record<string, string> },
+  body: BlobPart = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+) {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
+  form.append("file", new Blob([body]));
+  return fetch(upload.url, { method: "POST", body: form });
+}

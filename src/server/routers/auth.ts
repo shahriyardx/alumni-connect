@@ -27,8 +27,9 @@ import {
   type AllowedMime,
   EXT_TO_MIME,
   finalKeyFor,
-  presignPut,
+  presignPost,
   promoteUpload,
+  remove,
 } from "../storage";
 import { hashStudentId, normalizeStudentId, roleFor } from "../student-id";
 import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
@@ -66,11 +67,52 @@ async function overLimit(key: string, max: number, windowMs = 10 * 60_000) {
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /**
- * The ID card's staging key is derived from the signup token, so a key
- * issued to another signup (even in the same university) never matches.
+ * The ID card's staging key is derived from the signup token's hash, so a
+ * key issued to another signup (even in the same university) never matches,
+ * and a replaced or expired signup's staging object can still be found.
+ * Staging lives under its own prefix so a bucket lifecycle rule can expire it.
  */
-const idCardStem = (universityId: string, token: string) =>
-  `${universityId}/idcard/${sha256(`idcard:${token}`).slice(0, 32)}`;
+const idCardStem = (universityId: string, tokenHash: string) =>
+  `${universityId}/staging/idcard/${tokenHash.slice(0, 32)}`;
+
+/** Every object a pending row's ID card may occupy: its final copy and each possible staging key. */
+const cardObjects = (p: {
+  universityId: string | null;
+  signupTokenHash: string | null;
+  idCardKey: string | null;
+}) => [
+  ...(p.idCardKey ? [p.idCardKey] : []),
+  ...(p.universityId && p.signupTokenHash
+    ? Object.values(ALLOWED_MIME).map(
+        (ext) =>
+          `${idCardStem(p.universityId as string, p.signupTokenHash as string)}.${ext}`,
+      )
+    : []),
+];
+
+const removeAll = (keys: string[]) =>
+  Promise.all(keys.map((k) => remove(k).catch(() => {})));
+
+/** Card objects of the pending row about to be overwritten for `email`. */
+const replacedCards = (tx: Tx | typeof db, email: string) =>
+  tx
+    .select()
+    .from(pendingSignup)
+    .where(eq(pendingSignup.email, email))
+    .then((rows) => rows.flatMap(cardObjects));
+
+/**
+ * Opportunistic purge (no cron): expired pending rows can never complete
+ * sign-up, so delete them and their card objects.
+ */
+async function purgeExpiredPending() {
+  // ponytail: unbounded delete; fine while rows expire in 30 min and are swept on every signup.
+  const rows = await db
+    .delete(pendingSignup)
+    .where(lt(pendingSignup.expiresAt, new Date()))
+    .returning();
+  await removeAll(rows.flatMap(cardObjects));
+}
 
 const mimeEnum = z.enum(Object.keys(ALLOWED_MIME) as [AllowedMime]);
 
@@ -94,13 +136,19 @@ const BLANK_PENDING = {
  * still-PENDING application gets that university REJECTED first, audited in
  * its own tenant (audit rows are append-only, so universities are never
  * deleted). Runs in the caller's transaction and restores its tenant.
+ * Returns the deleted users' ID card keys.
  */
-async function clearStaleUnverified(tx: Tx, where: SQL) {
+async function clearStaleUnverified(tx: Tx, where: SQL): Promise<string[]> {
   const stale = await tx
-    .select({ id: user.id, universityId: user.universityId, role: user.role })
+    .select({
+      id: user.id,
+      universityId: user.universityId,
+      role: user.role,
+      idCardKey: user.idCardKey,
+    })
     .from(user)
     .where(and(eq(user.emailVerified, false), where));
-  if (stale.length === 0) return;
+  if (stale.length === 0) return [];
   const [{ tenant }] = await tx.execute<{ tenant: string | null }>(
     sql`select current_setting('app.university_id', true) as tenant`,
   );
@@ -133,6 +181,8 @@ async function clearStaleUnverified(tx: Tx, where: SQL) {
       stale.map((s) => s.id),
     ),
   );
+  // Returned, not removed: the caller deletes the objects after commit.
+  return stale.flatMap((s) => (s.idCardKey ? [s.idCardKey] : []));
 }
 
 export const authRouter = router({
@@ -208,9 +258,10 @@ export const authRouter = router({
           code: "CONFLICT",
           message: "This email is already registered",
         });
-      await db.transaction((tx) =>
+      const staleCards = await db.transaction((tx) =>
         clearStaleUnverified(tx, eq(user.email, input.email)),
       );
+      const replaced = await replacedCards(db, input.email);
 
       // The university itself is created by the sign-up hook, so an
       // abandoned application leaves nothing behind. Every column is set,
@@ -230,6 +281,7 @@ export const authRouter = router({
         .insert(pendingSignup)
         .values(values)
         .onConflictDoUpdate({ target: pendingSignup.email, set: values });
+      await removeAll([...staleCards, ...replaced]);
       return { ok: true };
     }),
 
@@ -292,7 +344,7 @@ export const authRouter = router({
           message: "Sign-up expired, start again",
         });
 
-      const stem = idCardStem(p.universityId, input.signupToken);
+      const stem = idCardStem(p.universityId, p.signupTokenHash as string);
       const ext = input.key.slice(stem.length + 1);
       const mime = EXT_TO_MIME[ext];
       if (!input.key.startsWith(`${stem}.`) || !mime)
@@ -336,6 +388,7 @@ export const authRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await purgeExpiredPending();
       const [uni] = await db
         .select()
         .from(university)
@@ -457,7 +510,7 @@ export const authRouter = router({
         // and email but never verified, past the 15-minute grace period
         // checked above). It never logged in, so nothing of value is lost;
         // session/account rows cascade with it.
-        await clearStaleUnverified(
+        const staleCards = await clearStaleUnverified(
           tx,
           and(
             lt(user.createdAt, unverifiedGraceCutoff),
@@ -465,6 +518,7 @@ export const authRouter = router({
           ) as SQL,
         );
 
+        const replaced = await replacedCards(tx, input.email);
         const signupToken = randomBytes(32).toString("base64url");
         const values = {
           ...BLANK_PENDING,
@@ -494,11 +548,19 @@ export const authRouter = router({
           { ok: true, idHashPrefix: idHash.slice(0, 12) },
           ctx.ip,
         );
-        return { role, signupToken };
+        return {
+          role,
+          signupToken,
+          tokenHash: values.signupTokenHash,
+          orphans: [...staleCards, ...replaced],
+        };
       });
 
       if ("error" in outcome) throw outcome.error;
-      const key = `${idCardStem(uni.id, outcome.signupToken)}.${ALLOWED_MIME[input.idCardMime]}`;
-      return { ...outcome, upload: { key, url: await presignPut(key) } };
+      const { role, signupToken, tokenHash, orphans } = outcome;
+      await removeAll(orphans);
+      const key = `${idCardStem(uni.id, tokenHash)}.${ALLOWED_MIME[input.idCardMime]}`;
+      const post = await presignPost(key, input.idCardMime);
+      return { role, signupToken, upload: { key, ...post } };
     }),
 });

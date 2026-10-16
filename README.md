@@ -65,6 +65,8 @@ There's no SMTP server in dev: leave `SMTP_URL` empty in `.env` and every email 
 
 Uploaded avatars and post images live in MinIO. Browse the bucket at **http://localhost:9001** (user: `minioadmin`, password: `minioadmin`).
 
+Optional: unconfirmed ID card uploads stay under `*/staging/`; expire them with a lifecycle rule, e.g. `mc ilm rule add --prefix "<university-id>/staging/" --expire-days 1 local/<bucket>` (per university, since S3 prefixes can't wildcard).
+
 > The `minio` service in `docker-compose.yml` runs the `pgsty/silo` image, a maintained drop-in fork of `minio/minio` — the official image was pulled from Docker Hub and `quay.io/minio/minio` now requires auth. Same binary, same env vars, same `mc` client; swap back to `minio/minio` if it ever returns to Docker Hub.
 
 ### Tests

@@ -56,6 +56,13 @@ export function SignUpWizard() {
   });
   const [errors, setErrors] = useState<Errors>({});
   const [role, setRole] = useState<string>();
+  // Set once startSignup + card upload succeeded, so a retry of a failed
+  // better-auth sign-up doesn't redo them (unless the inputs changed).
+  const [prepared, setPrepared] = useState<{
+    sig: string;
+    card: File;
+    role: string;
+  }>();
   const [card, setCard] = useState<File>();
   const preview = useMemo(() => card && URL.createObjectURL(card), [card]);
   useEffect(
@@ -98,27 +105,34 @@ export function SignUpWizard() {
     setBusy(true);
     setErrors({});
     const email = form.email.trim().toLowerCase();
+    const input = {
+      universityId,
+      email,
+      studentId: form.studentId.trim(),
+      batchNumber: Number(form.batchNumber),
+      graduationYear: hasBatches ? undefined : Number(form.graduationYear),
+      department: form.department.trim(),
+      idCardMime: mime,
+    };
+    const sig = JSON.stringify(input);
     try {
-      const r = await startSignup.mutateAsync({
-        universityId,
-        email,
-        studentId: form.studentId.trim(),
-        batchNumber: Number(form.batchNumber),
-        graduationYear: hasBatches ? undefined : Number(form.graduationYear),
-        department: form.department.trim(),
-        idCardMime: mime,
-      });
-      const put = await fetch(r.upload.url, {
-        method: "PUT",
-        body: card,
-        headers: { "Content-Type": mime },
-      });
-      if (!put.ok) return setErrors({ form: "Upload failed, try again" });
-      await confirmIdCard.mutateAsync({
-        email,
-        signupToken: r.signupToken,
-        key: r.upload.key,
-      });
+      let ready = prepared?.sig === sig && prepared.card === card && prepared;
+      if (!ready) {
+        const r = await startSignup.mutateAsync(input);
+        const body = new FormData();
+        for (const [k, v] of Object.entries(r.upload.fields)) body.append(k, v);
+        body.append("file", card); // must come last for S3 POST
+        const up = await fetch(r.upload.url, { method: "POST", body });
+        if (!up.ok)
+          return setErrors({ form: "Upload failed, try a smaller photo" });
+        await confirmIdCard.mutateAsync({
+          email,
+          signupToken: r.signupToken,
+          key: r.upload.key,
+        });
+        ready = { sig, card, role: r.role };
+        setPrepared(ready);
+      }
       const { error } = await authClient.signUp.email({
         name: form.name.trim(),
         email,
@@ -126,7 +140,7 @@ export function SignUpWizard() {
       });
       if (error)
         return setErrors({ form: error.message ?? "Could not create account" });
-      setRole(r.role);
+      setRole(ready.role);
       setStep(3);
     } catch (err) {
       const er = mapSignupError(err);

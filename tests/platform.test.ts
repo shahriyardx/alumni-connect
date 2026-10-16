@@ -7,6 +7,7 @@ import {
   callerFor,
   makeUniversity,
   makeUser,
+  postUpload,
   resetDb,
 } from "./helpers";
 
@@ -263,11 +264,7 @@ describe("applications", () => {
       idCardMime: "image/png",
       department: "CSE",
     });
-    await fetch(r.upload.url, {
-      method: "PUT",
-      body: new Uint8Array([137, 80, 78, 71]),
-      headers: { "Content-Type": "image/png" },
-    });
+    await postUpload(r.upload);
     await callerFor(null).auth.confirmIdCard({
       email: "rep@eti.edu",
       signupToken: r.signupToken,

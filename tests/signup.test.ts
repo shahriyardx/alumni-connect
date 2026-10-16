@@ -8,13 +8,14 @@ import {
   user,
 } from "@/db/schema";
 import { auth } from "@/server/auth";
-import { stat } from "@/server/storage";
+import { MAX_BYTES, stat } from "@/server/storage";
 import { hashStudentId } from "@/server/student-id";
 import {
   adminDb,
   callerFor,
   makeUniversity,
   makeUser,
+  postUpload,
   resetDb,
 } from "./helpers";
 
@@ -27,17 +28,8 @@ const base = () => ({
   department: "CSE",
   idCardMime: "image/png" as const,
 });
-const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-const put = async (url: string, body: BodyInit = PNG) =>
-  expect(
-    (
-      await fetch(url, {
-        method: "PUT",
-        body,
-        headers: { "Content-Type": "image/png" },
-      })
-    ).ok,
-  ).toBe(true);
+const put = async (upload: Parameters<typeof postUpload>[0]) =>
+  expect((await postUpload(upload)).ok).toBe(true);
 const pendingRow = async (email: string) =>
   (
     await adminDb
@@ -51,7 +43,7 @@ const signUp = (email = base().email, name = "Alice") =>
 async function startWithCard(over: Partial<ReturnType<typeof base>> = {}) {
   const input = { ...base(), ...over };
   const r = await callerFor(null).auth.startSignup(input);
-  await put(r.upload.url);
+  await put(r.upload);
   await callerFor(null).auth.confirmIdCard({
     email: input.email,
     signupToken: r.signupToken,
@@ -94,7 +86,7 @@ describe("auth.startSignup", () => {
     });
     expect(Object.keys(r).sort()).toEqual(["role", "signupToken", "upload"]);
     expect(r.upload.key).toMatch(
-      new RegExp(`^${uni.id}/idcard/[0-9a-f]{32}\\.png$`),
+      new RegExp(`^${uni.id}/staging/idcard/[0-9a-f]{32}\\.png$`),
     );
     expect(await pendingRow("alice@gmail.com")).toMatchObject({
       status: "PENDING",
@@ -245,7 +237,7 @@ describe("ID card + v2 sign-up", () => {
   });
   test("sign-up without a confirmed card is refused", async () => {
     const r = await callerFor(null).auth.startSignup(base());
-    await put(r.upload.url); // uploaded but never confirmed
+    await put(r.upload); // uploaded but never confirmed
     expect((await apiError(signUp())).code).toBe("FAILED_TO_CREATE_USER");
     expect(
       await adminDb.select().from(user).where(eq(user.email, base().email)),
@@ -253,7 +245,7 @@ describe("ID card + v2 sign-up", () => {
   });
   test("wrong or missing token is rejected", async () => {
     const r = await callerFor(null).auth.startSignup(base());
-    await put(r.upload.url);
+    await put(r.upload);
     const confirm = (email: string, signupToken: string) =>
       callerFor(null).auth.confirmIdCard({
         email,
@@ -276,7 +268,7 @@ describe("ID card + v2 sign-up", () => {
       studentId: "NU-2002",
       batchNumber: 48,
     });
-    await put(theirs.upload.url);
+    await put(theirs.upload);
     await expect(
       callerFor(null).auth.confirmIdCard({
         email: base().email,
@@ -288,11 +280,7 @@ describe("ID card + v2 sign-up", () => {
   });
   test("HTML disguised as a PNG is rejected and removed", async () => {
     const r = await callerFor(null).auth.startSignup(base());
-    await fetch(r.upload.url, {
-      method: "PUT",
-      body: "<html><script>alert(1)</script></html>",
-      headers: { "Content-Type": "image/png" },
-    });
+    await postUpload(r.upload, "<html><script>alert(1)</script></html>");
     await expect(
       callerFor(null).auth.confirmIdCard({
         email: base().email,
@@ -302,7 +290,7 @@ describe("ID card + v2 sign-up", () => {
     ).rejects.toThrow(/not a valid image/i);
     expect((await pendingRow(base().email)).idCardKey).toBeNull();
     expect(
-      await stat(r.upload.key.replace("/idcard/", "/idcard/f/")),
+      await stat(r.upload.key.replace("/staging/idcard/", "/idcard/f/")),
     ).toBeNull();
   });
   test("confirm is idempotent; restarting sign-up resets the card and old token", async () => {
@@ -315,11 +303,61 @@ describe("ID card + v2 sign-up", () => {
     expect(await callerFor(null).auth.confirmIdCard(again)).toEqual({
       ok: true,
     });
+    const oldCard = (await pendingRow(base().email)).idCardKey as string;
+    expect(await stat(oldCard)).not.toBeNull();
     await callerFor(null).auth.startSignup(base());
     expect(await pendingRow(base().email)).toMatchObject({ idCardKey: null });
+    expect(await stat(oldCard)).toBeNull(); // previous final card deleted
     await expect(callerFor(null).auth.confirmIdCard(again)).rejects.toThrow(
       /expired/,
     );
+  });
+  test("restart also deletes the previous unconfirmed staging upload", async () => {
+    const r = await callerFor(null).auth.startSignup(base());
+    await put(r.upload);
+    expect(await stat(r.upload.key)).not.toBeNull();
+    await callerFor(null).auth.startSignup(base());
+    expect(await stat(r.upload.key)).toBeNull();
+  });
+  test("expired pending rows and their cards are purged on the next startSignup", async () => {
+    await startWithCard();
+    const card = (await pendingRow(base().email)).idCardKey as string;
+    await adminDb
+      .update(pendingSignup)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(pendingSignup.email, base().email));
+    await callerFor(null).auth.startSignup({
+      ...base(),
+      email: "other@north.edu",
+      studentId: "NU-2002",
+      batchNumber: 48,
+    });
+    expect(await pendingRow(base().email)).toBeUndefined();
+    expect(await stat(card)).toBeNull();
+  });
+  test("presigned POST: size-capped by MinIO, pinned key and content-type", async () => {
+    const r = await callerFor(null).auth.startSignup(base());
+    expect(r.upload.key.startsWith(`${uni.id}/staging/idcard/`)).toBe(true);
+    expect(r.upload.fields["Content-Type"]).toBe("image/png");
+    const big = await postUpload(r.upload, new Uint8Array(MAX_BYTES + 1));
+    expect(big.status).toBeGreaterThanOrEqual(400);
+    expect(big.status).toBeLessThan(500);
+    expect(await stat(r.upload.key)).toBeNull();
+    // Content-Type is a policy condition: a different one is refused.
+    const form = new FormData();
+    for (const [k, v] of Object.entries(r.upload.fields))
+      form.append(k, k === "Content-Type" ? "text/html" : v);
+    form.append("file", new Blob(["<html>"]));
+    const html = await fetch(r.upload.url, { method: "POST", body: form });
+    expect(html.status).toBe(403);
+    await put(r.upload);
+    expect(
+      await callerFor(null).auth.confirmIdCard({
+        email: base().email,
+        signupToken: r.signupToken,
+        key: r.upload.key,
+      }),
+    ).toEqual({ ok: true });
   });
 });
 
@@ -450,8 +488,15 @@ describe("better-auth sign-up gate", () => {
       .set({ createdAt: new Date(Date.now() - 16 * 60_000) })
       .where(eq(user.email, base().email));
 
+    const [{ idCardKey: squatterCard }] = await adminDb
+      .select()
+      .from(user)
+      .where(eq(user.email, base().email));
+    expect(await stat(squatterCard as string)).not.toBeNull();
+
     // The real owner starts sign-up with the same ID/email: not CONFLICT.
     const r = await callerFor(null).auth.startSignup(base());
+    expect(await stat(squatterCard as string)).toBeNull();
     expect(r.role).toBe("ALUMNUS");
     expect(
       await adminDb.select().from(user).where(eq(user.email, base().email)),

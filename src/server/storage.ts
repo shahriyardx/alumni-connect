@@ -19,6 +19,25 @@ export function presignPut(key: string): Promise<string> {
   return minio.presignedPutObject(env.S3_BUCKET, key, EXPIRY_SECONDS);
 }
 
+/**
+ * Presigned POST for anonymous uploads: unlike a presigned PUT, the policy
+ * pins the key and content-type and caps the size, so MinIO itself rejects
+ * anything over MAX_BYTES.
+ */
+export async function presignPost(
+  key: string,
+  mime: string,
+): Promise<{ url: string; fields: Record<string, string> }> {
+  const policy = minio.newPostPolicy();
+  policy.setBucket(env.S3_BUCKET);
+  policy.setKey(key);
+  policy.setContentType(mime);
+  policy.setContentLengthRange(1, MAX_BYTES);
+  policy.setExpires(new Date(Date.now() + EXPIRY_SECONDS * 1000));
+  const { postURL, formData } = await minio.presignedPostPolicy(policy);
+  return { url: postURL, fields: formData };
+}
+
 /** `mime` is served back as the response Content-Type so the browser never trusts whatever was actually PUT. */
 export function presignGet(key: string, mime?: string): Promise<string> {
   return minio.presignedGetObject(
@@ -99,10 +118,15 @@ const MAGIC: Record<AllowedMime, (head: Buffer) => boolean> = {
     h.subarray(8, 12).toString("ascii") === "WEBP",
 };
 
-/** `${uni}/${kind}/${id}.${ext}` (staging) → `${uni}/${kind}/f/${id}.${ext}` (server-only). */
+/**
+ * Staging → server-only final key: `${uni}/${kind}/${id}.${ext}` and
+ * `${uni}/staging/${kind}/${id}.${ext}` both → `${uni}/${kind}/f/${id}.${ext}`.
+ */
 export function finalKeyFor(stagingKey: string): string {
-  const [uni, kind, file] = stagingKey.split("/");
-  return [uni, kind, "f", file].join("/");
+  const parts = stagingKey.split("/");
+  const file = parts.pop();
+  const kind = parts.pop();
+  return [parts[0], kind, "f", file].join("/");
 }
 
 const notFound = () =>
