@@ -135,7 +135,7 @@ export function SignUpWizard() {
             />
           ))}
         </div>
-        <ol className="flex justify-between text-xs font-medium">
+        <ol className="grid grid-cols-3 gap-1 text-xs font-medium">
           {STEPS.map((s, i) => (
             <li
               key={s}
@@ -181,17 +181,7 @@ export function SignUpWizard() {
                 }))}
               />
             )}
-            <p
-              className={cn(
-                "flex items-center gap-2 rounded-xl bg-tonal px-3.5 py-2.5 text-sm text-tonal-fg transition-opacity duration-150",
-                !uni && "opacity-0",
-              )}
-              aria-live="polite"
-            >
-              <Icon name="alternate_email" size={18} />
-              {uni ? `Use your @${uni.emailDomain} email` : " "}
-            </p>
-            <Button type="submit" disabled={!uni} className="self-end">
+            <Button type="submit" disabled={!uni} className="w-full">
               Continue
               <Icon name="arrow_forward" size={18} />
             </Button>
