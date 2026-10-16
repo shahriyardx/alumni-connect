@@ -13,6 +13,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { TextField } from "@/components/ui/text-field";
+import { useRedirectIfSignedIn } from "@/components/user-menu";
 import { authClient } from "@/lib/auth-client";
 import { safeNext } from "@/lib/safe-next";
 
@@ -20,6 +21,7 @@ export function SignInForm() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const next = safeNext(useSearchParams().get("next"));
+  useRedirectIfSignedIn(next);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();

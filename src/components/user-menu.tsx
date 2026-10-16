@@ -1,6 +1,7 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
 import { Avatar } from "./ui/avatar";
@@ -12,6 +13,15 @@ export function useMe() {
   const trpc = useTRPC();
   const { data, isLoading } = useQuery(trpc.auth.me.queryOptions());
   return { me: data, isLoading };
+}
+
+/** Leave sign-in/sign-up only for a real session; a cookie alone may be stale. */
+export function useRedirectIfSignedIn(to: string, enabled = true) {
+  const { me } = useMe();
+  const router = useRouter();
+  useEffect(() => {
+    if (enabled && me) router.replace(to);
+  }, [enabled, me, router, to]);
 }
 
 export function useSignOut() {

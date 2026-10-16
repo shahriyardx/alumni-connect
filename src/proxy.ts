@@ -28,8 +28,6 @@ export function proxy(request: NextRequest) {
     url.searchParams.set("next", pathname + search);
     return NextResponse.redirect(url);
   }
-  if (signedIn && (pathname === "/sign-in" || pathname === "/sign-up"))
-    return NextResponse.redirect(new URL("/feed", request.url));
   return NextResponse.next();
 }
 

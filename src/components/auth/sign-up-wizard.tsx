@@ -12,6 +12,7 @@ import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { TextField } from "../ui/text-field";
+import { useRedirectIfSignedIn } from "../user-menu";
 import { AuthFrame } from "./auth-frame";
 import { isOtpComplete, OtpField, ResendButton } from "./otp-field";
 
@@ -35,6 +36,8 @@ export function SignUpWizard() {
   const startSignup = useMutation(trpc.auth.startSignup.mutationOptions());
 
   const [step, setStep] = useState(0);
+  // Only before the wizard starts: after OTP verify the user is signed in on purpose.
+  useRedirectIfSignedIn("/feed", step === 0);
   const [universityId, setUniversityId] = useState("");
   const [form, setForm] = useState<Form>({
     studentId: "",
