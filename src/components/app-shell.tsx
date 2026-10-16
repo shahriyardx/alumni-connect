@@ -196,7 +196,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <UserMenu />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-3xl px-4 pb-32 min-[840px]:px-8 min-[840px]:pb-16">
+        <main
+          className={cn(
+            "mx-auto w-full max-w-3xl px-4 pb-32 min-[840px]:px-8 min-[840px]:pb-16",
+            // The feed carries a side rail on wide screens.
+            pathname === "/feed" && "xl:max-w-6xl",
+          )}
+        >
           <StatusGate>{children}</StatusGate>
         </main>
       </div>
