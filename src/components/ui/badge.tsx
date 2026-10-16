@@ -10,6 +10,8 @@ const roles: Record<Role, { label: string; icon?: string; tone: string }> = {
   STUDENT: { label: "Student", tone: neutral },
   MODERATOR: { label: "Mod", icon: "shield", tone: neutral },
   ADMIN: { label: "Admin", icon: "admin_panel_settings", tone: neutral },
+  OWNER: { label: "Owner", icon: "admin_panel_settings", tone: neutral },
+  STAFF: { label: "Faculty", icon: "badge", tone: neutral },
 };
 
 export function RoleBadge({

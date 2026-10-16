@@ -17,6 +17,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useMe } from "@/components/user-menu";
+import { isMod } from "@/db/schema";
 import { type RouterOutputs, useTRPC } from "@/lib/trpc";
 
 type Status = "OPEN" | "RESOLVED" | "DISMISSED";
@@ -32,7 +33,7 @@ export function ModView() {
         <Spinner />
       </div>
     );
-  if (me?.role !== "MODERATOR" && me?.role !== "ADMIN")
+  if (!me || !isMod(me.role))
     return (
       <EmptyState
         icon="block"

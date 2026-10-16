@@ -19,7 +19,8 @@ const STEPS = ["University", "Identity", "Verify"] as const;
 
 type Form = {
   studentId: string;
-  batchYear: string;
+  batchNumber: string;
+  graduationYear: string;
   department: string;
   email: string;
   name: string;
@@ -40,7 +41,8 @@ export function SignUpWizard() {
   const [universityId, setUniversityId] = useState("");
   const [form, setForm] = useState<Form>({
     studentId: "",
-    batchYear: "",
+    batchNumber: "",
+    graduationYear: "",
     department: "",
     email: "",
     name: "",
@@ -72,7 +74,8 @@ export function SignUpWizard() {
         universityId,
         email: form.email.trim(),
         studentId: form.studentId.trim(),
-        batchYear: Number(form.batchYear),
+        batchNumber: Number(form.batchNumber),
+        graduationYear: Number(form.graduationYear),
         department: form.department.trim(),
       });
       const { error } = await authClient.signUp.email({
@@ -203,17 +206,27 @@ export function SignUpWizard() {
                 {...field("studentId")}
               />
               <TextField
-                label="Batch year"
+                label="Batch"
+                type="number"
+                inputMode="numeric"
+                required
+                min={1}
+                max={999}
+                placeholder="42"
+                {...field("batchNumber")}
+              />
+              <TextField
+                label="Graduation year"
                 type="number"
                 inputMode="numeric"
                 required
                 min={1990}
                 max={new Date().getFullYear() + 8}
-                description="Expected graduation"
-                {...field("batchYear")}
+                {...field("graduationYear")}
               />
               <TextField
                 label="Department"
+                className="sm:col-span-2"
                 required
                 minLength={2}
                 maxLength={80}

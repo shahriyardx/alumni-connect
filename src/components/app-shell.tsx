@@ -54,14 +54,14 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       match: "/mod",
       label: "Moderation",
       icon: "shield",
-      roles: ["MODERATOR", "ADMIN"],
+      roles: ["MODERATOR", "ADMIN", "OWNER"],
     },
     {
       href: "/admin",
       match: "/admin",
       label: "Admin",
       icon: "admin_panel_settings",
-      roles: ["ADMIN"],
+      roles: ["ADMIN", "OWNER"],
     },
   ];
 }

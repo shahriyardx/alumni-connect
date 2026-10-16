@@ -16,6 +16,7 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v || undefined),
+  PLATFORM_ADMIN_EMAILS: z.string().default(""),
   MAIL_FROM: z.string().default("Alumni Connect <no-reply@alumni.local>"),
 });
 

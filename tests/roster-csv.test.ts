@@ -1,46 +1,41 @@
 import { expect, test } from "bun:test";
 import { parseRosterCsv } from "@/server/roster-csv";
 
-test("parses valid rows, quoted fields, flags", () => {
+test("parses valid rows, quoted fields, case-insensitive header, optional name", () => {
   const r = parseRosterCsv(
-    `Student_ID,Batch_Year,Department,Graduated\nNU-1,2022,CSE,true\n\n"NU-2",2028,"Electrical, Electronic",no\n`,
+    `Student_ID,Department,Name\nNU-1,CSE,Rahim\n\n"NU-2","Electrical, Electronic",\n`,
   );
   expect(r.errors).toEqual([]);
   expect(r.rows).toEqual([
-    { studentId: "NU-1", batchYear: 2022, department: "CSE", graduated: true },
-    {
-      studentId: "NU-2",
-      batchYear: 2028,
-      department: "Electrical, Electronic",
-      graduated: false,
-    },
+    { studentId: "NU-1", department: "CSE", name: "Rahim" },
+    { studentId: "NU-2", department: "Electrical, Electronic" },
   ]);
+});
+
+test("name column is optional", () => {
+  const r = parseRosterCsv("student_id,department\nNU-1,CSE");
+  expect(r.errors).toEqual([]);
+  expect(r.rows).toEqual([{ studentId: "NU-1", department: "CSE" }]);
 });
 
 test("reports bad header and bad rows with line numbers", () => {
   expect(parseRosterCsv("id,year\nx,1").errors[0]).toMatchObject({ line: 1 });
-  const r = parseRosterCsv(
-    "student_id,batch_year,department,graduated\nNU-1,abc,CSE,true\n,2020,CSE,true\nNU-3,2020,CSE,maybe",
-  );
-  expect(r.rows).toEqual([]);
-  expect(r.errors.map((e) => e.line)).toEqual([2, 3, 4]);
-});
-
-test("rejects batch_year out of the 1950..2100 range", () => {
-  const r = parseRosterCsv(
-    "student_id,batch_year,department,graduated\nNU-1,1800,CSE,true\nNU-2,2200,CSE,true\nNU-3,99999999999999999999,CSE,true",
-  );
+  expect(
+    parseRosterCsv("student_id,batch_year,department,graduated\nx,1,a,b")
+      .errors[0],
+  ).toMatchObject({ line: 1 });
+  const r = parseRosterCsv("student_id,department\n,CSE\nNU-3,\nNU-4");
   expect(r.rows).toEqual([]);
   expect(r.errors.map((e) => e.line)).toEqual([2, 3, 4]);
 });
 
 test("dedupes duplicate student IDs (case/whitespace-insensitive), reporting the later line", () => {
   const r = parseRosterCsv(
-    "student_id,batch_year,department,graduated\nNU-1,2022,CSE,true\nnu-1,2023,EEE,false\nNU-2,2024,CSE,true",
+    "student_id,department\nNU-1,CSE\nnu-1,EEE\nNU-2,CSE",
   );
   expect(r.rows).toEqual([
-    { studentId: "NU-1", batchYear: 2022, department: "CSE", graduated: true },
-    { studentId: "NU-2", batchYear: 2024, department: "CSE", graduated: true },
+    { studentId: "NU-1", department: "CSE" },
+    { studentId: "NU-2", department: "CSE" },
   ]);
   expect(r.errors).toEqual([
     { line: 3, message: "Duplicate student ID (also on line 2)" },
@@ -49,15 +44,11 @@ test("dedupes duplicate student IDs (case/whitespace-insensitive), reporting the
 
 test("handles a UTF-8 BOM, CRLF line endings, doubled-quote escapes, and a trailing comma", () => {
   const csv =
-    '﻿student_id,batch_year,department,graduated\r\nNU-1,2022,"O""Brien",true\r\nNU-2,2023,CSE,true,\r\n';
+    '﻿student_id,department\r\nNU-1,"O""Brien"\r\nNU-2,CSE,\r\nNU-3,CSE,x,y\r\n';
   const r = parseRosterCsv(csv);
   expect(r.rows).toEqual([
-    {
-      studentId: "NU-1",
-      batchYear: 2022,
-      department: 'O"Brien',
-      graduated: true,
-    },
+    { studentId: "NU-1", department: 'O"Brien' },
+    { studentId: "NU-2", department: "CSE" },
   ]);
-  expect(r.errors).toEqual([{ line: 3, message: "Expected 4 fields, got 5" }]);
+  expect(r.errors).toEqual([{ line: 4, message: "Expected 2 fields, got 4" }]);
 });

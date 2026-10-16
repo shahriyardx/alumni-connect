@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import {
   auditLog,
+  batch,
   comment,
   post,
   ROLES,
@@ -57,30 +58,47 @@ function isoWeekKey(d: Date): string {
 
 export const adminRouter = router({
   importRoster: adminProcedure
-    .input(z.object({ csv: z.string().max(2_000_000) }))
+    // ponytail: interim — batch picked by number (created if missing; an existing batch keeps its year). W4 moves this to workspace batches.
+    .input(
+      z.object({
+        csv: z.string().max(2_000_000),
+        batchNumber: z.number().int().min(1).max(999),
+        graduationYear: z.number().int().min(1950).max(2100),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const { rows, errors } = parseRosterCsv(input.csv);
       let inserted = 0;
       let updated = 0;
+      const [{ id: batchId }] = await ctx.db
+        .insert(batch)
+        .values({
+          universityId: ctx.me.universityId,
+          number: input.batchNumber,
+          graduationYear: input.graduationYear,
+        })
+        .onConflictDoUpdate({
+          target: [batch.universityId, batch.number],
+          set: { number: sql`excluded.number` },
+        })
+        .returning({ id: batch.id });
 
-      for (const batch of chunk(rows, IMPORT_CHUNK)) {
+      for (const part of chunk(rows, IMPORT_CHUNK)) {
         const results = await ctx.db
           .insert(rosterEntry)
           .values(
-            batch.map((r) => ({
+            part.map((r) => ({
               universityId: ctx.me.universityId,
+              batchId,
               studentIdHash: hashStudentId(ctx.me.universityId, r.studentId),
-              batchYear: r.batchYear,
               department: r.department,
-              graduated: r.graduated,
             })),
           )
           .onConflictDoUpdate({
             target: [rosterEntry.universityId, rosterEntry.studentIdHash],
             set: {
-              batchYear: sql`excluded.batch_year`,
+              batchId: sql`excluded.batch_id`,
               department: sql`excluded.department`,
-              graduated: sql`excluded.graduated`,
             },
           })
           .returning({ inserted: sql<boolean>`(xmax = 0)` });
@@ -97,6 +115,7 @@ export const adminRouter = router({
         "roster.import",
         undefined,
         {
+          batchNumber: input.batchNumber,
           inserted,
           updated,
           errors: errors.length,
@@ -110,9 +129,10 @@ export const adminRouter = router({
     const [row] = await ctx.db
       .select({
         total: sql<number>`count(*)`,
-        graduated: sql<number>`count(*) filter (where ${rosterEntry.graduated})`,
+        graduated: sql<number>`count(*) filter (where ${batch.graduationYear} < extract(year from now()))`,
       })
-      .from(rosterEntry);
+      .from(rosterEntry)
+      .innerJoin(batch, eq(batch.id, rosterEntry.batchId));
     return { total: Number(row.total), graduated: Number(row.graduated) };
   }),
 
@@ -122,7 +142,8 @@ export const adminRouter = router({
         id: user.id,
         name: user.name,
         email: user.email,
-        batchYear: user.batchYear,
+        batchNumber: user.batchNumber,
+        graduationYear: user.graduationYear,
         department: user.department,
         role: user.role,
         createdAt: user.createdAt,
@@ -205,7 +226,8 @@ export const adminRouter = router({
           id: user.id,
           name: user.name,
           role: user.role,
-          batchYear: user.batchYear,
+          batchNumber: user.batchNumber,
+          graduationYear: user.graduationYear,
           department: user.department,
           avatarKey: user.avatarKey,
           email: user.email,
@@ -245,6 +267,12 @@ export const adminRouter = router({
           ),
         );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
+      // Ownership only moves via an explicit transfer (W4); nobody edits an OWNER here.
+      if (input.role === "OWNER" || target.role === "OWNER")
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Ownership can't be changed here",
+        });
 
       await ctx.db
         .update(user)

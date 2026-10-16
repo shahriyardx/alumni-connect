@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { pendingSignup, rosterEntry, user } from "@/db/schema";
+import { batch, pendingSignup, rosterEntry, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import { hashStudentId } from "@/server/student-id";
 import {
@@ -11,32 +11,38 @@ import {
   resetDb,
 } from "./helpers";
 
-let uni: { id: string; emailDomain: string };
+let uni: { id: string; emailDomain: string | null };
 const base = () => ({
   universityId: uni.id,
   email: `alice@${uni.emailDomain}`,
   studentId: "NU-1001",
-  batchYear: 2022,
+  batchNumber: 42,
+  graduationYear: 2022,
   department: "CSE",
 });
 
 beforeEach(async () => {
   await resetDb();
   uni = await makeUniversity("North", "north.edu");
+  const [b42, b48] = await adminDb
+    .insert(batch)
+    .values([
+      { universityId: uni.id, number: 42, graduationYear: 2022 },
+      { universityId: uni.id, number: 48, graduationYear: 2028 },
+    ])
+    .returning();
   await adminDb.insert(rosterEntry).values([
     {
       universityId: uni.id,
+      batchId: b42.id,
       studentIdHash: hashStudentId(uni.id, "NU-1001"),
-      batchYear: 2022,
       department: "CSE",
-      graduated: true,
     },
     {
       universityId: uni.id,
+      batchId: b48.id,
       studentIdHash: hashStudentId(uni.id, "NU-2002"),
-      batchYear: 2028,
       department: "EEE",
-      graduated: false,
     },
   ]);
 });
@@ -54,9 +60,9 @@ describe("auth.startSignup", () => {
       callerFor(null).auth.startSignup({ ...base(), studentId: "NU-9999" }),
     ).rejects.toThrow(/roster/i);
   });
-  test("rejects batch year mismatch", async () => {
+  test("rejects batch number mismatch", async () => {
     await expect(
-      callerFor(null).auth.startSignup({ ...base(), batchYear: 2023 }),
+      callerFor(null).auth.startSignup({ ...base(), batchNumber: 43 }),
     ).rejects.toThrow(/batch/i);
   });
   test("matches ID typed with spaces/lowercase; graduated → ALUMNUS", async () => {
@@ -71,7 +77,8 @@ describe("auth.startSignup", () => {
       ...base(),
       email: "bob@north.edu",
       studentId: "NU-2002",
-      batchYear: 2028,
+      batchNumber: 48,
+      graduationYear: 2028,
       department: "EEE",
     });
     expect(r.role).toBe("STUDENT");

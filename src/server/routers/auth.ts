@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, withTenant } from "@/db";
 import {
   auditLog,
+  batch,
   pendingSignup,
   rosterEntry,
   university,
@@ -54,12 +55,13 @@ export const authRouter = router({
           .max(200)
           .transform((e) => e.toLowerCase()),
         studentId: z.string().min(3).max(40),
-        batchYear: z
+        batchNumber: z.number().int().min(1).max(999),
+        graduationYear: z
           .number()
           .int()
           .min(1990)
           .refine((y) => y <= new Date().getFullYear() + 8, {
-            message: "Invalid batch year",
+            message: "Invalid graduation year",
           }),
         department: z.string().min(2).max(80),
       }),
@@ -154,12 +156,17 @@ export const authRouter = router({
         const [{ n: rosterSize }] = await tx
           .select({ n: count() })
           .from(rosterEntry);
-        let role: "STUDENT" | "ALUMNUS";
+        // ponytail: interim roster check until sign-up v2 (W3) makes every signup PENDING.
+        let graduationYear = input.graduationYear;
         let status: "ACTIVE" | "PENDING";
         if (rosterSize > 0) {
           const [row] = await tx
-            .select()
+            .select({
+              number: batch.number,
+              graduationYear: batch.graduationYear,
+            })
             .from(rosterEntry)
+            .innerJoin(batch, eq(batch.id, rosterEntry.batchId))
             .where(eq(rosterEntry.studentIdHash, idHash));
           // Same external message for both failure modes so an attacker
           // can't use it as an oracle to confirm a roster ID exists; the
@@ -167,20 +174,17 @@ export const authRouter = router({
           const notFound = () =>
             fail(
               "BAD_REQUEST",
-              "Student ID or batch year not found in the university roster",
+              "Student ID or batch not found in the university roster",
               row ? "batch" : "roster",
             );
           if (!row) return notFound();
-          if (row.batchYear !== input.batchYear) return notFound();
-          role = roleFor({
-            graduated: row.graduated,
-            batchYear: input.batchYear,
-          });
+          if (row.number !== input.batchNumber) return notFound();
+          graduationYear = row.graduationYear;
           status = "ACTIVE";
         } else {
-          role = roleFor({ graduated: null, batchYear: input.batchYear });
           status = "PENDING";
         }
+        const role = roleFor({ graduationYear });
 
         // Clear any *stale* unverified account squatting on this email or ID
         // (e.g. an attacker who started sign-up with the victim's roster ID
@@ -200,7 +204,8 @@ export const authRouter = router({
         const values = {
           email: input.email,
           universityId: uni.id,
-          batchYear: input.batchYear,
+          batchNumber: input.batchNumber,
+          graduationYear,
           department: input.department,
           studentIdHash: idHash,
           role,

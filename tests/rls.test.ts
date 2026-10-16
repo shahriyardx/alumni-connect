@@ -1,8 +1,21 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { db, withTenant } from "@/db";
-import { auditLog, bookmark, post } from "@/db/schema";
-import { makePost, makeUniversity, makeUser, resetDb } from "./helpers";
+import {
+  auditLog,
+  batch,
+  bookmark,
+  invite,
+  post,
+  rosterEntry,
+} from "@/db/schema";
+import {
+  adminDb,
+  makePost,
+  makeUniversity,
+  makeUser,
+  resetDb,
+} from "./helpers";
 
 /** drizzle-orm wraps the real Postgres error message in `.cause`, not `.message` — match both. */
 async function rejectsWith(p: Promise<unknown>, pattern: RegExp) {
@@ -102,6 +115,43 @@ describe("row level security", () => {
           body: "y",
         }),
       ),
+      /foreign key/,
+    );
+  });
+
+  test("batch and invite are tenant-isolated; roster can't point at another tenant's batch", async () => {
+    const [batchB] = await adminDb
+      .insert(batch)
+      .values({ universityId: b.id, number: 1, graduationYear: 2020 })
+      .returning();
+    await adminDb.insert(invite).values({
+      universityId: b.id,
+      email: "x@b.edu",
+      role: "STAFF",
+      tokenHash: "t",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    expect(await withTenant(a.id, (tx) => tx.select().from(batch))).toEqual([]);
+    expect(await withTenant(a.id, (tx) => tx.select().from(invite))).toEqual(
+      [],
+    );
+    await rejectsWith(
+      withTenant(a.id, (tx) =>
+        tx.insert(batch).values({
+          universityId: b.id,
+          number: 2,
+          graduationYear: 2020,
+        }),
+      ),
+      /row-level security/,
+    );
+    await rejectsWith(
+      adminDb.insert(rosterEntry).values({
+        universityId: a.id,
+        batchId: batchB.id,
+        studentIdHash: "h",
+        department: "CSE",
+      }),
       /foreign key/,
     );
   });

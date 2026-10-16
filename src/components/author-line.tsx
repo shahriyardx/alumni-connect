@@ -52,7 +52,8 @@ export function AuthorLine({
           <RoleBadge role={author.role} />
         </div>
         <span className="truncate text-xs text-muted-foreground">
-          Batch {author.batchYear} · {author.department} ·{" "}
+          {author.batchNumber != null && `Batch ${author.batchNumber} · `}
+          {author.department} ·{" "}
           <time dateTime={new Date(at).toISOString()}>{timeAgo(at)}</time>
         </span>
       </div>

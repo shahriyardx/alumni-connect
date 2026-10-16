@@ -17,10 +17,9 @@ test("hash is stable across formatting and differs per university", () => {
   expect(hashStudentId("u1", "X1")).toMatch(/^[0-9a-f]{64}$/);
 });
 
-test("roleFor", () => {
+test("roleFor: alumnus once the graduation year has passed", () => {
   const now = new Date("2026-10-16");
-  expect(roleFor({ graduated: true, batchYear: 2030, now })).toBe("ALUMNUS");
-  expect(roleFor({ graduated: false, batchYear: 2020, now })).toBe("STUDENT");
-  expect(roleFor({ graduated: null, batchYear: 2025, now })).toBe("ALUMNUS");
-  expect(roleFor({ graduated: null, batchYear: 2026, now })).toBe("STUDENT");
+  expect(roleFor({ graduationYear: 2025, now })).toBe("ALUMNUS");
+  expect(roleFor({ graduationYear: 2026, now })).toBe("STUDENT");
+  expect(roleFor({ graduationYear: 2030, now })).toBe("STUDENT");
 });

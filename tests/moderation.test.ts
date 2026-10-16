@@ -98,16 +98,37 @@ test("suspend and ban via report; role limits", async () => {
   ).rejects.toThrow(/Moderators can't act on moderators or admins/);
 });
 
+test("nobody can suspend or ban the OWNER", async () => {
+  const owner = await makeUser(uniId, { role: "OWNER" });
+  for (const actor of [mod, admin]) {
+    await expect(
+      callerFor(actor.id).moderation.setUserStatus({
+        userId: owner.id,
+        status: "BANNED",
+      }),
+    ).rejects.toThrow(/owner/i);
+  }
+});
+
 test("admin: roster import, approve, roles, stats", async () => {
   const a = callerFor(admin.id);
   const imp = await a.admin.importRoster({
-    csv: "student_id,batch_year,department,graduated\nNU-1,2022,CSE,true\nNU-2,2028,CSE,false",
+    csv: "student_id,department,name\nNU-1,CSE,Rahim",
+    batchNumber: 42,
+    graduationYear: 2022,
   });
-  expect(imp).toMatchObject({ inserted: 2, updated: 0, errors: [] });
+  expect(imp).toMatchObject({ inserted: 1, updated: 0, errors: [] });
+  await a.admin.importRoster({
+    csv: "student_id,department\nNU-2,CSE",
+    batchNumber: 48,
+    graduationYear: 2028,
+  });
   expect(
     (
       await a.admin.importRoster({
-        csv: "student_id,batch_year,department,graduated\nNU-1,2022,CSE,true",
+        csv: "student_id,department\nNU-1,CSE",
+        batchNumber: 42,
+        graduationYear: 2022,
       })
     ).updated,
   ).toBe(1);
@@ -116,6 +137,17 @@ test("admin: roster import, approve, roles, stats", async () => {
   expect((await a.admin.pendingUsers()).map((u) => u.id)).toEqual([pending.id]);
   await a.admin.approveUser({ userId: pending.id });
   await a.admin.setRole({ userId: student.id, role: "MODERATOR" });
+  const owner = await makeUser(uniId, { role: "OWNER" });
+  await expect(
+    a.admin.setRole({ userId: student.id, role: "OWNER" }),
+  ).rejects.toThrow(/Ownership/);
+  await expect(
+    a.admin.setRole({ userId: owner.id, role: "STUDENT" }),
+  ).rejects.toThrow(/Ownership/);
+  // OWNER passes every admin gate.
+  expect(
+    (await callerFor(owner.id).admin.pendingUsers()).length,
+  ).toBeGreaterThanOrEqual(0);
   await expect(
     a.admin.setRole({ userId: admin.id, role: "STUDENT" }),
   ).rejects.toThrow(/BAD_REQUEST/);
@@ -308,7 +340,9 @@ test("resolve: suspend does not downgrade an already-banned user", async () => {
 test("admin.importRoster dedupes duplicate student IDs instead of crashing", async () => {
   const a = callerFor(admin.id);
   const res = await a.admin.importRoster({
-    csv: "student_id,batch_year,department,graduated\nNU-9,2022,CSE,true\nnu-9,2023,EEE,false",
+    csv: "student_id,department\nNU-9,CSE\nnu-9,EEE",
+    batchNumber: 42,
+    graduationYear: 2022,
   });
   expect(res.inserted).toBe(1);
   expect(res.updated).toBe(0);
@@ -317,13 +351,22 @@ test("admin.importRoster dedupes duplicate student IDs instead of crashing", asy
   ]);
 });
 
-test("admin.importRoster rejects out-of-range batch_year without crashing", async () => {
+test("admin.importRoster reports bad rows and rejects an out-of-range graduation year", async () => {
   const a = callerFor(admin.id);
   const res = await a.admin.importRoster({
-    csv: "student_id,batch_year,department,graduated\nNU-8,2200,CSE,true",
+    csv: "student_id,department\nNU-8,",
+    batchNumber: 42,
+    graduationYear: 2022,
   });
   expect(res).toMatchObject({ inserted: 0, updated: 0 });
   expect(res.errors[0]).toMatchObject({ line: 2 });
+  await expect(
+    a.admin.importRoster({
+      csv: "student_id,department\nNU-8,CSE",
+      batchNumber: 42,
+      graduationYear: 2200,
+    }),
+  ).rejects.toThrow(/BAD_REQUEST|graduationYear/);
 });
 
 test("admin.users escapes % and _ in search so they match literally", async () => {

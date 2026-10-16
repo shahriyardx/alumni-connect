@@ -4,7 +4,15 @@ import { z } from "zod";
 import type { Tx } from "@/db";
 import { comment, post, type Role, report, session, user } from "@/db/schema";
 import type { AuthorInfo } from "../queries/posts";
-import { audit, type Me, memberProcedure, modProcedure, router } from "../trpc";
+import {
+  audit,
+  isAdmin,
+  isMod,
+  type Me,
+  memberProcedure,
+  modProcedure,
+  router,
+} from "../trpc";
 
 type TargetType = "POST" | "COMMENT" | "USER";
 
@@ -105,10 +113,13 @@ function assertCanAct(me: Me, target: { id: string; role: Role }) {
       message: "You can't do this to your own account",
     });
   }
-  if (
-    me.role === "MODERATOR" &&
-    (target.role === "MODERATOR" || target.role === "ADMIN")
-  ) {
+  if (target.role === "OWNER") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "The owner's account can't be moderated",
+    });
+  }
+  if (me.role === "MODERATOR" && isMod(target.role)) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Moderators can't act on moderators or admins",
@@ -209,7 +220,7 @@ export const moderationRouter = router({
             id: user.id,
             name: user.name,
             role: user.role,
-            batchYear: user.batchYear,
+            batchNumber: user.batchNumber,
             department: user.department,
             avatarKey: user.avatarKey,
           },
@@ -424,7 +435,7 @@ export const moderationRouter = router({
       if (
         target.status === "BANNED" &&
         input.status !== "BANNED" &&
-        ctx.me.role !== "ADMIN"
+        !isAdmin(ctx.me.role)
       ) {
         throw new TRPCError({
           code: "FORBIDDEN",

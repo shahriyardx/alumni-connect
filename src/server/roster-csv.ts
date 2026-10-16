@@ -5,19 +5,14 @@ import { normalizeStudentId } from "./student-id";
 
 export type RosterCsvRow = {
   studentId: string;
-  batchYear: number;
   department: string;
-  graduated: boolean;
+  name?: string;
 };
 export type RosterCsvError = { line: number; message: string };
 
-const EXPECTED_HEADER = ["student_id", "batch_year", "department", "graduated"];
-const GRADUATED_TRUE = new Set(["true", "yes", "1"]);
-const GRADUATED_FALSE = new Set(["false", "no", "0"]);
+const REQUIRED_HEADER = ["student_id", "department"];
 const MAX_ERRORS = 50;
 const MAX_ROWS = 20_000;
-const MIN_BATCH_YEAR = 1950;
-const MAX_BATCH_YEAR = 2100;
 
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -67,15 +62,19 @@ export function parseRosterCsv(text: string): {
     if (errors.length < MAX_ERRORS) errors.push({ line, message });
   };
 
-  const lines = text.replace(/^﻿/, "").split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
   const header = parseCsvLine(lines[0] ?? "").map((f) =>
     f.trim().toLowerCase(),
   );
+  const hasName = header.length === 3 && header[2] === "name";
   const headerOk =
-    header.length === EXPECTED_HEADER.length &&
-    EXPECTED_HEADER.every((h, i) => header[i] === h);
+    (header.length === 2 || hasName) &&
+    REQUIRED_HEADER.every((h, i) => header[i] === h);
   if (!headerOk) {
-    pushError(1, `Header must be exactly "${EXPECTED_HEADER.join(",")}"`);
+    pushError(
+      1,
+      'Header must be "student_id,department" or "student_id,department,name"',
+    );
     return { rows, errors };
   }
 
@@ -90,45 +89,27 @@ export function parseRosterCsv(text: string): {
     }
 
     const fields = parseCsvLine(raw);
-    if (fields.length !== EXPECTED_HEADER.length) {
+    // Spreadsheet exports often pad rows with empty trailing cells.
+    while (fields.length > header.length && fields.at(-1)?.trim() === "")
+      fields.pop();
+    if (fields.length > header.length || fields.length < 2) {
       pushError(
         lineNo,
-        `Expected ${EXPECTED_HEADER.length} fields, got ${fields.length}`,
+        `Expected ${header.length} fields, got ${fields.length}`,
       );
       continue;
     }
 
-    const [studentIdRaw, batchYearRaw, departmentRaw, graduatedRaw] = fields;
-    const studentId = studentIdRaw.trim();
-    const department = departmentRaw.trim();
-    const yearText = batchYearRaw.trim();
-    const graduatedKey = graduatedRaw.trim().toLowerCase();
+    const studentId = fields[0].trim();
+    const department = fields[1].trim();
+    const name = fields[2]?.trim();
 
     if (!studentId) {
       pushError(lineNo, "student_id is required");
       continue;
     }
-    const batchYear = Number(yearText);
-    if (
-      !/^\d+$/.test(yearText) ||
-      batchYear < MIN_BATCH_YEAR ||
-      batchYear > MAX_BATCH_YEAR
-    ) {
-      pushError(
-        lineNo,
-        `batch_year must be a whole number between ${MIN_BATCH_YEAR} and ${MAX_BATCH_YEAR}`,
-      );
-      continue;
-    }
     if (!department) {
       pushError(lineNo, "department is required");
-      continue;
-    }
-    let graduated: boolean;
-    if (GRADUATED_TRUE.has(graduatedKey)) graduated = true;
-    else if (GRADUATED_FALSE.has(graduatedKey)) graduated = false;
-    else {
-      pushError(lineNo, "graduated must be true/false/yes/no/1/0");
       continue;
     }
 
@@ -140,7 +121,9 @@ export function parseRosterCsv(text: string): {
     }
     seenIds.set(normalized, lineNo);
 
-    rows.push({ studentId, batchYear, department, graduated });
+    rows.push(
+      name ? { studentId, department, name } : { studentId, department },
+    );
   }
 
   return { rows, errors };

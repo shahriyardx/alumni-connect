@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { rosterEntry } from "@/db/schema";
+import { batch, rosterEntry } from "@/db/schema";
 import {
   adminDb,
   callerFor,
@@ -40,12 +40,15 @@ beforeAll(async () => {
     reason: "B-only report",
   });
   await makeUser(b.id, { status: "PENDING" });
+  const [bBatch] = await adminDb
+    .insert(batch)
+    .values({ universityId: b.id, number: 20, graduationYear: 2020 })
+    .returning();
   await adminDb.insert(rosterEntry).values({
     universityId: b.id,
+    batchId: bBatch.id,
     studentIdHash: "b-roster-hash",
-    batchYear: 2020,
     department: "CSE",
-    graduated: true,
   });
   // Positive control: the B data really exists for B.
   expect(await asB.notification.unreadCount()).toBeGreaterThan(0);

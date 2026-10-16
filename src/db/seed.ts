@@ -39,38 +39,47 @@ async function seedUniversities() {
       emailDomain: "demo.edu",
     })
     .returning();
-  return { nub, dtu };
+  // Pending rep application, for the platform-admin demo.
+  const [eti] = await db
+    .insert(schema.university)
+    .values({
+      name: "Eastern Tech Institute",
+      slug: "eti",
+      status: "PENDING",
+      website: "https://eti.edu",
+    })
+    .returning();
+  return { nub, dtu, eti };
 }
 
-// ---- 3. NUB roster (200 IDs, batches 2018-2029, 4 departments) ----
+// ---- 3. NUB batches 38-49 (graduating 2018-2029) + roster (200 IDs, 4 departments) ----
 const DEPTS = ["CSE", "EEE", "BBA", "LLB"] as const;
-const BATCHES = Array.from({ length: 12 }, (_, i) => 2018 + i); // 2018..2029
-const GRAD_CUTOFF = 2026; // graduated = batch < GRAD_CUTOFF
+const BATCHES = Array.from({ length: 12 }, (_, i) => 2018 + i); // graduation years 2018..2029
+const batchNumberOf = (graduationYear: number) => graduationYear - 1980; // 2018 -> 38
 
 type RosterRow = {
   raw: string;
-  batch: number;
+  batch: number; // graduation year
   dept: string;
-  graduated: boolean;
 };
 
 // Student IDs reserved for the seeded users below, so their sign-up/roster
 // link is real and those IDs read as "used" to the live demo.
 const RESERVED: RosterRow[] = [
-  { raw: "NUB-20180002", batch: 2018, dept: "CSE", graduated: true }, // admin
-  { raw: "NUB-20190001", batch: 2019, dept: "EEE", graduated: true }, // mod
-  { raw: "NUB-20180001", batch: 2018, dept: "CSE", graduated: true }, // alumni: rahim
-  { raw: "NUB-20190002", batch: 2019, dept: "EEE", graduated: true }, // alumni: karim
-  { raw: "NUB-20200001", batch: 2020, dept: "BBA", graduated: true }, // alumni: salma
-  { raw: "NUB-20220001", batch: 2022, dept: "LLB", graduated: true }, // alumni: nusrat
-  { raw: "NUB-20240001", batch: 2024, dept: "CSE", graduated: true }, // alumni: tanvir
-  { raw: "NUB-20260001", batch: 2026, dept: "CSE", graduated: false }, // student: mim
-  { raw: "NUB-20260002", batch: 2026, dept: "EEE", graduated: false }, // student: fahim
-  { raw: "NUB-20270001", batch: 2027, dept: "BBA", graduated: false }, // student: rafi
-  { raw: "NUB-20270002", batch: 2027, dept: "LLB", graduated: false }, // student: ayesha
-  { raw: "NUB-20280001", batch: 2028, dept: "CSE", graduated: false }, // student: imran
-  { raw: "NUB-20290001", batch: 2029, dept: "EEE", graduated: false }, // student: lamia
-  { raw: "NUB-20290002", batch: 2029, dept: "CSE", graduated: false }, // student: new (fresh)
+  { raw: "NUB-20180002", batch: 2018, dept: "CSE" }, // admin
+  { raw: "NUB-20190001", batch: 2019, dept: "EEE" }, // mod
+  { raw: "NUB-20180001", batch: 2018, dept: "CSE" }, // alumni: rahim
+  { raw: "NUB-20190002", batch: 2019, dept: "EEE" }, // alumni: karim
+  { raw: "NUB-20200001", batch: 2020, dept: "BBA" }, // alumni: salma
+  { raw: "NUB-20220001", batch: 2022, dept: "LLB" }, // alumni: nusrat
+  { raw: "NUB-20240001", batch: 2024, dept: "CSE" }, // alumni: tanvir
+  { raw: "NUB-20260001", batch: 2026, dept: "CSE" }, // student: mim
+  { raw: "NUB-20260002", batch: 2026, dept: "EEE" }, // student: fahim
+  { raw: "NUB-20270001", batch: 2027, dept: "BBA" }, // student: rafi
+  { raw: "NUB-20270002", batch: 2027, dept: "LLB" }, // student: ayesha
+  { raw: "NUB-20280001", batch: 2028, dept: "CSE" }, // student: imran
+  { raw: "NUB-20290001", batch: 2029, dept: "EEE" }, // student: lamia
+  { raw: "NUB-20290002", batch: 2029, dept: "CSE" }, // student: new (fresh)
 ];
 
 function buildRoster(): RosterRow[] {
@@ -84,19 +93,29 @@ function buildRoster(): RosterRow[] {
     const raw = `NUB-${batch}${String(seq).padStart(4, "0")}`;
     i++;
     if (reservedRaw.has(raw)) continue;
-    rows.push({ raw, batch, dept, graduated: batch < GRAD_CUTOFF });
+    rows.push({ raw, batch, dept });
   }
   return rows;
 }
 
 async function seedRoster(universityId: string, rows: RosterRow[]) {
+  const batches = await db
+    .insert(schema.batch)
+    .values(
+      BATCHES.map((year) => ({
+        universityId,
+        number: batchNumberOf(year),
+        graduationYear: year,
+      })),
+    )
+    .returning();
+  const batchId = new Map(batches.map((b) => [b.graduationYear, b.id]));
   await db.insert(schema.rosterEntry).values(
     rows.map((r) => ({
       universityId,
+      batchId: batchId.get(r.batch) as string,
       studentIdHash: hashStudentId(universityId, r.raw),
-      batchYear: r.batch,
       department: r.dept,
-      graduated: r.graduated,
     })),
   );
 }
@@ -106,8 +125,11 @@ type SeedUser = {
   email: string;
   name: string;
   role: schema.Role;
-  batch: number;
+  batch?: number; // graduation year; omit for staff
   dept: string;
+  title?: string;
+  status?: schema.Status;
+  rosterMatch?: boolean;
   raw?: string; // roster-backed student id (hashed into studentIdHash); omit for DTU
   fresh?: boolean; // created "now" (demos the 3-day link gate); others are a year old
 };
@@ -116,7 +138,7 @@ const NUB_USERS: SeedUser[] = [
   {
     email: "admin@nub.ac.bd",
     name: "Admin Rahman",
-    role: "ADMIN",
+    role: "OWNER",
     batch: 2018,
     dept: "CSE",
     raw: "NUB-20180002",
@@ -227,14 +249,48 @@ const NUB_USERS: SeedUser[] = [
     fresh: true,
   },
 ];
-// indices: 0 admin, 1 mod, 2-6 alumni, 7-12 students, 13 fresh student
+// indices: 0 owner, 1 mod, 2-6 alumni, 7-12 students, 13 fresh student, 14+ below
+NUB_USERS.push(
+  {
+    email: "admin2@nub.ac.bd",
+    name: "Admin Karim",
+    role: "ADMIN",
+    dept: "Registry",
+    title: "Registrar",
+  },
+  {
+    email: "faculty.cse@nub.ac.bd",
+    name: "Dr. Farhana Islam",
+    role: "STAFF",
+    dept: "CSE",
+    title: "Lecturer",
+  },
+  // Awaiting approval (no ID card image in the seed).
+  {
+    email: "pending1@nub.ac.bd",
+    name: "Sadia Rahman",
+    role: "STUDENT",
+    batch: 2028,
+    dept: "CSE",
+    status: "PENDING",
+    rosterMatch: true,
+  },
+  {
+    email: "pending2@nub.ac.bd",
+    name: "Arif Chowdhury",
+    role: "ALUMNUS",
+    batch: 2021,
+    dept: "EEE",
+    status: "PENDING",
+    rosterMatch: false,
+  },
+);
 
 const DTU_USERS: SeedUser[] = [
   {
     email: "admin@demo.edu",
     name: "DTU Admin",
-    role: "ADMIN",
-    batch: 2015,
+    role: "OWNER",
     dept: "General",
   },
   {
@@ -245,7 +301,18 @@ const DTU_USERS: SeedUser[] = [
     dept: "General",
   },
 ];
-// indices: 0 admin, 1 student
+// indices: 0 owner, 1 student
+
+const ETI_USERS: SeedUser[] = [
+  {
+    email: "rep@eti.edu",
+    name: "Tahmina Sultana",
+    role: "OWNER",
+    dept: "Administration",
+    title: "Registrar",
+    status: "PENDING",
+  },
+];
 
 async function seedUsers(universityId: string, users: SeedUser[]) {
   const passwordHash = await hashPassword(PASSWORD);
@@ -261,10 +328,13 @@ async function seedUsers(universityId: string, users: SeedUser[]) {
       emailVerified: true,
       universityId,
       role: u.role,
-      batchYear: u.batch,
+      graduationYear: u.batch ?? null,
+      batchNumber: u.batch ? batchNumberOf(u.batch) : null,
       department: u.dept,
+      title: u.title ?? null,
       studentIdHash: u.raw ? hashStudentId(universityId, u.raw) : null,
-      status: "ACTIVE",
+      rosterMatch: u.rosterMatch ?? null,
+      status: u.status ?? "ACTIVE",
       createdAt: u.fresh ? new Date() : yearAgo,
     });
     await db.insert(schema.account).values({
@@ -767,13 +837,14 @@ async function recomputeScores() {
 
 async function main() {
   await resetDb();
-  const { nub, dtu } = await seedUniversities();
+  const { nub, dtu, eti } = await seedUniversities();
 
   const roster = buildRoster();
   await seedRoster(nub.id, roster);
 
   const nubUserIds = await seedUsers(nub.id, NUB_USERS);
   const dtuUserIds = await seedUsers(dtu.id, DTU_USERS);
+  await seedUsers(eti.id, ETI_USERS);
 
   await seedPostsForUniversity(nub.id, nubUserIds, NUB_POSTS, NUB_POSTS.length);
   await seedPostsForUniversity(dtu.id, dtuUserIds, DTU_POSTS, DTU_POSTS.length);
@@ -861,15 +932,16 @@ async function main() {
   const unused = roster.filter(
     (r) => !RESERVED.some((res) => res.raw === r.raw),
   );
+  const year = new Date().getFullYear();
   const sample = [
-    unused.find((r) => r.graduated),
-    unused.find((r) => !r.graduated),
-    unused.filter((r) => !r.graduated)[1],
+    unused.find((r) => r.batch < year),
+    unused.find((r) => r.batch >= year),
+    unused.filter((r) => r.batch >= year)[1],
   ].filter((r): r is RosterRow => !!r);
 
   console.log("\nSeed complete.");
   console.log(
-    `  Universities: ${nub.name} (${nub.slug}), ${dtu.name} (${dtu.slug})`,
+    `  Universities: ${nub.name} (${nub.slug}), ${dtu.name} (${dtu.slug}), ${eti.name} (${eti.slug}, PENDING)`,
   );
   console.log(`  NUB roster entries: ${roster.length}`);
   console.log(
@@ -882,7 +954,7 @@ async function main() {
   console.log("\n  3 unused NUB roster IDs for the live sign-up demo:");
   for (const r of sample) {
     console.log(
-      `    ${r.raw}  (batch ${r.batch}, ${r.dept}, ${r.graduated ? "graduated" : "current student"})`,
+      `    ${r.raw}  (batch ${batchNumberOf(r.batch)}, graduates ${r.batch}, ${r.dept})`,
     );
   }
   console.log();

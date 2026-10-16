@@ -67,7 +67,8 @@ export function ProfileView({ id }: { id: string }) {
             <RoleBadge role={u.role} />
           </div>
           <p className="text-sm text-muted-foreground">
-            Batch {u.batchYear} · {u.department}
+            {u.batchNumber != null && `Batch ${u.batchNumber} · `}
+            {u.department}
           </p>
         </div>
         {u.bio && (

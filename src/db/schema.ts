@@ -20,10 +20,26 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const ROLES = ["STUDENT", "ALUMNUS", "MODERATOR", "ADMIN"] as const;
+export const ROLES = [
+  "OWNER",
+  "ADMIN",
+  "MODERATOR",
+  "STAFF",
+  "STUDENT",
+  "ALUMNUS",
+] as const;
+export const STAFF_ROLES = ["OWNER", "ADMIN", "MODERATOR", "STAFF"] as const;
 export const STATUSES = ["PENDING", "ACTIVE", "SUSPENDED", "BANNED"] as const;
+export const UNIVERSITY_STATUSES = ["PENDING", "ACTIVE", "REJECTED"] as const;
 export type Role = (typeof ROLES)[number];
+export type StaffRole = (typeof STAFF_ROLES)[number];
 export type Status = (typeof STATUSES)[number];
+export type UniversityStatus = (typeof UNIVERSITY_STATUSES)[number];
+
+// Shared with client components (trpc.ts re-exports them for server code).
+export const isMod = (r: Role) =>
+  r === "MODERATOR" || r === "ADMIN" || r === "OWNER";
+export const isAdmin = (r: Role) => r === "ADMIN" || r === "OWNER";
 
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 export const appUser = pgRole("app_user").existing();
@@ -49,7 +65,12 @@ export const university = pgTable("university", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
-  emailDomain: text("email_domain").notNull(),
+  emailDomain: text("email_domain"),
+  status: text("status", { enum: UNIVERSITY_STATUSES })
+    .default("ACTIVE")
+    .notNull(),
+  logoKey: text("logo_key"),
+  website: text("website"),
   createdAt: created(),
 });
 
@@ -69,9 +90,15 @@ export const user = pgTable(
       .notNull(),
     universityId: universityRef(),
     role: text("role", { enum: ROLES }).default("STUDENT").notNull(),
-    batchYear: integer("batch_year").notNull(),
-    department: text("department").notNull(),
+    graduationYear: integer("graduation_year"),
+    batchNumber: integer("batch_number"),
+    department: text("department"),
+    title: text("title"),
     studentIdHash: text("student_id_hash").unique(),
+    idCardKey: text("id_card_key"),
+    rosterMatch: boolean("roster_match"),
+    studentIdHint: text("student_id_hint"),
+    decidedAt: timestamp("decided_at"),
     bio: text("bio"),
     avatarKey: text("avatar_key"),
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
@@ -153,28 +180,82 @@ export const rateLimit = pgTable("rate_limit", {
 export const pendingSignup = pgTable("pending_signup", {
   email: text("email").primaryKey(),
   universityId: universityRef(),
-  batchYear: integer("batch_year").notNull(),
+  batchNumber: integer("batch_number"),
+  graduationYear: integer("graduation_year"),
   department: text("department").notNull(),
-  studentIdHash: text("student_id_hash").notNull(),
+  title: text("title"),
+  studentIdHash: text("student_id_hash"),
+  signupTokenHash: text("signup_token_hash"),
+  idCardKey: text("id_card_key"),
+  rosterMatch: boolean("roster_match"),
+  studentIdHint: text("student_id_hint"),
   role: text("role", { enum: ROLES }).notNull(),
   status: text("status", { enum: STATUSES }).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
 });
 
 // ---- tenant tables (RLS) ----
+export const batch = pgTable(
+  "batch",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: universityRef(),
+    number: integer("number").notNull(),
+    graduationYear: integer("graduation_year").notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    unique("batch_uni_number_uq").on(t.universityId, t.number),
+    unique("batch_id_uni_uq").on(t.id, t.universityId),
+    tenantPolicy("batch", t.universityId),
+  ],
+).enableRLS();
+
 export const rosterEntry = pgTable(
   "roster_entry",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
+    batchId: uuid("batch_id").notNull(),
     studentIdHash: text("student_id_hash").notNull(),
-    batchYear: integer("batch_year").notNull(),
     department: text("department").notNull(),
-    graduated: boolean("graduated").default(false).notNull(),
   },
   (t) => [
     uniqueIndex("roster_uni_hash_uq").on(t.universityId, t.studentIdHash),
+    index("roster_batch_idx").on(t.batchId),
+    foreignKey({
+      name: "roster_batch_fk",
+      columns: [t.batchId, t.universityId],
+      foreignColumns: [batch.id, batch.universityId],
+    }).onDelete("cascade"),
     tenantPolicy("roster_entry", t.universityId),
+  ],
+).enableRLS();
+
+export const invite = pgTable(
+  "invite",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: universityRef(),
+    email: text("email").notNull(),
+    role: text("role", { enum: STAFF_ROLES }).notNull(),
+    department: text("department"),
+    title: text("title"),
+    tokenHash: text("token_hash").notNull().unique(),
+    // Null for platform-created OWNER invites (no in-tenant inviter).
+    invitedBy: text("invited_by"),
+    expiresAt: timestamp("expires_at").notNull(),
+    acceptedAt: timestamp("accepted_at"),
+    createdAt: created(),
+  },
+  (t) => [
+    index("invite_uni_idx").on(t.universityId),
+    foreignKey({
+      name: "invite_invited_by_fk",
+      columns: [t.invitedBy, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    tenantPolicy("invite", t.universityId),
   ],
 ).enableRLS();
 

@@ -1,14 +1,15 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useTRPC } from "@/lib/trpc";
 import { Button, buttonClasses } from "../ui/button";
 import { Card } from "../ui/card";
+import { TextField } from "../ui/text-field";
 import { useToast } from "../ui/toast";
 
-const SAMPLE = `student_id,batch_year,department,graduated
-NUB-20300001,2030,CSE,false
-NUB-20300002,2030,EEE,false
+const SAMPLE = `student_id,department,name
+NUB-20300001,CSE,Rahim Uddin
+NUB-20300002,EEE,
 `;
 // Server caps `csv` at 2,000,000 chars.
 const MAX_BYTES = 2_000_000;
@@ -19,6 +20,13 @@ export function RosterPanel() {
   const qc = useQueryClient();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [batchNumber, setBatchNumber] = useState("");
+  const [graduationYear, setGraduationYear] = useState("");
+  const batchOk =
+    Number(batchNumber) >= 1 &&
+    Number(batchNumber) <= 999 &&
+    Number(graduationYear) >= 1950 &&
+    Number(graduationYear) <= 2100;
   const stats = useQuery(trpc.admin.rosterStats.queryOptions());
   const importRoster = useMutation(
     trpc.admin.importRoster.mutationOptions({
@@ -38,7 +46,11 @@ export function RosterPanel() {
       toast.error("File is too large (max 2 MB)");
       return;
     }
-    importRoster.mutate({ csv: await file.text() });
+    importRoster.mutate({
+      csv: await file.text(),
+      batchNumber: Number(batchNumber),
+      graduationYear: Number(graduationYear),
+    });
   };
   const r = importRoster.data;
 
@@ -64,11 +76,30 @@ export function RosterPanel() {
           <h2 className="font-semibold tracking-tight">Import roster CSV</h2>
           <p className="text-sm text-muted-foreground">
             Columns:{" "}
-            <code className="break-all">
-              student_id,batch_year,department,graduated
-            </code>
-            . Existing IDs are updated; student IDs are stored hashed.
+            <code className="break-all">student_id,department[,name]</code>.
+            Pick the batch first. Existing IDs are updated; student IDs are
+            stored hashed.
           </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            label="Batch"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={999}
+            value={batchNumber}
+            onChange={(e) => setBatchNumber(e.target.value)}
+          />
+          <TextField
+            label="Graduation year"
+            type="number"
+            inputMode="numeric"
+            min={1950}
+            max={2100}
+            value={graduationYear}
+            onChange={(e) => setGraduationYear(e.target.value)}
+          />
         </div>
         <div className="flex flex-wrap gap-2">
           <input
@@ -82,6 +113,7 @@ export function RosterPanel() {
           <Button
             icon="upload_file"
             loading={importRoster.isPending}
+            disabled={!batchOk}
             onClick={() => fileRef.current?.click()}
           >
             Upload CSV

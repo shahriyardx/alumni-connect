@@ -24,12 +24,19 @@ import { TextField } from "../ui/text-field";
 import { useToast } from "../ui/toast";
 
 const ROLE_LABEL: Record<Role, string> = {
+  OWNER: "Owner",
+  ADMIN: "Admin",
+  MODERATOR: "Moderator",
+  STAFF: "Staff",
   STUDENT: "Student",
   ALUMNUS: "Alumnus",
-  MODERATOR: "Moderator",
-  ADMIN: "Admin",
 };
-const ROLE_ITEMS = ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] }));
+// OWNER is never assignable here (server refuses); ownership transfer lands in W4.
+const ROLE_ITEMS = ROLES.filter((r) => r !== "OWNER").map((r) => ({
+  value: r,
+  label: ROLE_LABEL[r],
+}));
+const OWNER_ITEMS = [{ value: "OWNER" as Role, label: ROLE_LABEL.OWNER }];
 
 const STATUS_TONE: Record<string, string> = {
   ACTIVE: "bg-muted text-muted-foreground",
@@ -135,7 +142,9 @@ export function UsersPanel({ meId }: { meId: string }) {
                           )}
                         </Link>
                         <span className="truncate text-xs text-muted-foreground">
-                          {u.email} · Batch {u.batchYear} · {u.department}
+                          {u.email} ·{" "}
+                          {u.batchNumber != null && `Batch ${u.batchNumber} · `}
+                          {u.department}
                         </span>
                       </div>
                     </div>
@@ -155,8 +164,12 @@ export function UsersPanel({ meId }: { meId: string }) {
                       label={`Role for ${u.name}`}
                       hideLabel
                       value={u.role}
-                      disabled={u.id === meId || setUserRole.isPending}
-                      items={ROLE_ITEMS}
+                      disabled={
+                        u.id === meId ||
+                        u.role === "OWNER" ||
+                        setUserRole.isPending
+                      }
+                      items={u.role === "OWNER" ? OWNER_ITEMS : ROLE_ITEMS}
                       onValueChange={(next) =>
                         next !== u.role &&
                         setUserRole.mutate({ userId: u.id, role: next })

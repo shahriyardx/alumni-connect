@@ -25,7 +25,8 @@ export const auth = betterAuth({
     additionalFields: {
       universityId: field("string"),
       role: { type: [...schema.ROLES], required: false, input: false },
-      batchYear: field("number"),
+      graduationYear: field("number"),
+      batchNumber: field("number"),
       department: field("string"),
       studentIdHash: field("string"),
       bio: field("string"),
@@ -66,18 +67,21 @@ export const auth = betterAuth({
           // pending email finished sign-up first), refuse cleanly instead
           // of letting the unique constraint on user.student_id_hash throw
           // a raw 500.
-          const [existingById] = await db
-            .select({ id: schema.user.id })
-            .from(schema.user)
-            .where(eq(schema.user.studentIdHash, p.studentIdHash));
-          if (existingById) return false;
+          if (p.studentIdHash) {
+            const [existingById] = await db
+              .select({ id: schema.user.id })
+              .from(schema.user)
+              .where(eq(schema.user.studentIdHash, p.studentIdHash));
+            if (existingById) return false;
+          }
           return {
             data: {
               ...u,
               email,
               universityId: p.universityId,
               role: p.role,
-              batchYear: p.batchYear,
+              graduationYear: p.graduationYear,
+              batchNumber: p.batchNumber,
               department: p.department,
               studentIdHash: p.studentIdHash,
               status: p.status,

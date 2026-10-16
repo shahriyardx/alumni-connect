@@ -1,9 +1,10 @@
 import { initTRPC, TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db, type Tx, withTenant } from "@/db";
-import { auditLog, user } from "@/db/schema";
+import { auditLog, isAdmin, isMod, user } from "@/db/schema";
+import { env } from "@/env";
 import { isSuspendedNow } from "@/lib/account-status";
 import { auth } from "./auth";
 
@@ -69,6 +70,18 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (statusError) {
     throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }
+  // Lazy alumnus promotion: only ever STUDENT -> ALUMNUS.
+  if (
+    me.role === "STUDENT" &&
+    me.graduationYear !== null &&
+    me.graduationYear < new Date().getFullYear()
+  ) {
+    await db
+      .update(user)
+      .set({ role: "ALUMNUS" })
+      .where(and(eq(user.id, me.id), eq(user.role, "STUDENT")));
+    me.role = "ALUMNUS";
+  }
   return withTenant(me.universityId, async (tx) => {
     const res = await next({ ctx: { db: tx, me } });
     if (!res.ok) throw res.error; // roll the transaction back on any procedure error
@@ -76,14 +89,35 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   });
 });
 
-export const isMod = (r: Me["role"]) => r === "MODERATOR" || r === "ADMIN";
+export { isAdmin, isMod };
 export const modProcedure = memberProcedure.use(({ ctx, next }) => {
   if (!isMod(ctx.me.role)) throw new TRPCError({ code: "FORBIDDEN" });
   return next();
 });
 export const adminProcedure = memberProcedure.use(({ ctx, next }) => {
-  if (ctx.me.role !== "ADMIN") throw new TRPCError({ code: "FORBIDDEN" });
+  if (!isAdmin(ctx.me.role)) throw new TRPCError({ code: "FORBIDDEN" });
   return next();
+});
+export const ownerProcedure = memberProcedure.use(({ ctx, next }) => {
+  if (ctx.me.role !== "OWNER") throw new TRPCError({ code: "FORBIDDEN" });
+  return next();
+});
+
+const platformAdmins = new Set(
+  env.PLATFORM_ADMIN_EMAILS.split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
+export const isPlatformAdmin = (u: Pick<Me, "email" | "emailVerified">) =>
+  u.emailVerified && platformAdmins.has(u.email.toLowerCase());
+
+/** Platform admins (env allow-list, verified email). ctx.db is the plain, untenanted db. */
+export const platformProcedure = t.procedure.use(async ({ ctx, next }) => {
+  if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
+  const [me] = await db.select().from(user).where(eq(user.id, ctx.userId));
+  if (!me) throw new TRPCError({ code: "UNAUTHORIZED" });
+  if (!isPlatformAdmin(me)) throw new TRPCError({ code: "FORBIDDEN" });
+  return next({ ctx: { db, me } });
 });
 
 export async function audit(

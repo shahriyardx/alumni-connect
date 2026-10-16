@@ -39,17 +39,21 @@ All seeded accounts use the password **`password123`**. Every account except `ne
 
 | Email | Role | University | Notes |
 |---|---|---|---|
-| `admin@nub.ac.bd` | ADMIN | Northern University Bangladesh | full admin console |
+| `admin@nub.ac.bd` | OWNER | Northern University Bangladesh | full admin console; platform admin (`PLATFORM_ADMIN_EMAILS`) |
+| `admin2@nub.ac.bd` | ADMIN | NUB | admin console |
+| `faculty.cse@nub.ac.bd` | STAFF | NUB | Lecturer, CSE |
 | `mod@nub.ac.bd` | MODERATOR | NUB | moderation queue, reports |
-| `rahim.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2018, CSE |
-| `karim.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2019, EEE |
-| `salma.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2020, BBA |
-| `nusrat.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2022, LLB |
-| `tanvir.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 2024, CSE |
-| `mim.student@nub.ac.bd` … `lamia.student@nub.ac.bd` | STUDENT | NUB | 6 current students, batches 2026–2029 |
+| `rahim.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 38 (graduated 2018), CSE |
+| `karim.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 39 (2019), EEE |
+| `salma.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 40 (2020), BBA |
+| `nusrat.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 42 (2022), LLB |
+| `tanvir.alumni@nub.ac.bd` | ALUMNUS | NUB | batch 44 (2024), CSE |
+| `mim.student@nub.ac.bd` … `lamia.student@nub.ac.bd` | STUDENT | NUB | 6 current students, batches 46–49 (graduating 2026–2029) |
 | `new.student@nub.ac.bd` | STUDENT | NUB | account created at seed time — shows the "new accounts can post links after 3 days" rule |
-| `admin@demo.edu` | ADMIN | Demo Tech University | second tenant, no roster loaded — shows the PENDING sign-up path |
+| `pending1@nub.ac.bd`, `pending2@nub.ac.bd` | STUDENT / ALUMNUS | NUB | awaiting approval (no ID card image) |
+| `admin@demo.edu` | OWNER | Demo Tech University | second tenant, no roster loaded — shows the PENDING sign-up path |
 | `student@demo.edu` | STUDENT | Demo Tech University | |
+| `rep@eti.edu` | OWNER (PENDING) | Eastern Tech Institute | pending university application |
 
 NUB has a 200-row roster (batches 2018–2029, CSE/EEE/BBA/LLB) so you can also sign up as a brand-new user — `bun run db:seed` prints three unused roster IDs each run for exactly this.
 
@@ -84,9 +88,9 @@ bun run db:seed
 
 **Tenancy.** Every tenant-scoped table (`post`, `comment`, `vote`, `roster_entry`, …) carries a `university_id` column and a Postgres RLS policy that compares it against `current_setting('app.university_id')`. The app sets that setting per-request/transaction (`withTenant`, see `src/db/index.ts`) using the signed-in user's university — a query simply cannot see another university's rows, even if application code has a bug. Composite foreign keys (e.g. `post(author_id, university_id) → user(id, university_id)`) stop a row from ever referencing a parent in a different tenant. Seeds and tests connect as the Postgres superuser (`DATABASE_ADMIN_URL`), which bypasses RLS, to arrange cross-tenant fixtures.
 
-**Auth & verification.** better-auth handles sessions and password hashing. Sign-up requires proving membership of the university roster (student ID → salted hash, batch year, department); a `pending_signup` row holds that proof until email OTP verification completes, at which point a database hook promotes it into the real `user` row. Universities with no roster loaded fall back to an admin-reviewed PENDING flow (see `demo.edu` in the seed data).
+**Auth & verification.** better-auth handles sessions and password hashing. Sign-up requires proving membership of the university roster (student ID → salted hash, batch, department); a `pending_signup` row holds that proof until email OTP verification completes, at which point a database hook promotes it into the real `user` row. Universities with no roster loaded fall back to an admin-reviewed PENDING flow (see `demo.edu` in the seed data).
 
-**Roles.** `STUDENT`, `ALUMNUS`, `MODERATOR`, `ADMIN` — derived from the roster's `graduated` flag at sign-up, promotable by an admin afterwards. Moderators/admins get a moderation queue (reports, suspensions) and admins additionally get roster CSV import and forum-wide stats.
+**Roles.** `OWNER`, `ADMIN`, `MODERATOR`, `STAFF`, `STUDENT`, `ALUMNUS`. Students belong to a batch (number + graduation year) and become `ALUMNUS` automatically once that year has passed; staff roles are assigned by admins. Moderators/admins get a moderation queue (reports, suspensions) and admins additionally get roster CSV import and forum-wide stats.
 
 **Live updates.** Mutations that matter for the feed (new post, new comment, new notification) call `pg_notify('events', …)` inside the same transaction, so the notification only fires on commit. A single server-side `LISTEN` fans events out over Server-Sent Events to connected clients — no separate message broker, no polling.
 

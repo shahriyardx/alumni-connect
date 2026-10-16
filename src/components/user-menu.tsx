@@ -2,6 +2,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { isAdmin, isMod } from "@/db/schema";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
 import { Avatar } from "./ui/avatar";
@@ -66,7 +67,7 @@ export function UserMenu() {
           Profile
         </MenuItem>
         {/* Phones have no rail, so the role-gated destinations live here. */}
-        {(me.role === "MODERATOR" || me.role === "ADMIN") && (
+        {isMod(me.role) && (
           <MenuItem
             icon="shield"
             className="min-[840px]:hidden"
@@ -75,7 +76,7 @@ export function UserMenu() {
             Moderation
           </MenuItem>
         )}
-        {me.role === "ADMIN" && (
+        {isAdmin(me.role) && (
           <MenuItem
             icon="admin_panel_settings"
             className="min-[840px]:hidden"

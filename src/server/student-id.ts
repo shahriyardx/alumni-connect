@@ -11,16 +11,13 @@ export const hashStudentId = (universityId: string, raw: string) =>
     )
     .digest("hex");
 
+/** Alumnus once the graduation year has passed; only ever STUDENT/ALUMNUS. */
 export function roleFor({
-  graduated,
-  batchYear,
+  graduationYear,
   now = new Date(),
 }: {
-  graduated: boolean | null;
-  batchYear: number;
+  graduationYear: number;
   now?: Date;
-}) {
-  if (graduated === null)
-    return batchYear < now.getFullYear() ? "ALUMNUS" : "STUDENT";
-  return graduated ? "ALUMNUS" : "STUDENT";
+}): "STUDENT" | "ALUMNUS" {
+  return graduationYear < now.getFullYear() ? "ALUMNUS" : "STUDENT";
 }

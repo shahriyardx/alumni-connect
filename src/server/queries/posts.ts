@@ -6,8 +6,8 @@ export type AuthorInfo = {
   id: string;
   name: string;
   role: Role;
-  batchYear: number;
-  department: string;
+  batchNumber: number | null;
+  department: string | null;
   avatarKey: string | null;
 };
 
@@ -65,7 +65,7 @@ export async function listPosts(
         id: user.id,
         name: user.name,
         role: user.role,
-        batchYear: user.batchYear,
+        batchNumber: user.batchNumber,
         department: user.department,
         avatarKey: user.avatarKey,
       },

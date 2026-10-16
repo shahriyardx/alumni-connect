@@ -57,8 +57,8 @@ export function PendingPanel() {
               {u.name} <RoleBadge role={u.role} />
             </span>
             <span className="truncate text-xs text-muted-foreground">
-              {u.email} · Batch {u.batchYear} · {u.department} · signed up{" "}
-              {timeAgo(u.createdAt)}
+              {u.email} · {u.batchNumber != null && `Batch ${u.batchNumber} · `}
+              {u.department} · signed up {timeAgo(u.createdAt)}
             </span>
           </div>
           <Button

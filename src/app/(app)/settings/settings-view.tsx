@@ -75,7 +75,7 @@ function ProfileForm({
   const qc = useQueryClient();
   const toast = useToast();
   const [name, setName] = useState(profile.name);
-  const [department, setDepartment] = useState(profile.department);
+  const [department, setDepartment] = useState(profile.department ?? "");
   const [bio, setBio] = useState(profile.bio ?? "");
 
   const refresh = () =>

@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "@/components/ui/tabs";
 import { useMe } from "@/components/user-menu";
+import { isAdmin } from "@/db/schema";
 
 export function AdminView() {
   const { me, isLoading } = useMe();
@@ -17,7 +18,7 @@ export function AdminView() {
         <Spinner />
       </div>
     );
-  if (me?.role !== "ADMIN")
+  if (!me || !isAdmin(me.role))
     return (
       <EmptyState
         icon="block"

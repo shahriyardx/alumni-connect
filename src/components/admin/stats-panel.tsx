@@ -10,6 +10,8 @@ import { Spinner } from "../ui/spinner";
 type Week = RouterOutputs["admin"]["stats"]["postsPerWeek"][number];
 
 const ROLE_LABEL = {
+  OWNER: "Owners",
+  STAFF: "Staff",
   STUDENT: "Students",
   ALUMNUS: "Alumni",
   MODERATOR: "Moderators",
