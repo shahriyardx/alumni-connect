@@ -23,12 +23,13 @@ export function AuthFrame({
       <div className="mx-auto grid max-w-6xl gap-3 lg:min-h-[min(680px,calc(100dvh-7rem))] lg:grid-cols-2">
         <section
           className={cn(
-            "lp-rise flex px-3 py-6 sm:px-8 lg:py-10",
+            // pl-2 lines the form up with the logo in the header pill.
+            "lp-rise flex py-6 pr-2 pl-2 lg:py-10 lg:pr-12",
             // Multi-step forms start at the top so steps don't jump around.
             wide ? "items-start" : "items-center",
           )}
         >
-          <div className={cn("mx-auto w-full", wide ? "max-w-lg" : "max-w-sm")}>
+          <div className={cn("w-full", wide ? "max-w-lg" : "max-w-sm")}>
             <span className="mb-6 grid size-12 place-items-center rounded-2xl bg-primary/12 text-primary">
               <Icon name={icon} filled size={24} />
             </span>
