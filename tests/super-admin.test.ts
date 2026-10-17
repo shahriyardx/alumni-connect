@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { platformAdmin, user } from "@/db/schema";
 import { env } from "@/env";
@@ -11,16 +12,27 @@ import {
   resetDb,
 } from "./helpers";
 
-const claim = (email: string, setupToken?: string) =>
-  callerFor(null).auth.claimSuperAdmin({
+/** Claim tokens by email, so signUp() presents the right one by default. */
+const tokens = new Map<string, string>();
+async function claim(email: string, setupToken?: string) {
+  const r = await callerFor(null).auth.claimSuperAdmin({
     name: "Root Person",
     email,
     setupToken,
   });
-const signUp = (email: string) =>
-  auth.api.signUpEmail({
-    body: { name: "Root Person", email, password: "password123" },
-  });
+  tokens.set(email, r.claimToken);
+  return r;
+}
+function signUp(email: string, claimToken = tokens.get(email)) {
+  // claimToken is an extra body key the sign-up hook reads (see auth.ts).
+  const body = {
+    name: "Root Person",
+    email,
+    password: "password123",
+    claimToken,
+  };
+  return auth.api.signUpEmail({ body });
+}
 const userByEmail = (email: string) =>
   adminDb
     .select()
@@ -52,7 +64,10 @@ async function claimAndVerify(email = "root@x.edu") {
   return userByEmail(email);
 }
 
-beforeEach(resetDb);
+beforeEach(async () => {
+  await resetDb();
+  tokens.clear();
+});
 afterEach(() => {
   env.SETUP_TOKEN = undefined;
 });
@@ -107,6 +122,63 @@ describe("claim the first super admin", () => {
     expect(await admins()).toHaveLength(1);
     const users = await adminDb.select().from(user);
     expect(users).toHaveLength(1);
+  });
+
+  test("both before-hooks pass first: the later after-hook loses and is undone", async () => {
+    const hooks = auth.options.databaseHooks?.user?.create;
+    if (!hooks?.before || !hooks.after) throw new Error("no user hooks");
+    const emails = ["a@x.edu", "b@x.edu"];
+    for (const e of emails) await claim(e);
+    // Both before-hooks run before either user exists (the race window).
+    const created = [];
+    for (const email of emails) {
+      const now = new Date();
+      const r = await hooks.before(
+        {
+          name: "Root Person",
+          email,
+          emailVerified: false,
+          createdAt: now,
+          updatedAt: now,
+        } as never,
+        { body: { claimToken: tokens.get(email) } } as never,
+      );
+      expect(r).toMatchObject({ data: { email, universityId: null } });
+      const [row] = await adminDb
+        .insert(user)
+        .values({
+          id: randomUUID(),
+          name: "Root Person",
+          email,
+          universityId: null,
+        })
+        .returning();
+      created.push(row);
+    }
+    await hooks.after(created[0] as never);
+    await expect(hooks.after(created[1] as never)).rejects.toThrow(
+      /already set up/,
+    );
+    expect((await admins()).map((a) => a.userId)).toEqual([created[0].id]);
+    expect(await userByEmail("a@x.edu")).toBeDefined();
+    expect(await userByEmail("b@x.edu")).toBeUndefined();
+  });
+
+  test("sign-up for a claimed email needs the claim token", async () => {
+    await claim("root@x.edu");
+    await expect(signUp("root@x.edu", "")).rejects.toThrow();
+    await expect(signUp("root@x.edu", "wrong-token")).rejects.toThrow();
+    expect(await userByEmail("root@x.edu")).toBeUndefined();
+    await signUp("root@x.edu");
+    expect(await admins()).toHaveLength(1);
+  });
+
+  test("a verified env-listed admin closes the claim", async () => {
+    const home = await makeUniversity();
+    await makeUser(home.id, { email: "platform@test.edu" });
+    expect((await callerFor(null).auth.claimStatus()).open).toBe(false);
+    await expect(claim("root@x.edu")).rejects.toThrow(/already set up/);
+    expect(await admins()).toHaveLength(0);
   });
 
   test("an abandoned (stale, unverified) claim frees the slot and can't verify late", async () => {

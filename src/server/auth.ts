@@ -10,7 +10,11 @@ import { env } from "@/env";
 import { clientIp } from "./client-ip";
 import { graceCutoff } from "./invite-token";
 import { sendMail } from "./mail";
-import { lockPlatformAdmin, superAdminTaken } from "./super-admin";
+import {
+  lockPlatformAdmin,
+  superAdminTaken,
+  tokenMatches,
+} from "./super-admin";
 import { insertUniversity } from "./university";
 
 const field = <T extends "string" | "number" | "date" | "boolean">(type: T) =>
@@ -133,6 +137,12 @@ export const auth = betterAuth({
           // The first super admin (auth.claimSuperAdmin): no university.
           // Re-checked under the lock; the after-hook settles a race.
           if (p.platformAdmin) {
+            // The claim token from auth.claimSuperAdmin, passed through the
+            // sign-up body: the pending row alone is not a bearer grant.
+            const claimToken = (
+              ctx?.body as { claimToken?: unknown } | undefined
+            )?.claimToken;
+            if (!tokenMatches(claimToken, p.signupTokenHash)) return false;
             const claimed = await db.transaction(async (tx) => {
               await lockPlatformAdmin(tx);
               if (await superAdminTaken(tx)) return false;
@@ -297,14 +307,17 @@ export const auth = betterAuth({
           if (!p?.platformAdmin) return;
           // Two claimers can both pass the before-hook (the user row doesn't
           // exist yet there); the first to get here wins, the other is undone.
+          // The loser is deleted in the same locked transaction as the check.
           const won = await db.transaction(async (tx) => {
             await lockPlatformAdmin(tx);
-            if (await superAdminTaken(tx)) return false;
+            if (await superAdminTaken(tx)) {
+              await tx.delete(schema.user).where(eq(schema.user.id, u.id));
+              return false;
+            }
             await tx.insert(schema.platformAdmin).values({ userId: u.id });
             return true;
           });
           if (!won) {
-            await db.delete(schema.user).where(eq(schema.user.id, u.id));
             throw new APIError("CONFLICT", {
               message: "Alumni Connect is already set up",
             });

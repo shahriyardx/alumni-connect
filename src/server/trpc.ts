@@ -12,10 +12,10 @@ import {
   university,
   user,
 } from "@/db/schema";
-import { env } from "@/env";
 import { isSuspendedNow } from "@/lib/account-status";
 import { auth } from "./auth";
 import { clientIp } from "./client-ip";
+import { envPlatformAdmins } from "./super-admin";
 
 export type Context = { userId: string | null; ip: string };
 
@@ -126,17 +126,12 @@ export const ownerProcedure = memberProcedure.use(({ ctx, next }) => {
   return next();
 });
 
-const platformAdmins = new Set(
-  env.PLATFORM_ADMIN_EMAILS.split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean),
-);
 /** Verified, and either has a platform_admin row or is in the env allow-list. */
 export async function isPlatformAdmin(
   u: Pick<Me, "id" | "email" | "emailVerified">,
 ) {
   if (!u.emailVerified) return false;
-  if (platformAdmins.has(u.email.toLowerCase())) return true;
+  if (envPlatformAdmins.has(u.email.toLowerCase())) return true;
   const [row] = await db
     .select({ id: platformAdmin.userId })
     .from(platformAdmin)

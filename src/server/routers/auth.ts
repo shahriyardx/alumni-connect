@@ -39,6 +39,7 @@ import { hashStudentId, normalizeStudentId, roleFor } from "../student-id";
 import {
   lockPlatformAdmin,
   setupTokenOk,
+  sha256Hex,
   superAdminTaken,
 } from "../super-admin";
 import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
@@ -444,6 +445,8 @@ export const authRouter = router({
       if (await superAdminTaken(db)) throw alreadySetUp();
       await assertEmailFree(input.email);
 
+      // Binds the pending row to this browser: sign-up must present it.
+      const claimToken = randomBytes(32).toString("base64url");
       const orphans = await db.transaction(async (tx) => {
         await lockPlatformAdmin(tx);
         // Abandoned claims (never verified) free the slot and their email.
@@ -459,6 +462,7 @@ export const authRouter = router({
           ...BLANK_PENDING,
           email: input.email,
           platformAdmin: true,
+          signupTokenHash: sha256Hex(claimToken),
           department: "Platform",
           role: "STUDENT",
           status: "ACTIVE",
@@ -467,7 +471,7 @@ export const authRouter = router({
         return [...stale, ...(await unreferenced(tx, replaced))];
       });
       await removeAll(orphans);
-      return { ok: true };
+      return { claimToken };
     }),
 
   batches: publicProcedure

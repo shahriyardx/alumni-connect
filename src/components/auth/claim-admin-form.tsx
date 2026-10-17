@@ -55,16 +55,20 @@ export function ClaimAdminForm() {
     setBusy(true);
     setError(undefined);
     try {
-      await claim.mutateAsync({
+      const { claimToken } = await claim.mutateAsync({
         name: form.name.trim(),
         email,
         setupToken: form.setupToken || undefined,
       });
-      const { error } = await authClient.signUp.email({
+      // claimToken is read by the sign-up hook (auth.ts), not stored on
+      // the user; better-auth passes extra body keys through.
+      const body = {
         name: form.name.trim(),
         email,
         password: form.password,
-      });
+        claimToken,
+      };
+      const { error } = await authClient.signUp.email(body);
       if (error) return setError(error.message ?? "Could not create account");
       setStep(1);
     } catch (err) {
