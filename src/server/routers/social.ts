@@ -27,7 +27,7 @@ type TargetType = "POST" | "COMMENT";
 async function loadTarget(tx: Tx, targetType: TargetType, targetId: string) {
   if (targetType === "POST") {
     const [row] = await tx
-      .select({ id: post.id, authorId: post.authorId })
+      .select({ id: post.id, authorId: post.authorId, kind: post.kind })
       .from(post)
       .where(and(eq(post.id, targetId), isNull(post.deletedAt)))
       .for("update");
@@ -78,6 +78,12 @@ export const socialRouter = router({
     .mutation(async ({ ctx, input }) => {
       const target = await loadTarget(ctx.db, input.targetType, input.targetId);
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
+      if ("kind" in target && target.kind === "ANNOUNCEMENT") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "You can't vote on an announcement",
+        });
+      }
       if (target.authorId === ctx.me.id) {
         throw new TRPCError({
           code: "BAD_REQUEST",

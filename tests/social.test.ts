@@ -148,6 +148,23 @@ test("votes on a comment", async () => {
   ).rejects.toThrow(/your own comment/);
 });
 
+test("voting on an announcement is refused", async () => {
+  const staff = await makeUser(uniId, { role: "STAFF" });
+  const { id } = await callerFor(staff.id).post.create({
+    title: "No voting on this",
+    body: "b",
+    kind: "ANNOUNCEMENT",
+    tags: [],
+  });
+  await expect(
+    callerFor(alice.id).social.vote({
+      targetType: "POST",
+      targetId: id,
+      value: 1,
+    }),
+  ).rejects.toThrow(/announcement/);
+});
+
 test("vote on a deleted post is NOT_FOUND", async () => {
   const p = await makePost(uniId, alice.id);
   await callerFor(alice.id).post.remove({ id: p.id });

@@ -8,6 +8,7 @@ import { CommentForm } from "@/components/comment-form";
 import { CommentThread } from "@/components/comment-thread";
 import { Markdown } from "@/components/markdown";
 import { ReportDialog } from "@/components/report-dialog";
+import { AnnouncementBadge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -64,10 +65,12 @@ export function PostView({ id }: { id: string }) {
     );
 
   const p = post.data;
+  const announcement = p.kind === "ANNOUNCEMENT";
   return (
     <article className="flex flex-col gap-4 pt-4">
       <Card className="flex flex-col gap-4 p-5 sm:p-6">
         <AuthorLine author={p.author} at={p.createdAt} />
+        {announcement && <AnnouncementBadge />}
         <h1 className="text-2xl leading-tight font-semibold tracking-tight">
           {p.title}
         </h1>
@@ -106,13 +109,15 @@ export function PostView({ id }: { id: string }) {
             data-slot="post-actions"
             className="-ml-1.5 flex items-center gap-4 text-sm font-medium text-muted-foreground"
           >
-            <VoteButtons
-              targetType="POST"
-              targetId={p.id}
-              score={p.score}
-              myVote={p.myVote}
-              disabled={me?.id === p.author.id}
-            />
+            {!announcement && (
+              <VoteButtons
+                targetType="POST"
+                targetId={p.id}
+                score={p.score}
+                myVote={p.myVote}
+                disabled={me?.id === p.author.id}
+              />
+            )}
             <span className="flex items-center gap-1">
               <Icon name="chat_bubble" size={18} />
               {p.commentCount}

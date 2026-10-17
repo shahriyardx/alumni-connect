@@ -1,10 +1,20 @@
 "use client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useState } from "react";
+import { isMod } from "@/db/schema";
+import { useTRPC } from "@/lib/trpc";
 import type { PostListItem } from "@/server/queries/posts";
 import { AuthorLine } from "./author-line";
 import { BookmarkButton } from "./bookmark-button";
+import { AnnouncementBadge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { Card } from "./ui/card";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { Icon } from "./ui/icon";
+import { IconButton } from "./ui/icon-button";
+import { Menu, MenuContent, MenuItem } from "./ui/menu";
+import { useToast } from "./ui/toast";
 import { useMe } from "./user-menu";
 import { VoteButtons } from "./vote-buttons";
 
@@ -13,18 +23,50 @@ const pill =
 
 export function PostCard({ post }: { post: PostListItem }) {
   const { me } = useMe();
+  const trpc = useTRPC();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const remove = useMutation(
+    trpc.post.remove.mutationOptions({
+      onSuccess: () => {
+        void qc.invalidateQueries(trpc.post.pathFilter());
+        toast.success("Post removed");
+      },
+      onError: (e) => toast.error(e.message),
+      onSettled: () => setConfirmDelete(false),
+    }),
+  );
+  const announcement = post.kind === "ANNOUNCEMENT";
+  const canModerate = !!me && isMod(me.role);
+
   return (
     <Card interactive className="flex flex-col gap-3 p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <AuthorLine author={post.author} at={post.createdAt} size={36} />
-        <BookmarkButton
-          postId={post.id}
-          bookmarked={post.bookmarked}
-          className="relative z-10 -mt-1 -mr-2 size-9 shrink-0"
-        />
+        <div className="relative z-10 -mt-1 -mr-2 flex shrink-0 items-center">
+          <BookmarkButton postId={post.id} bookmarked={post.bookmarked} />
+          {canModerate && (
+            <Menu.Root>
+              <Menu.Trigger
+                render={<IconButton icon="more_vert" label="Moderate post" />}
+              />
+              <MenuContent>
+                <MenuItem
+                  icon="delete"
+                  destructive
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  Remove post
+                </MenuItem>
+              </MenuContent>
+            </Menu.Root>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">
+        {announcement && <AnnouncementBadge />}
         {/* Stretched link: the whole card opens the post; nested links sit above it. */}
         <Link
           href={`/p/${post.id}`}
@@ -43,14 +85,16 @@ export function PostCard({ post }: { post: PostListItem }) {
         data-slot="post-actions"
         className="flex flex-wrap items-center gap-2 text-muted-foreground"
       >
-        <VoteButtons
-          targetType="POST"
-          targetId={post.id}
-          score={post.score}
-          myVote={post.myVote}
-          disabled={me?.id === post.author.id}
-          className="bg-surface-high"
-        />
+        {!announcement && (
+          <VoteButtons
+            targetType="POST"
+            targetId={post.id}
+            score={post.score}
+            myVote={post.myVote}
+            disabled={me?.id === post.author.id}
+            className="bg-surface-high"
+          />
+        )}
         <span className={`${pill} bg-surface-high`}>
           <Icon name="chat_bubble" size={16} />
           {post.commentCount}
@@ -75,6 +119,26 @@ export function PostCard({ post }: { post: PostListItem }) {
           </span>
         )}
       </div>
+
+      <Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent
+          title={`Remove this ${announcement ? "announcement" : "post"}?`}
+          description="It will be removed from the feed for everyone. This can't be undone."
+        >
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button variant="ghost" />}>
+              Cancel
+            </Dialog.Close>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              onClick={() => remove.mutate({ id: post.id })}
+            >
+              Remove
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog.Root>
     </Card>
   );
 }

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import type { Role } from "@/db/schema";
+import { isStaff, type Role } from "@/db/schema";
 import { isActiveNow, isSuspendedNow } from "@/lib/account-status";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
@@ -158,6 +158,7 @@ function Logo({ className }: { className?: string }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { me } = useMe();
+  const staff = !!me && isStaff(me.role);
   const trpc = useTRPC();
   const active = !!me && isActiveNow(me);
   useLiveEvents(active ? me.id : undefined);
@@ -194,8 +195,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar (≥ 840px) */}
       <aside className="fixed inset-y-3 left-3 z-30 hidden w-60 flex-col gap-6 rounded-[2rem] bg-surface px-3 py-4 shadow-sm shadow-black/5 min-[840px]:flex">
         <Logo className="px-2 py-1" />
-        <ButtonLink href="/new" icon="edit" className="mx-1">
-          Ask
+        <ButtonLink
+          href="/new"
+          icon={staff ? "campaign" : "edit"}
+          className="mx-1"
+        >
+          {staff ? "Announce" : "Ask"}
         </ButtonLink>
         <nav aria-label="Primary" className="flex flex-col gap-0.5">
           {items.map((d) => (
@@ -233,7 +238,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Phone: small FAB + bottom bar. No FAB in the composer: it would cover the submit button. */}
       {pathname !== "/new" && !pathname.endsWith("/edit") && (
         <div className="fixed right-4 bottom-20 z-30 min-[840px]:hidden">
-          <Fab href="/new" icon="edit" aria-label="Ask a question" />
+          <Fab
+            href="/new"
+            icon={staff ? "campaign" : "edit"}
+            aria-label={staff ? "Post an announcement" : "Ask a question"}
+          />
         </div>
       )}
       <nav

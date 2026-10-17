@@ -7,6 +7,7 @@ import {
   followTag,
   followUser,
   notification,
+  POST_KINDS,
   post,
   postTag,
   tag,
@@ -15,7 +16,7 @@ import { publish } from "../events";
 import { assertCanPostLinks } from "../links";
 import { listPosts } from "../queries/posts";
 import { normalizeTags } from "../tags";
-import { audit, isMod, memberProcedure, router } from "../trpc";
+import { audit, isMod, isStaff, memberProcedure, router } from "../trpc";
 
 /** Insert any new tag names for this tenant, then return ids for all names. */
 async function tagIdsFor(
@@ -58,6 +59,9 @@ export const postRouter = router({
         sort: z.enum(["new", "top"]).default("new"),
         tag: z.string().optional(),
         authorId: z.string().min(1).max(64).optional(),
+        kind: z.enum(POST_KINDS).optional(),
+        /** QUESTIONs with no comments yet, not deleted, tenant-scoped. */
+        unanswered: z.boolean().optional(),
         cursor: z.number().int().min(0).default(0),
       }),
     )
@@ -69,12 +73,28 @@ export const postRouter = router({
         );
       }
       if (input.authorId) conds.push(eq(post.authorId, input.authorId));
+      if (input.kind) conds.push(eq(post.kind, input.kind));
+      if (input.unanswered) {
+        conds.push(eq(post.kind, "QUESTION"), eq(post.commentCount, 0));
+      }
       return listPosts(ctx.db, ctx.me.id, {
         where: conds.length ? and(...conds) : undefined,
         orderBy: input.sort,
         offset: input.cursor,
       });
     }),
+
+  /** Newest non-deleted announcements of the tenant, for the feed strip. */
+  announcements: memberProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(10).default(3) }))
+    .query(({ ctx, input }) =>
+      listPosts(ctx.db, ctx.me.id, {
+        where: eq(post.kind, "ANNOUNCEMENT"),
+        orderBy: "new",
+        offset: 0,
+        limit: input.limit,
+      }),
+    ),
 
   search: memberProcedure
     .input(
@@ -124,11 +144,21 @@ export const postRouter = router({
       z.object({
         title: z.string().min(5).max(200),
         body: z.string().min(1).max(20000),
+        kind: z.enum(POST_KINDS).default("QUESTION"),
         tags: z.array(z.string()).max(10).default([]),
         attachmentIds: z.array(z.string().uuid()).max(6).default([]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const wantsAnnouncement = input.kind === "ANNOUNCEMENT";
+      if (isStaff(ctx.me.role) !== wantsAnnouncement) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: wantsAnnouncement
+            ? "Only staff can post announcements"
+            : "Staff can only post announcements",
+        });
+      }
       assertCanPostLinks(ctx.me, input.title, input.body);
       const names = normalizeTags(input.tags);
       const universityId = ctx.me.universityId;
@@ -138,6 +168,7 @@ export const postRouter = router({
         .values({
           universityId,
           authorId: ctx.me.id,
+          kind: input.kind,
           title: input.title,
           body: input.body,
         })
@@ -156,6 +187,35 @@ export const postRouter = router({
               isNull(attachment.postId),
             ),
           );
+      }
+
+      if (wantsAnnouncement) {
+        // Every active student/alumnus of this tenant gets notified, not
+        // just followers: one INSERT ... SELECT, fine at demo scale.
+        const rows = await ctx.db.execute<{ user_id: string }>(sql`
+          insert into notification (university_id, user_id, type, actor_id, post_id)
+          select ${universityId}, id, 'ANNOUNCEMENT', ${ctx.me.id}, ${row.id}
+          from "user"
+          where university_id = ${universityId}
+            and status = 'ACTIVE'
+            and role in ('STUDENT', 'ALUMNUS')
+            and id <> ${ctx.me.id}
+          returning user_id
+        `);
+        await publish(ctx.db, {
+          universityId,
+          kind: "post",
+          postId: row.id,
+          authorId: ctx.me.id,
+        });
+        for (const r of rows) {
+          await publish(ctx.db, {
+            universityId,
+            kind: "notification",
+            userId: r.user_id,
+          });
+        }
+        return { id: row.id };
       }
 
       // Dedupe notification recipients: a user following both the author and

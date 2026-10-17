@@ -56,6 +56,7 @@ export function useLiveEvents(meId: string | undefined) {
         // My own post: refresh the feed, but no "new posts" pill.
         if (e.authorId !== meId) setNewPosts(newPosts + 1);
         void qc.invalidateQueries(trpc.post.feed.pathFilter());
+        void qc.invalidateQueries(trpc.post.announcements.pathFilter());
       } else if (e.kind === "comment" && e.postId) {
         void qc.invalidateQueries({
           queryKey: trpc.comment.list.queryKey({ postId: e.postId }),

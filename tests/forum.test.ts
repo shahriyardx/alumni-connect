@@ -286,6 +286,173 @@ describe("comments", () => {
   });
 });
 
+describe("announcements", () => {
+  test("staff can create an announcement, members cannot; members create questions, staff cannot", async () => {
+    const staff = await makeUser(uniId, { role: "STAFF", createdAt: old });
+    const { id } = await callerFor(staff.id).post.create({
+      title: "Campus closed Friday",
+      body: "Due to maintenance",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    expect((await callerFor(alice.id).post.byId({ id })).kind).toBe(
+      "ANNOUNCEMENT",
+    );
+
+    await expect(
+      callerFor(alice.id).post.create({
+        title: "Can a student announce?",
+        body: "b",
+        kind: "ANNOUNCEMENT",
+        tags: [],
+      }),
+    ).rejects.toThrow(/Only staff can post announcements/);
+
+    await expect(
+      callerFor(staff.id).post.create({
+        title: "Can staff ask a question?",
+        body: "b",
+        kind: "QUESTION",
+        tags: [],
+      }),
+    ).rejects.toThrow(/Staff can only post announcements/);
+
+    // Default kind (no input) is QUESTION; a member can still ask normally.
+    const q = await callerFor(alice.id).post.create({
+      title: "A normal question",
+      body: "b",
+    });
+    expect((await callerFor(bob.id).post.byId({ id: q.id })).kind).toBe(
+      "QUESTION",
+    );
+  });
+
+  test("post.announcements: newest first, tenant-isolated", async () => {
+    const staff = await makeUser(uniId, { role: "STAFF", createdAt: old });
+    const otherUniId = (await makeUniversity()).id;
+    const staffB = await makeUser(otherUniId, {
+      role: "STAFF",
+      createdAt: old,
+    });
+    await callerFor(staffB.id).post.create({
+      title: "B announcement",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    const a1 = await callerFor(staff.id).post.create({
+      title: "First announcement",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    const a2 = await callerFor(staff.id).post.create({
+      title: "Second announcement",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    const res = await callerFor(alice.id).post.announcements({});
+    expect(res.items.map((i) => i.id)).toEqual([a2.id, a1.id]);
+  });
+
+  test("feed kind filter", async () => {
+    const staff = await makeUser(uniId, { role: "STAFF", createdAt: old });
+    await callerFor(staff.id).post.create({
+      title: "An announcement here",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    await callerFor(alice.id).post.create({
+      title: "A regular question",
+      body: "b",
+      tags: [],
+    });
+    const announcements = await callerFor(bob.id).post.feed({
+      kind: "ANNOUNCEMENT",
+    });
+    expect(announcements.items).toHaveLength(1);
+    expect(announcements.items[0].kind).toBe("ANNOUNCEMENT");
+    const questions = await callerFor(bob.id).post.feed({ kind: "QUESTION" });
+    expect(questions.items).toHaveLength(1);
+    expect(questions.items[0].kind).toBe("QUESTION");
+  });
+
+  test("feed unanswered filter: QUESTIONs with no comments, not deleted, tenant-scoped", async () => {
+    await callerFor(
+      (await makeUser(uniId, { role: "STAFF", createdAt: old })).id,
+    ).post.create({
+      title: "An announcement, not a question",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    const answered = await callerFor(alice.id).post.create({
+      title: "Answered question",
+      body: "b",
+      tags: [],
+    });
+    await callerFor(bob.id).comment.create({
+      postId: answered.id,
+      body: "an answer",
+    });
+    const unanswered = await callerFor(alice.id).post.create({
+      title: "Unanswered question",
+      body: "b",
+      tags: [],
+    });
+    const removed = await callerFor(alice.id).post.create({
+      title: "Removed unanswered question",
+      body: "b",
+      tags: [],
+    });
+    await callerFor(alice.id).post.remove({ id: removed.id });
+    const otherUser = await makeUser((await makeUniversity()).id, {
+      createdAt: old,
+    });
+    await callerFor(otherUser.id).post.create({
+      title: "Other tenant unanswered question",
+      body: "b",
+      tags: [],
+    });
+
+    const res = await callerFor(bob.id).post.feed({ unanswered: true });
+    expect(res.items.map((i) => i.id)).toEqual([unanswered.id]);
+  });
+
+  test("creating an announcement notifies active students/alumni of the tenant only", async () => {
+    const staff = await makeUser(uniId, { role: "STAFF", createdAt: old });
+    const pending = await makeUser(uniId, {
+      status: "PENDING",
+      createdAt: old,
+    });
+    const otherStudent = await makeUser((await makeUniversity()).id, {
+      createdAt: old,
+    });
+
+    const { id: postId } = await callerFor(staff.id).post.create({
+      title: "Read this everyone",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+
+    const rows = await adminDb
+      .select()
+      .from(notification)
+      .where(eq(notification.postId, postId));
+    expect(rows.map((r) => r.userId).sort()).toEqual(
+      [alice.id, bob.id, alum.id].sort(),
+    );
+    expect(rows.every((r) => r.type === "ANNOUNCEMENT")).toBe(true);
+    const recipientIds = rows.map((r) => r.userId);
+    expect(recipientIds).not.toContain(staff.id);
+    expect(recipientIds).not.toContain(pending.id);
+    expect(recipientIds).not.toContain(otherStudent.id);
+  });
+});
+
 test("link gate matches what the markdown renderer turns into links", () => {
   const fresh = { createdAt: new Date() } as Me;
   for (const t of [

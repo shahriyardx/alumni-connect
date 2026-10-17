@@ -42,6 +42,12 @@ function Text({ n }: { n: Item }) {
       );
     case "FOLLOWED_TAG_POST":
       return <>New post in a tag you follow: {title}</>;
+    case "ANNOUNCEMENT":
+      return (
+        <>
+          {actor} posted an announcement: {title}
+        </>
+      );
   }
 }
 

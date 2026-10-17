@@ -84,6 +84,8 @@ describe("cross-tenant reads are impossible", () => {
   test("post.search", async () =>
     expect((await asA.post.search({ q: "uniqueword" })).items).toEqual([]));
   test("post.tags", async () => expect(await asA.post.tags()).toEqual([]));
+  test("post.announcements excludes B", async () =>
+    expect((await asA.post.announcements({})).items).toEqual([]));
   test("comment.list", () =>
     expect(asA.comment.list({ postId: bIds.postId })).rejects.toThrow(
       /NOT_FOUND/,

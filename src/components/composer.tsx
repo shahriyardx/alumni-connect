@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { isStaff } from "@/db/schema";
 import { normalizeTag } from "@/lib/tags";
 import { useTRPC } from "@/lib/trpc";
 import { ImageUploader } from "./image-uploader";
@@ -14,6 +15,7 @@ import { Spinner } from "./ui/spinner";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "./ui/tabs";
 import { TextField } from "./ui/text-field";
 import { useToast } from "./ui/toast";
+import { useMe } from "./user-menu";
 
 const MAX_TAGS = 5;
 
@@ -56,6 +58,8 @@ function ComposerForm({ initial }: { initial?: Initial }) {
   const qc = useQueryClient();
   const router = useRouter();
   const toast = useToast();
+  const { me } = useMe();
+  const staff = !!me && isStaff(me.role);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
   const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
@@ -90,6 +94,7 @@ function ComposerForm({ initial }: { initial?: Initial }) {
     else
       create.mutate({
         ...input,
+        kind: staff ? "ANNOUNCEMENT" : "QUESTION",
         attachmentIds: attachments.map((a) => a.id),
       });
   }
@@ -99,7 +104,7 @@ function ComposerForm({ initial }: { initial?: Initial }) {
   return (
     <form onSubmit={submit} className="flex flex-col gap-5 pt-4">
       <h1 className="text-2xl font-semibold tracking-tight">
-        {initial ? "Edit post" : "Ask a question"}
+        {initial ? "Edit post" : staff ? "New announcement" : "Ask a question"}
       </h1>
 
       <TextField

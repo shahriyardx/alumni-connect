@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, type SQL, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { post, type Role, user } from "@/db/schema";
+import { type PostKind, post, type Role, user } from "@/db/schema";
 
 export type AuthorInfo = {
   id: string;
@@ -13,6 +13,7 @@ export type AuthorInfo = {
 
 export type PostListItem = {
   id: string;
+  kind: PostKind;
   title: string;
   excerpt: string;
   createdAt: Date;
@@ -55,6 +56,7 @@ export async function listPosts(
   const rows = await tx
     .select({
       id: post.id,
+      kind: post.kind,
       title: post.title,
       body: post.body,
       createdAt: post.createdAt,
@@ -90,6 +92,7 @@ export async function listPosts(
 
   const items: PostListItem[] = rows.slice(0, limit).map((r) => ({
     id: r.id,
+    kind: r.kind,
     title: r.title,
     excerpt: excerptOf(r.body),
     createdAt: r.createdAt,

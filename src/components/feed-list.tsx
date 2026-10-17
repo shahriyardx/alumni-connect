@@ -7,7 +7,13 @@ import { Button } from "./ui/button";
 import { Spinner } from "./ui/spinner";
 
 type FeedInput =
-  | { sort?: "new" | "top"; tag?: string; authorId?: string }
+  | {
+      sort?: "new" | "top";
+      tag?: string;
+      authorId?: string;
+      kind?: "QUESTION" | "ANNOUNCEMENT";
+      unanswered?: boolean;
+    }
   | { q: string }
   | { bookmarks: true };
 

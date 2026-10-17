@@ -32,15 +32,20 @@ export const ROLES = [
 export const STAFF_ROLES = ["OWNER", "ADMIN", "MODERATOR", "STAFF"] as const;
 export const STATUSES = ["PENDING", "ACTIVE", "SUSPENDED", "BANNED"] as const;
 export const UNIVERSITY_STATUSES = ["PENDING", "ACTIVE", "REJECTED"] as const;
+export const POST_KINDS = ["QUESTION", "ANNOUNCEMENT"] as const;
 export type Role = (typeof ROLES)[number];
 export type StaffRole = (typeof STAFF_ROLES)[number];
 export type Status = (typeof STATUSES)[number];
 export type UniversityStatus = (typeof UNIVERSITY_STATUSES)[number];
+export type PostKind = (typeof POST_KINDS)[number];
 
 // Shared with client components (trpc.ts re-exports them for server code).
 export const isMod = (r: Role) =>
   r === "MODERATOR" || r === "ADMIN" || r === "OWNER";
 export const isAdmin = (r: Role) => r === "ADMIN" || r === "OWNER";
+/** OWNER, ADMIN, MODERATOR, STAFF (faculty) — everyone who can post announcements. */
+export const isStaff = (r: Role) =>
+  (STAFF_ROLES as readonly Role[]).includes(r);
 
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 export const appUser = pgRole("app_user").existing();
@@ -336,6 +341,7 @@ export const post = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     universityId: universityRef(),
     authorId: text("author_id").notNull(),
+    kind: text("kind", { enum: POST_KINDS }).default("QUESTION").notNull(),
     title: text("title").notNull(),
     body: text("body").notNull(),
     score: integer("score").default(0).notNull(),
@@ -353,6 +359,7 @@ export const post = pgTable(
   },
   (t) => [
     index("post_uni_created_idx").on(t.universityId, t.createdAt),
+    index("post_uni_kind_created_idx").on(t.universityId, t.kind, t.createdAt),
     index("post_uni_score_idx").on(t.universityId, t.score),
     index("post_author_idx").on(t.authorId),
     index("post_search_idx").using("gin", t.search),
@@ -542,6 +549,7 @@ export const NOTIFICATION_TYPES = [
   "REPLY_COMMENT",
   "FOLLOWED_USER_POST",
   "FOLLOWED_TAG_POST",
+  "ANNOUNCEMENT",
 ] as const;
 export const notification = pgTable(
   "notification",

@@ -41,6 +41,20 @@ export function RoleBadge({
   return title ? <Tip label={title}>{badge}</Tip> : badge;
 }
 
+export function AnnouncementBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 w-fit shrink-0 items-center gap-1 rounded-full bg-primary/15 pr-2 pl-1.5 text-xs font-medium whitespace-nowrap text-primary",
+        className,
+      )}
+    >
+      <Icon name="campaign" size={12} filled />
+      Announcement
+    </span>
+  );
+}
+
 export function VerifiedMark({ className }: { className?: string }) {
   return (
     <Tip label="Verified by university roster">
