@@ -145,7 +145,12 @@ export const workspaceRouter = router({
       ctx.db
         .select({ c: sql<number>`count(*)` })
         .from(report)
-        .where(eq(report.status, "OPEN")),
+        .where(
+          and(
+            eq(report.universityId, ctx.me.universityId),
+            eq(report.status, "OPEN"),
+          ),
+        ),
     ),
   })),
 
@@ -159,6 +164,7 @@ export const workspaceRouter = router({
         members: sql<number>`(select count(*) from "user" u where u.university_id = "batch"."university_id" and u.batch_number = "batch"."number" and u.status <> 'PENDING')`,
       })
       .from(batch)
+      .where(eq(batch.universityId, ctx.me.universityId))
       .orderBy(asc(batch.number));
     return rows.map((r) => ({
       ...r,
@@ -182,6 +188,7 @@ export const workspaceRouter = router({
         .from(batch)
         .where(
           and(
+            eq(batch.universityId, uni),
             eq(batch.number, input.number),
             input.id ? ne(batch.id, input.id) : undefined,
           ),

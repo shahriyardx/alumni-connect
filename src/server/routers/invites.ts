@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gt, isNull, lt, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { db, type Tx, withTenant } from "@/db";
+import { db, type Tx } from "@/db";
 import { invite, university, user } from "@/db/schema";
 import { env } from "@/env";
 import {
@@ -46,11 +46,8 @@ const blocksSignup = (targetEmail: string, into: string) =>
 
 /**
  * Finds the invite matching `token`'s hash, regardless of tenant: the
- * public /invite/[token] flow doesn't know the university yet, so RLS can't
- * be scoped by app.university_id the way every other read is. Instead it
- * proves it holds the secret by setting app.lookup_token_hash to the same
- * hash the row is looked up by (see the invite_token_lookup/recover
- * policies).
+ * public /invite/[token] flow doesn't know the university yet; holding the
+ * secret token is the proof.
  *
  * Self-heals a false "accepted": the before-hook marks accepted_at as soon
  * as the user row is created, before email OTP verification. If that
@@ -62,9 +59,6 @@ const blocksSignup = (targetEmail: string, into: string) =>
 async function findInvite(token: string) {
   const hash = hashInviteToken(token);
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('app.lookup_token_hash', ${hash}, true)`,
-    );
     const [row] = await tx
       .select()
       .from(invite)
@@ -326,12 +320,7 @@ export const invitesRouter = router({
         .select({ id: user.id })
         .from(user)
         .where(blocksSignup(inv.email, inv.universityId));
-      if (
-        blocking ||
-        (await withTenant(inv.universityId, (tx) =>
-          tenantBanned(tx, inv.universityId, inv.email),
-        ))
-      )
+      if (blocking || (await tenantBanned(db, inv.universityId, inv.email)))
         throw new TRPCError({
           code: "CONFLICT",
           message: "This email is already registered",

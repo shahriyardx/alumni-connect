@@ -14,7 +14,7 @@ Multi-university Q&A platform: students ask questions, and verified alumni answe
 
 ## Stack
 
-Next.js 16 · tRPC · Drizzle · PostgreSQL (row-level security) · better-auth · MinIO · Tailwind · Bun
+Next.js 16 · tRPC · Drizzle · PostgreSQL · better-auth · MinIO · Tailwind · Bun
 
 ## Setup
 
@@ -48,7 +48,7 @@ docker run -p 3000:3000 --env-file .env alumni-connect
 ```
 
 When the container starts, it applies pending migrations and then serves on port 3000. It needs:
-- Postgres; `DATABASE_URL` can be the owner login, since migrations create the `app_user` role the app switches to
+- Postgres (`DATABASE_URL`)
 - an S3-compatible bucket
 
 ## Production

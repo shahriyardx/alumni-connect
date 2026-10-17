@@ -82,7 +82,7 @@ export const postRouter = router({
       if (input.unanswered) {
         conds.push(eq(post.kind, "QUESTION"), eq(post.commentCount, 0));
       }
-      return listPosts(ctx.db, ctx.me.id, {
+      return listPosts(ctx.db, ctx.me, {
         where: conds.length ? and(...conds) : undefined,
         orderBy: input.sort,
         department: ctx.me.department,
@@ -94,7 +94,7 @@ export const postRouter = router({
   announcements: memberProcedure
     .input(z.object({ limit: z.number().int().min(1).max(10).default(3) }))
     .query(({ ctx, input }) =>
-      listPosts(ctx.db, ctx.me.id, {
+      listPosts(ctx.db, ctx.me, {
         where: eq(post.kind, "ANNOUNCEMENT"),
         orderBy: "new",
         offset: 0,
@@ -136,7 +136,7 @@ export const postRouter = router({
           gte(post.createdAt, new Date(Date.now() - days * 86_400_000)),
         );
       }
-      return listPosts(ctx.db, ctx.me.id, {
+      return listPosts(ctx.db, ctx.me, {
         where: and(...conds),
         orderBy: "rank",
         rankQuery: input.q,
@@ -147,7 +147,7 @@ export const postRouter = router({
   byId: memberProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { items } = await listPosts(ctx.db, ctx.me.id, {
+      const { items } = await listPosts(ctx.db, ctx.me, {
         where: eq(post.id, input.id),
         orderBy: "new",
         offset: 0,
@@ -319,7 +319,13 @@ export const postRouter = router({
       const [p] = await ctx.db
         .select()
         .from(post)
-        .where(and(eq(post.id, input.id), isNull(post.deletedAt)));
+        .where(
+          and(
+            eq(post.id, input.id),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
       const canEdit = p.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
@@ -345,7 +351,13 @@ export const postRouter = router({
       const [p] = await ctx.db
         .select()
         .from(post)
-        .where(and(eq(post.id, input.id), isNull(post.deletedAt)));
+        .where(
+          and(
+            eq(post.id, input.id),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
       const canEdit = p.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
@@ -377,7 +389,13 @@ export const postRouter = router({
       const [p] = await ctx.db
         .select()
         .from(post)
-        .where(and(eq(post.id, input.postId), isNull(post.deletedAt)));
+        .where(
+          and(
+            eq(post.id, input.postId),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
       if (p.authorId !== ctx.me.id) throw new TRPCError({ code: "FORBIDDEN" });
       if (p.kind !== "QUESTION") {
@@ -453,6 +471,7 @@ export const postRouter = router({
       .from(tag)
       .innerJoin(postTag, eq(postTag.tagId, tag.id))
       .innerJoin(post, and(eq(post.id, postTag.postId), isNull(post.deletedAt)))
+      .where(eq(tag.universityId, ctx.me.universityId))
       .groupBy(tag.name)
       .orderBy(desc(sql`count(*)`))
       .limit(30);

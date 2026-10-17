@@ -4,7 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { emailOTP } from "better-auth/plugins/email-otp";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { db, withTenant } from "@/db";
+import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { env } from "@/env";
 import { clientIp } from "./client-ip";
@@ -193,22 +193,25 @@ export const auth = betterAuth({
             !application;
           if (invited) {
             if (!p.universityId || !p.inviteId) return false;
-            const [inv] = await withTenant(p.universityId, (tx) =>
-              tx
-                .select({
-                  role: schema.invite.role,
-                  email: schema.invite.email,
-                  acceptedAt: schema.invite.acceptedAt,
-                  expiresAt: schema.invite.expiresAt,
-                  universityStatus: schema.university.status,
-                })
-                .from(schema.invite)
-                .innerJoin(
-                  schema.university,
-                  eq(schema.university.id, schema.invite.universityId),
-                )
-                .where(eq(schema.invite.id, p.inviteId as string)),
-            );
+            const [inv] = await db
+              .select({
+                role: schema.invite.role,
+                email: schema.invite.email,
+                acceptedAt: schema.invite.acceptedAt,
+                expiresAt: schema.invite.expiresAt,
+                universityStatus: schema.university.status,
+              })
+              .from(schema.invite)
+              .innerJoin(
+                schema.university,
+                eq(schema.university.id, schema.invite.universityId),
+              )
+              .where(
+                and(
+                  eq(schema.invite.id, p.inviteId as string),
+                  eq(schema.invite.universityId, p.universityId),
+                ),
+              );
             if (
               !inv ||
               inv.role !== p.role ||
@@ -244,7 +247,7 @@ export const auth = betterAuth({
           if (application && p.applicationName) {
             const id = randomUUID();
             const name = p.applicationName;
-            await withTenant(id, async (tx) => {
+            await db.transaction(async (tx) => {
               await insertUniversity(tx, {
                 id,
                 name,
@@ -266,19 +269,18 @@ export const auth = betterAuth({
             // Compare-and-set, mirroring the pending-row claim above: marks
             // the invite single-use, and loses cleanly to a concurrent
             // revoke/accept instead of racing it.
-            const [marked] = await withTenant(universityId as string, (tx) =>
-              tx
-                .update(schema.invite)
-                .set({ acceptedAt: new Date() })
-                .where(
-                  and(
-                    eq(schema.invite.id, p.inviteId as string),
-                    isNull(schema.invite.acceptedAt),
-                    gt(schema.invite.expiresAt, new Date()),
-                  ),
-                )
-                .returning({ id: schema.invite.id }),
-            );
+            const [marked] = await db
+              .update(schema.invite)
+              .set({ acceptedAt: new Date() })
+              .where(
+                and(
+                  eq(schema.invite.id, p.inviteId as string),
+                  eq(schema.invite.universityId, universityId as string),
+                  isNull(schema.invite.acceptedAt),
+                  gt(schema.invite.expiresAt, new Date()),
+                ),
+              )
+              .returning({ id: schema.invite.id });
             if (!marked) return false;
           }
           if (!universityId) return false;

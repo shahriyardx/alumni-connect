@@ -266,7 +266,8 @@ export const adminRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const limit = 50;
-      const conds = input.action ? [eq(auditLog.action, input.action)] : [];
+      const conds = [eq(auditLog.universityId, ctx.me.universityId)];
+      if (input.action) conds.push(eq(auditLog.action, input.action));
       if (input.actorId) conds.push(eq(auditLog.actorId, input.actorId));
       if (input.range) {
         const ms = {
@@ -296,7 +297,7 @@ export const adminRouter = router({
             eq(user.universityId, ctx.me.universityId),
           ),
         )
-        .where(conds.length ? and(...conds) : undefined)
+        .where(and(...conds))
         .orderBy(desc(auditLog.createdAt))
         .limit(limit + 1)
         .offset(input.cursor);
@@ -330,10 +331,12 @@ export const adminRouter = router({
           eq(user.universityId, ctx.me.universityId),
         ),
       )
+      .where(eq(auditLog.universityId, ctx.me.universityId))
       .orderBy(asc(user.name));
   }),
 
   stats: adminProcedure.query(async ({ ctx }) => {
+    const uni = ctx.me.universityId;
     const roleRows = await ctx.db
       .select({ role: user.role, c: sql<number>`count(*)` })
       .from(user)
@@ -367,6 +370,7 @@ export const adminRouter = router({
       .from(post)
       .where(
         and(
+          eq(post.universityId, uni),
           isNull(post.deletedAt),
           sql`${post.createdAt} >= now() - interval '8 weeks'`,
         ),
@@ -378,6 +382,7 @@ export const adminRouter = router({
       .from(comment)
       .where(
         and(
+          eq(comment.universityId, uni),
           isNull(comment.deletedAt),
           sql`${comment.createdAt} >= now() - interval '8 weeks'`,
         ),
@@ -397,13 +402,14 @@ export const adminRouter = router({
     const [totalPostsRow] = await ctx.db
       .select({ c: sql<number>`count(*)` })
       .from(post)
-      .where(isNull(post.deletedAt));
+      .where(and(eq(post.universityId, uni), isNull(post.deletedAt)));
     const totalPosts = Number(totalPostsRow.c);
     const [answeredRow] = await ctx.db
       .select({ c: sql<number>`count(*)` })
       .from(post)
       .where(
         and(
+          eq(post.universityId, uni),
           isNull(post.deletedAt),
           sql`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`,
         ),
@@ -416,7 +422,7 @@ export const adminRouter = router({
     const [openReportsRow] = await ctx.db
       .select({ c: sql<number>`count(*)` })
       .from(report)
-      .where(eq(report.status, "OPEN"));
+      .where(and(eq(report.universityId, uni), eq(report.status, "OPEN")));
 
     return {
       members,

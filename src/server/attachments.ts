@@ -22,8 +22,8 @@ export type AttachmentItem = {
 
 /**
  * Binds the caller's own still-unattached uploads to a post or comment.
- * Others' ids, already-used ids and other tenants' ids (RLS) are skipped
- * silently; the caller's zod `.max(MAX_ATTACHMENTS)` caps the count.
+ * Others' ids and already-used ids are skipped silently (the owner filter
+ * also keeps other tenants out); the caller's zod `.max(MAX_ATTACHMENTS)` caps the count.
  */
 export async function claimAttachments(
   tx: Tx,

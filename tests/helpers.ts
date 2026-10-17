@@ -1,4 +1,4 @@
-// tests/helpers.ts — superuser access (bypasses RLS) for arranging data
+// tests/helpers.ts — direct DB access for arranging data
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -9,7 +9,7 @@ import { createCaller } from "@/server/root";
 export const callerFor = (userId: string | null) =>
   createCaller({ userId, ip: "127.0.0.1" });
 
-export const adminClient = postgres(process.env.DATABASE_ADMIN_URL ?? "", {
+export const adminClient = postgres(process.env.DATABASE_URL ?? "", {
   max: 2,
   onnotice: () => {},
 });

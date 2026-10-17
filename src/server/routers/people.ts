@@ -18,8 +18,7 @@ const LIMIT = 20;
 export const peopleRouter = router({
   /**
    * ACTIVE ALUMNUS of the caller's university whose department matches the
-   * caller's (case-insensitive), newest graduation year first. `user` has no
-   * RLS, so university_id is filtered explicitly here.
+   * caller's (case-insensitive), newest graduation year first.
    */
   alumniInMyDepartment: memberProcedure
     .input(z.object({ cursor: z.number().int().min(0).default(0) }))
@@ -39,9 +38,8 @@ export const peopleRouter = router({
             graduationYear: user.graduationYear,
             title: user.title,
             department: user.department,
-            // `comment` has RLS scoped to the caller's tenant (ctx.db already
-            // runs inside that tenant transaction), so this correlated count
-            // never crosses universities even without an explicit filter.
+            // comment.author_id is a same-tenant FK to "user", so this
+            // correlated count never crosses universities.
             // `"user".id` is written as plain SQL (not `${user.id}`) because
             // the outer query already selects FROM "user" unaliased —
             // interpolating the column here collides with this field's own

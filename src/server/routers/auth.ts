@@ -14,7 +14,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-import { db, type Tx, withTenant } from "@/db";
+import { db, type Tx } from "@/db";
 import {
   auditLog,
   batch,
@@ -61,7 +61,7 @@ const email = z
   .transform((e) => e.toLowerCase());
 
 /**
- * Fixed-window counter on better-auth's rate_limit table (no RLS), for
+ * Fixed-window counter on better-auth's rate_limit table, for
  * limits that span tenants — audit_log is tenant-scoped, so it can't count
  * one IP's attempts across freshly created universities.
  */
@@ -258,10 +258,10 @@ const bannedFor = (into: string | null) =>
 
 /**
  * A tenant_ban tombstone for this email (or student ID hash) in
- * `universityId`. `tx` must be scoped to that tenant (RLS).
+ * `universityId`.
  */
 export async function tenantBanned(
-  tx: Tx,
+  tx: Tx | typeof db,
   universityId: string,
   email: string,
   studentIdHash?: string,
@@ -302,8 +302,8 @@ export const holdsAccount = (into: string | null) =>
  * still-PENDING application gets that university REJECTED first, and a
  * tenant-banned one reclaimed for another university gets a user.purge
  * row, each audited in its own tenant (audit rows are append-only, so
- * universities are never deleted). Runs in the caller's transaction and
- * restores its tenant. Returns the deleted users' ID card keys.
+ * universities are never deleted). Runs in the caller's transaction.
+ * Returns the deleted users' ID card keys.
  */
 export async function clearStaleUnverified(
   tx: Tx,
@@ -323,14 +323,8 @@ export async function clearStaleUnverified(
     .from(user)
     .where(and(eq(user.emailVerified, false), not(bannedFor(into)), where));
   if (stale.length === 0) return [];
-  const [{ tenant }] = await tx.execute<{ tenant: string | null }>(
-    sql`select current_setting('app.university_id', true) as tenant`,
-  );
   for (const s of stale) {
     if (s.status === "BANNED" && s.universityId) {
-      await tx.execute(
-        sql`select set_config('app.university_id', ${s.universityId}, true)`,
-      );
       // The ban outlives the row (see tenantBanned). Nothing here names
       // the university the sign-up is going into.
       await tx.insert(tenantBan).values({
@@ -354,16 +348,10 @@ export async function clearStaleUnverified(
       )
       .returning({ id: university.id });
     if (!abandoned) continue;
-    await tx.execute(
-      sql`select set_config('app.university_id', ${abandoned.id}, true)`,
-    );
     await audit(tx, abandoned.id, null, "university.reject", s.id, {
       reason: "abandoned",
     });
   }
-  await tx.execute(
-    sql`select set_config('app.university_id', ${tenant ?? ""}, true)`,
-  );
   await tx.delete(user).where(
     inArray(
       user.id,
@@ -572,15 +560,14 @@ export const authRouter = router({
           ),
         );
       if (!uni) return [];
-      return withTenant(uni.id, (tx) =>
-        tx
-          .select({
-            number: batch.number,
-            graduationYear: batch.graduationYear,
-          })
-          .from(batch)
-          .orderBy(batch.number),
-      );
+      return db
+        .select({
+          number: batch.number,
+          graduationYear: batch.graduationYear,
+        })
+        .from(batch)
+        .where(eq(batch.universityId, uni.id))
+        .orderBy(batch.number);
     }),
 
   departments: publicProcedure
@@ -596,12 +583,11 @@ export const authRouter = router({
           ),
         );
       if (!uni) return [];
-      const rows = await withTenant(uni.id, (tx) =>
-        tx
-          .select({ name: department.name })
-          .from(department)
-          .orderBy(department.name),
-      );
+      const rows = await db
+        .select({ name: department.name })
+        .from(department)
+        .where(eq(department.universityId, uni.id))
+        .orderBy(department.name);
       return rows.map((r) => r.name);
     }),
 
@@ -730,7 +716,7 @@ export const authRouter = router({
         });
       const idHash = hashStudentId(uni.id, input.studentId);
 
-      const outcome = await withTenant(uni.id, async (tx) => {
+      const outcome = await db.transaction(async (tx) => {
         const since = new Date(Date.now() - 10 * 60_000);
         const recent = (where: SQL) =>
           tx
@@ -738,6 +724,7 @@ export const authRouter = router({
             .from(auditLog)
             .where(
               and(
+                eq(auditLog.universityId, uni.id),
                 eq(auditLog.action, "signup.attempt"),
                 gt(auditLog.createdAt, since),
                 where,
@@ -805,7 +792,12 @@ export const authRouter = router({
         const [b] = await tx
           .select({ id: batch.id, graduationYear: batch.graduationYear })
           .from(batch)
-          .where(eq(batch.number, input.batchNumber));
+          .where(
+            and(
+              eq(batch.universityId, uni.id),
+              eq(batch.number, input.batchNumber),
+            ),
+          );
         const graduationYear = b?.graduationYear ?? input.graduationYear;
         if (graduationYear === undefined)
           return fail(

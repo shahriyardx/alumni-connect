@@ -50,6 +50,7 @@ export const departmentsRouter = router({
     const rows = await ctx.db
       .select({ name: department.name })
       .from(department)
+      .where(eq(department.universityId, ctx.me.universityId))
       .orderBy(asc(department.name));
     return rows.map((r) => r.name);
   }),
@@ -74,6 +75,7 @@ export const departmentsRouter = router({
           sql`${user.status} <> 'PENDING'`,
         ),
       )
+      .where(eq(department.universityId, uni))
       .groupBy(department.id, department.name)
       .orderBy(asc(department.name));
     return rows.map((r) => ({

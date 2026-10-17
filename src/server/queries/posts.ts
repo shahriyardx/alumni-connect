@@ -60,7 +60,7 @@ function relevanceSQL(meId: string, department: string | null) {
 
 export async function listPosts(
   tx: Tx,
-  meId: string,
+  me: { id: string; universityId: string },
   opts: {
     where?: SQL;
     orderBy: "new" | "top" | "rank" | "relevant";
@@ -71,6 +71,7 @@ export async function listPosts(
     limit?: number;
   },
 ): Promise<{ items: PostListItem[]; nextCursor: number | null }> {
+  const meId = me.id;
   const limit = opts.limit ?? 20;
   const order: SQL[] =
     opts.orderBy === "new"
@@ -123,7 +124,13 @@ export async function listPosts(
       user,
       and(eq(user.id, post.authorId), eq(user.universityId, post.universityId)),
     )
-    .where(and(isNull(post.deletedAt), ...(opts.where ? [opts.where] : [])))
+    .where(
+      and(
+        eq(post.universityId, me.universityId),
+        isNull(post.deletedAt),
+        ...(opts.where ? [opts.where] : []),
+      ),
+    )
     .orderBy(...order)
     .limit(limit + 1)
     .offset(opts.offset);

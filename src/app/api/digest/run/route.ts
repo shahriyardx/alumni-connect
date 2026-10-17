@@ -1,21 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "@/db/schema";
+import { db } from "@/db";
 import { notification, user } from "@/db/schema";
-import { adminUrl, env } from "@/env";
+import { env } from "@/env";
 import { sendMail } from "@/server/mail";
-
-// Cross-tenant by nature (every opted-in user, every university), so this
-// connects as the Postgres superuser and bypasses RLS — same pattern as
-// src/db/seed.ts / src/db/reset.ts. Cached across hot reloads like the main
-// pool in src/db/index.ts.
-const g = globalThis as unknown as { pgDigest?: postgres.Sql };
-const adminClient =
-  g.pgDigest ?? postgres(adminUrl, { max: 2, onnotice: () => {} });
-if (process.env.NODE_ENV !== "production") g.pgDigest = adminClient;
-const adminDb = drizzle(adminClient, { schema });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PERIOD_MS: Record<"daily" | "weekly", number> = {
@@ -65,7 +53,7 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
   if (!secretOk(secret)) return { ok: false, status: 401 };
 
   const now = new Date();
-  const subscribers = await adminDb
+  const subscribers = await db
     .select({
       id: user.id,
       email: user.email,
@@ -86,7 +74,7 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
 
     // Dates go in as ISO strings: the raw `sql` tag doesn't get postgres-js's
     // usual Date handling the query builder relies on.
-    const claimed = await adminDb.execute<{ id: string }>(sql`
+    const claimed = await db.execute<{ id: string }>(sql`
       update "user"
       set last_digest_at = ${now.toISOString()}
       where id = ${sub.id}
@@ -96,7 +84,7 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
     if (claimed.length === 0) continue; // another run already claimed this user
 
     const since = sub.lastDigestAt ?? new Date(0);
-    const items = await adminDb
+    const items = await db
       .select({ type: notification.type, createdAt: notification.createdAt })
       .from(notification)
       .where(

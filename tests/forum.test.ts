@@ -528,7 +528,7 @@ describe("post.accept", () => {
       body: "I can take a look",
     });
 
-    // A comment id from another tenant: RLS hides it, so this looks like
+    // A comment id from another tenant: the tenant filter hides it, so this looks like
     // "no such comment" rather than leaking a FORBIDDEN/NOT_FOUND distinction.
     const otherUniId = (await makeUniversity()).id;
     const otherUser = await makeUser(otherUniId, { createdAt: old });

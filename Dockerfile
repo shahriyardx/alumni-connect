@@ -12,7 +12,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # src/env.ts validates at import time. These throwaway values only satisfy the
 # build (set inline so they aren't baked into the image); real ones come at runtime.
 RUN DATABASE_URL=postgres://build:build@localhost:5432/build \
-    DATABASE_ADMIN_URL=postgres://build:build@localhost:5432/build \
     BETTER_AUTH_SECRET=build-time-placeholder-0000000000000000 \
     STUDENT_ID_PEPPER=build \
     bun run build

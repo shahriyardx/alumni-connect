@@ -15,7 +15,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-import { db, type Tx, withTenant } from "@/db";
+import { db, type Tx } from "@/db";
 import {
   broadcast,
   comment,
@@ -134,10 +134,9 @@ export const platformRouter = router({
         .where(isNotNull(user.universityId))
         .groupBy(user.role),
     );
-    // Cross-tenant counts only: a SECURITY DEFINER function (migration 0011)
-    // so app_user never reads tenant rows outside RLS.
     const [content] = await db.execute<{ posts: string; comments: string }>(
-      sql`select * from platform_content_counts()`,
+      sql`select (select count(*) from post where deleted_at is null) as posts,
+        (select count(*) from comment where deleted_at is null) as comments`,
     );
     const days = await db.execute<{ day: string; n: number }>(sql`
       select to_char(d, 'YYYY-MM-DD') as day,
@@ -206,14 +205,15 @@ export const platformRouter = router({
         .where(eq(user.universityId, uni.id))
         .groupBy(user.role),
     );
-    const activity = await withTenant(uni.id, async (tx) => {
+    const activity = await db.transaction(async (tx) => {
       const [p] = await tx
         .select({ n: count(), last: sql<Date | null>`max(${post.createdAt})` })
         .from(post)
-        .where(isNull(post.deletedAt));
+        .where(and(eq(post.universityId, uni.id), isNull(post.deletedAt)));
       const [c] = await tx
         .select({ last: sql<Date | null>`max(${comment.createdAt})` })
-        .from(comment);
+        .from(comment)
+        .where(eq(comment.universityId, uni.id));
       return { posts: p.n, last: [p.last, c.last] };
     });
     const last = activity.last
@@ -238,7 +238,7 @@ export const platformRouter = router({
     .input(uniInput)
     .mutation(async ({ ctx, input }) => {
       const uni = await pendingUniversity(input.universityId);
-      await withTenant(uni.id, async (tx) => {
+      await db.transaction(async (tx) => {
         // The owner is already ACTIVE (set on sign-up) — only the
         // university's own status is a decision here.
         const owners = await tx
@@ -286,7 +286,7 @@ export const platformRouter = router({
 
   reject: platformProcedure.input(uniInput).mutation(async ({ ctx, input }) => {
     const uni = await pendingUniversity(input.universityId);
-    await withTenant(uni.id, async (tx) => {
+    await db.transaction(async (tx) => {
       await setStatus(
         tx,
         uni.id,
@@ -323,7 +323,7 @@ export const platformRouter = router({
     .input(uniInput)
     .mutation(async ({ ctx, input }) => {
       const uni = await getUniversity(input.universityId);
-      await withTenant(uni.id, async (tx) => {
+      await db.transaction(async (tx) => {
         // Under the platform_admin lock: an addAdmin can't slip a member of
         // this university in between the check and the suspension.
         await lockPlatformAdmin(tx);
@@ -370,7 +370,7 @@ export const platformRouter = router({
     .input(uniInput)
     .mutation(async ({ ctx, input }) => {
       const uni = await getUniversity(input.universityId);
-      await withTenant(uni.id, async (tx) => {
+      await db.transaction(async (tx) => {
         await setStatus(
           tx,
           uni.id,
@@ -404,7 +404,7 @@ export const platformRouter = router({
     .input(uniInput.extend({ userId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const uni = await getUniversity(input.universityId);
-      await withTenant(uni.id, async (tx) => {
+      await db.transaction(async (tx) => {
         const from = await transferOwner(tx, uni.id, input.userId);
         const meta = { name: uni.name, from };
         await audit(
@@ -453,7 +453,7 @@ export const platformRouter = router({
         });
       const token = newInviteToken();
       const id = randomUUID();
-      const uni = await withTenant(id, async (tx) => {
+      const uni = await db.transaction(async (tx) => {
         const uni = await insertUniversity(tx, {
           id,
           name: input.name,
@@ -563,7 +563,7 @@ export const platformRouter = router({
           message: "Platform admins can't be banned",
         });
       const uni = target.universityId;
-      await withTenant(uni, async (tx) => {
+      await db.transaction(async (tx) => {
         // Keyed by id + university_id like every tenant user write.
         // platform_banned is the platform's own flag (tenants can't touch the
         // account while it's set). Ban snapshots the current status (BANNED
@@ -823,10 +823,13 @@ export const platformRouter = router({
           .insert(broadcast)
           .values({ ...input, actorId: ctx.me.id })
           .returning({ id: broadcast.id });
-        // Cross-tenant INSERT..SELECT: SECURITY DEFINER (migration 0011).
-        const [{ n }] = await tx.execute<{ n: number }>(
-          sql`select platform_broadcast(${b.id}) as n`,
-        );
+        const sent = await tx.execute(sql`
+          insert into notification (university_id, user_id, type, broadcast_id)
+          select u.university_id, u.id, 'PLATFORM_ANNOUNCEMENT', ${b.id}
+          from "user" u join university un on un.id = u.university_id
+          where un.status = 'ACTIVE' and u.status = 'ACTIVE' and u.email_verified
+            and u.notify_announcements`);
+        const n = sent.count;
         await tx
           .update(broadcast)
           .set({ recipients: n })

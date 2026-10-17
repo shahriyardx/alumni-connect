@@ -1,7 +1,7 @@
 // Demo content for the LIVE `alumni` dev database. Adds realistic posts,
 // comments, votes and users to Northern University Bangladesh WITHOUT
 // touching the existing university/department/batch/user rows. Never
-// truncates. Runs as superuser (DATABASE_ADMIN_URL) so it bypasses RLS.
+// truncates.
 //
 // Idempotency: demo users are marked by email pattern `*.demo@nub.ac.bd`.
 // On a plain run, if any such user already exists, the script logs that
@@ -17,10 +17,10 @@ import { hashPassword } from "better-auth/crypto";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { adminUrl } from "@/env";
+import { env } from "@/env";
 import * as schema from "./schema";
 
-const client = postgres(adminUrl, { max: 1, onnotice: () => {} });
+const client = postgres(env.DATABASE_URL, { max: 1, onnotice: () => {} });
 const db = drizzle(client, { schema });
 
 const PASSWORD = "password123";

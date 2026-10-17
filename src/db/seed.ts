@@ -1,17 +1,16 @@
-// Demo seed data. Runs as superuser (DATABASE_ADMIN_URL) so it bypasses RLS
-// and can truncate everything first — idempotent, safe to run repeatedly on
+// Demo seed data. Truncates everything first — idempotent, safe to run repeatedly on
 // a dev DB. Never run against production data.
 import { randomUUID } from "node:crypto";
 import { hashPassword } from "better-auth/crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { adminUrl } from "@/env";
+import { env } from "@/env";
 import { hashStudentId } from "@/server/student-id";
 import { truncateAll } from "./reset";
 import * as schema from "./schema";
 
-const client = postgres(adminUrl, { max: 1, onnotice: () => {} });
+const client = postgres(env.DATABASE_URL, { max: 1, onnotice: () => {} });
 const db = drizzle(client, { schema });
 
 const PASSWORD = "password123";

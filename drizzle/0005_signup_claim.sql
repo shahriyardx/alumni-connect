@@ -1,1 +1,0 @@
-ALTER TABLE "pending_signup" ADD COLUMN "claimed_at" timestamp;

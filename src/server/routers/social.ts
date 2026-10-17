@@ -24,12 +24,23 @@ type TargetType = "POST" | "COMMENT";
  * the pre-commit vote sum and overwrite each other's `score` update (lost
  * update under READ COMMITTED). Must be called before writing the vote row.
  */
-async function loadTarget(tx: Tx, targetType: TargetType, targetId: string) {
+async function loadTarget(
+  tx: Tx,
+  universityId: string,
+  targetType: TargetType,
+  targetId: string,
+) {
   if (targetType === "POST") {
     const [row] = await tx
       .select({ id: post.id, authorId: post.authorId, kind: post.kind })
       .from(post)
-      .where(and(eq(post.id, targetId), isNull(post.deletedAt)))
+      .where(
+        and(
+          eq(post.id, targetId),
+          eq(post.universityId, universityId),
+          isNull(post.deletedAt),
+        ),
+      )
       .for("update");
     return row;
   }
@@ -39,7 +50,13 @@ async function loadTarget(tx: Tx, targetType: TargetType, targetId: string) {
     .select({ id: comment.id, authorId: comment.authorId })
     .from(comment)
     .innerJoin(post, and(eq(post.id, comment.postId), isNull(post.deletedAt)))
-    .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)))
+    .where(
+      and(
+        eq(comment.id, targetId),
+        eq(comment.universityId, universityId),
+        isNull(comment.deletedAt),
+      ),
+    )
     .for("update");
   return row;
 }
@@ -76,7 +93,12 @@ export const socialRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const target = await loadTarget(ctx.db, input.targetType, input.targetId);
+      const target = await loadTarget(
+        ctx.db,
+        ctx.me.universityId,
+        input.targetType,
+        input.targetId,
+      );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       if ("kind" in target && target.kind === "ANNOUNCEMENT") {
         throw new TRPCError({
@@ -131,7 +153,13 @@ export const socialRouter = router({
       const [p] = await ctx.db
         .select({ id: post.id })
         .from(post)
-        .where(and(eq(post.id, input.postId), isNull(post.deletedAt)));
+        .where(
+          and(
+            eq(post.id, input.postId),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
 
       if (input.on) {
@@ -159,7 +187,7 @@ export const socialRouter = router({
   bookmarks: memberProcedure
     .input(z.object({ cursor: z.number().int().min(0).default(0) }))
     .query(({ ctx, input }) =>
-      listPosts(ctx.db, ctx.me.id, {
+      listPosts(ctx.db, ctx.me, {
         where: sql`exists (select 1 from bookmark where post_id = post.id and user_id = ${ctx.me.id})`,
         orderBy: "new",
         offset: input.cursor,

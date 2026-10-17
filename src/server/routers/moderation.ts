@@ -46,14 +46,26 @@ async function targetExists(
     const [row] = await tx
       .select({ id: post.id })
       .from(post)
-      .where(and(eq(post.id, targetId), isNull(post.deletedAt)));
+      .where(
+        and(
+          eq(post.id, targetId),
+          eq(post.universityId, universityId),
+          isNull(post.deletedAt),
+        ),
+      );
     return !!row;
   }
   if (targetType === "COMMENT") {
     const [row] = await tx
       .select({ id: comment.id })
       .from(comment)
-      .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)));
+      .where(
+        and(
+          eq(comment.id, targetId),
+          eq(comment.universityId, universityId),
+          isNull(comment.deletedAt),
+        ),
+      );
     return !!row;
   }
   const [row] = await tx
@@ -73,7 +85,7 @@ async function loadPreview(
     const [row] = await tx
       .select({ title: post.title, authorId: post.authorId })
       .from(post)
-      .where(eq(post.id, targetId));
+      .where(and(eq(post.id, targetId), eq(post.universityId, universityId)));
     return row ? { title: row.title, authorId: row.authorId } : null;
   }
   if (targetType === "COMMENT") {
@@ -84,7 +96,9 @@ async function loadPreview(
         postId: comment.postId,
       })
       .from(comment)
-      .where(eq(comment.id, targetId));
+      .where(
+        and(eq(comment.id, targetId), eq(comment.universityId, universityId)),
+      );
     return row
       ? { body: row.body, authorId: row.authorId, postId: row.postId }
       : null;
@@ -98,8 +112,7 @@ async function loadPreview(
 
 /**
  * The reported authors' profiles, for the "who" block on each report card —
- * one `inArray` query for the whole page rather than one per card. `user`
- * has no RLS, so it's filtered on `universityId` explicitly.
+ * one `inArray` query for the whole page rather than one per card.
  */
 async function loadReportedAuthors(
   tx: Tx,
@@ -172,6 +185,7 @@ async function countStrikesMany(
 /** Author of the post/comment, or the user themself for a USER report target. */
 async function resolveTargetUserId(
   tx: Tx,
+  universityId: string,
   targetType: TargetType,
   targetId: string,
 ): Promise<string | null> {
@@ -180,13 +194,15 @@ async function resolveTargetUserId(
     const [row] = await tx
       .select({ authorId: post.authorId })
       .from(post)
-      .where(eq(post.id, targetId));
+      .where(and(eq(post.id, targetId), eq(post.universityId, universityId)));
     return row?.authorId ?? null;
   }
   const [row] = await tx
     .select({ authorId: comment.authorId })
     .from(comment)
-    .where(eq(comment.id, targetId));
+    .where(
+      and(eq(comment.id, targetId), eq(comment.universityId, universityId)),
+    );
   return row?.authorId ?? null;
 }
 
@@ -225,6 +241,7 @@ function assertCanAct(me: Me, target: { id: string; role: Role }) {
  */
 async function removeTarget(
   tx: Tx,
+  universityId: string,
   targetType: "POST" | "COMMENT",
   targetId: string,
 ): Promise<boolean> {
@@ -232,14 +249,26 @@ async function removeTarget(
     const removed = await tx
       .update(post)
       .set({ deletedAt: new Date() })
-      .where(and(eq(post.id, targetId), isNull(post.deletedAt)))
+      .where(
+        and(
+          eq(post.id, targetId),
+          eq(post.universityId, universityId),
+          isNull(post.deletedAt),
+        ),
+      )
       .returning({ id: post.id });
     return removed.length > 0;
   }
   const [removed] = await tx
     .update(comment)
     .set({ deletedAt: new Date() })
-    .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)))
+    .where(
+      and(
+        eq(comment.id, targetId),
+        eq(comment.universityId, universityId),
+        isNull(comment.deletedAt),
+      ),
+    )
     .returning({ postId: comment.postId });
   if (!removed) return false;
   await tx
@@ -329,7 +358,12 @@ export const moderationRouter = router({
             eq(user.universityId, ctx.me.universityId),
           ),
         )
-        .where(eq(report.status, input.status))
+        .where(
+          and(
+            eq(report.universityId, ctx.me.universityId),
+            eq(report.status, input.status),
+          ),
+        )
         .orderBy(
           input.status === "OPEN"
             ? asc(report.createdAt)
@@ -413,7 +447,12 @@ export const moderationRouter = router({
       const [rpt] = await ctx.db
         .select()
         .from(report)
-        .where(eq(report.id, input.reportId));
+        .where(
+          and(
+            eq(report.id, input.reportId),
+            eq(report.universityId, ctx.me.universityId),
+          ),
+        );
       if (!rpt) throw new TRPCError({ code: "NOT_FOUND" });
       if (rpt.status !== "OPEN") {
         throw new TRPCError({
@@ -438,15 +477,22 @@ export const moderationRouter = router({
       if (input.action === "remove") {
         if (rpt.targetType === "USER")
           throw new TRPCError({ code: "BAD_REQUEST" });
-        didChange = await removeTarget(ctx.db, rpt.targetType, rpt.targetId);
+        didChange = await removeTarget(
+          ctx.db,
+          ctx.me.universityId,
+          rpt.targetType,
+          rpt.targetId,
+        );
         authorId = await resolveTargetUserId(
           ctx.db,
+          ctx.me.universityId,
           rpt.targetType,
           rpt.targetId,
         );
       } else if (input.action === "suspend" || input.action === "ban") {
         const targetUserId = await resolveTargetUserId(
           ctx.db,
+          ctx.me.universityId,
           rpt.targetType,
           rpt.targetId,
         );
@@ -533,6 +579,7 @@ export const moderationRouter = router({
         })
         .where(
           and(
+            eq(report.universityId, ctx.me.universityId),
             eq(report.targetType, rpt.targetType),
             eq(report.targetId, rpt.targetId),
             or(eq(report.id, rpt.id), eq(report.status, "OPEN")),

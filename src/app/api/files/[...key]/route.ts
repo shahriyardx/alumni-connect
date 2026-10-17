@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { and, eq, sql } from "drizzle-orm";
-import { db, withTenant } from "@/db";
+import { db } from "@/db";
 import { attachment, university, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import { getObject, presignGet } from "@/server/storage";
@@ -60,28 +60,27 @@ export async function resolveFileAccess(
   // Only ever serve objects that cleared `files.confirm` (type/size checked,
   // owned row exists) — something PUT to a presigned URL but never confirmed
   // must not be fetchable here.
-  const [att] = await withTenant(me.universityId, (tx) =>
-    tx
-      .select({
-        mime: attachment.mime,
-        kind: attachment.kind,
-        size: attachment.size,
-        filename: attachment.filename,
-      })
-      .from(attachment)
-      .where(
-        and(
-          eq(attachment.objectKey, objectKey),
-          // Documents and comment files die with their parent: a removed
-          // comment, or a deleted post (directly or via the comment's post).
-          // Post images, avatars and logos are served as before.
-          sql`((attachment.kind = 'IMAGE' and attachment.comment_id is null) or (
+  const [att] = await db
+    .select({
+      mime: attachment.mime,
+      kind: attachment.kind,
+      size: attachment.size,
+      filename: attachment.filename,
+    })
+    .from(attachment)
+    .where(
+      and(
+        eq(attachment.objectKey, objectKey),
+        eq(attachment.universityId, me.universityId),
+        // Documents and comment files die with their parent: a removed
+        // comment, or a deleted post (directly or via the comment's post).
+        // Post images, avatars and logos are served as before.
+        sql`((attachment.kind = 'IMAGE' and attachment.comment_id is null) or (
             not exists (select 1 from post p where p.id = attachment.post_id and p.deleted_at is not null)
             and not exists (select 1 from comment c join post p on p.id = c.post_id
               where c.id = attachment.comment_id and (c.deleted_at is not null or p.deleted_at is not null))))`,
-        ),
       ),
-  );
+    );
   if (!att) return { ok: false, status: 404, message: "Not found" };
 
   if (att.kind === "IMAGE") {

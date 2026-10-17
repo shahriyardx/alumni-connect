@@ -1,5 +1,5 @@
 {
-  "id": "ae460421-db33-4822-94f8-90ff41f5c7ee",
+  "id": "47b4cb16-130b-4914-928a-d65a051a06a1",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -155,6 +155,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "comment_id": {
+          "name": "comment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "object_key": {
           "name": "object_key",
           "type": "text",
@@ -173,6 +179,19 @@
           "primaryKey": false,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'IMAGE'"
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -187,6 +206,21 @@
           "columns": [
             {
               "expression": "post_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "attachment_comment_idx": {
+          "name": "attachment_comment_idx",
+          "columns": [
+            {
+              "expression": "comment_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -212,30 +246,49 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "attachment_owner_id_user_id_fk": {
-          "name": "attachment_owner_id_user_id_fk",
+        "attachment_owner_fk": {
+          "name": "attachment_owner_fk",
           "tableFrom": "attachment",
           "tableTo": "user",
           "columnsFrom": [
-            "owner_id"
+            "owner_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "attachment_post_id_post_id_fk": {
-          "name": "attachment_post_id_post_id_fk",
+        "attachment_post_fk": {
+          "name": "attachment_post_fk",
           "tableFrom": "attachment",
           "tableTo": "post",
           "columnsFrom": [
-            "post_id"
+            "post_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attachment_comment_fk": {
+          "name": "attachment_comment_fk",
+          "tableFrom": "attachment",
+          "tableTo": "comment",
+          "columnsFrom": [
+            "comment_id",
+            "university_id"
+          ],
+          "columnsTo": [
+            "id",
+            "university_id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -249,20 +302,14 @@
           ]
         }
       },
-      "policies": {
-        "attachment_tenant": {
-          "name": "attachment_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"attachment\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"attachment\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {
+        "attachment_one_parent": {
+          "name": "attachment_one_parent",
+          "value": "\"attachment\".\"post_id\" is null or \"attachment\".\"comment_id\" is null"
         }
       },
-      "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.audit_log": {
       "name": "audit_log",
@@ -359,20 +406,85 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "audit_log_tenant": {
-          "name": "audit_log_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"audit_log\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"audit_log\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.batch": {
+      "name": "batch",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "university_id": {
+          "name": "university_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "graduation_year": {
+          "name": "graduation_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
+      "indexes": {},
+      "foreignKeys": {
+        "batch_university_id_university_id_fk": {
+          "name": "batch_university_id_university_id_fk",
+          "tableFrom": "batch",
+          "tableTo": "university",
+          "columnsFrom": [
+            "university_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "batch_uni_number_uq": {
+          "name": "batch_uni_number_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "university_id",
+            "number"
+          ]
+        },
+        "batch_id_uni_uq": {
+          "name": "batch_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
+          ]
+        }
+      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.bookmark": {
       "name": "bookmark",
@@ -419,28 +531,32 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "bookmark_user_id_user_id_fk": {
-          "name": "bookmark_user_id_user_id_fk",
+        "bookmark_user_fk": {
+          "name": "bookmark_user_fk",
           "tableFrom": "bookmark",
           "tableTo": "user",
           "columnsFrom": [
-            "user_id"
+            "user_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "bookmark_post_id_post_id_fk": {
-          "name": "bookmark_post_id_post_id_fk",
+        "bookmark_post_fk": {
+          "name": "bookmark_post_fk",
           "tableFrom": "bookmark",
           "tableTo": "post",
           "columnsFrom": [
-            "post_id"
+            "post_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -456,20 +572,75 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "bookmark_tenant": {
-          "name": "bookmark_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"bookmark\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"bookmark\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.broadcast": {
+      "name": "broadcast",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipients": {
+          "name": "recipients",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
+      "indexes": {},
+      "foreignKeys": {
+        "broadcast_actor_id_user_id_fk": {
+          "name": "broadcast_actor_id_user_id_fk",
+          "tableFrom": "broadcast",
+          "tableTo": "user",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.comment": {
       "name": "comment",
@@ -586,62 +757,150 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "comment_post_id_post_id_fk": {
-          "name": "comment_post_id_post_id_fk",
+        "comment_post_fk": {
+          "name": "comment_post_fk",
           "tableFrom": "comment",
           "tableTo": "post",
           "columnsFrom": [
-            "post_id"
+            "post_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "comment_parent_id_comment_id_fk": {
-          "name": "comment_parent_id_comment_id_fk",
+        "comment_parent_fk": {
+          "name": "comment_parent_fk",
           "tableFrom": "comment",
           "tableTo": "comment",
           "columnsFrom": [
-            "parent_id"
+            "parent_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "comment_author_id_user_id_fk": {
-          "name": "comment_author_id_user_id_fk",
+        "comment_author_fk": {
+          "name": "comment_author_fk",
           "tableFrom": "comment",
           "tableTo": "user",
           "columnsFrom": [
-            "author_id"
+            "author_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "comment_tenant": {
-          "name": "comment_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"comment\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"comment\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "uniqueConstraints": {
+        "comment_id_uni_uq": {
+          "name": "comment_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
+          ]
         }
       },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
+    },
+    "public.department": {
+      "name": "department",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "university_id": {
+          "name": "university_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "department_uni_lower_name_uq": {
+          "name": "department_uni_lower_name_uq",
+          "columns": [
+            {
+              "expression": "university_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(\"name\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "department_university_id_university_id_fk": {
+          "name": "department_university_id_university_id_fk",
+          "tableFrom": "department",
+          "tableTo": "university",
+          "columnsFrom": [
+            "university_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "department_id_uni_uq": {
+          "name": "department_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     },
     "public.follow_tag": {
       "name": "follow_tag",
@@ -664,6 +923,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "notify": {
+          "name": "notify",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {
@@ -697,28 +963,32 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "follow_tag_user_id_user_id_fk": {
-          "name": "follow_tag_user_id_user_id_fk",
+        "follow_tag_user_fk": {
+          "name": "follow_tag_user_fk",
           "tableFrom": "follow_tag",
           "tableTo": "user",
           "columnsFrom": [
-            "user_id"
+            "user_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "follow_tag_tag_id_tag_id_fk": {
-          "name": "follow_tag_tag_id_tag_id_fk",
+        "follow_tag_tag_fk": {
+          "name": "follow_tag_tag_fk",
           "tableFrom": "follow_tag",
           "tableTo": "tag",
           "columnsFrom": [
-            "tag_id"
+            "tag_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -734,20 +1004,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "follow_tag_tenant": {
-          "name": "follow_tag_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"follow_tag\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"follow_tag\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.follow_user": {
       "name": "follow_user",
@@ -803,28 +1062,32 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "follow_user_follower_id_user_id_fk": {
-          "name": "follow_user_follower_id_user_id_fk",
+        "follow_user_follower_fk": {
+          "name": "follow_user_follower_fk",
           "tableFrom": "follow_user",
           "tableTo": "user",
           "columnsFrom": [
-            "follower_id"
+            "follower_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "follow_user_followee_id_user_id_fk": {
-          "name": "follow_user_followee_id_user_id_fk",
+        "follow_user_followee_fk": {
+          "name": "follow_user_followee_fk",
           "tableFrom": "follow_user",
           "tableTo": "user",
           "columnsFrom": [
-            "followee_id"
+            "followee_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -840,20 +1103,151 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "follow_user_tenant": {
-          "name": "follow_user_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"follow_user\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"follow_user\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.invite": {
+      "name": "invite",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "university_id": {
+          "name": "university_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department": {
+          "name": "department",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invited_by": {
+          "name": "invited_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
+      "indexes": {
+        "invite_uni_idx": {
+          "name": "invite_uni_idx",
+          "columns": [
+            {
+              "expression": "university_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "invite_university_id_university_id_fk": {
+          "name": "invite_university_id_university_id_fk",
+          "tableFrom": "invite",
+          "tableTo": "university",
+          "columnsFrom": [
+            "university_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "invite_invited_by_fk": {
+          "name": "invite_invited_by_fk",
+          "tableFrom": "invite",
+          "tableTo": "user",
+          "columnsFrom": [
+            "invited_by",
+            "university_id"
+          ],
+          "columnsTo": [
+            "id",
+            "university_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "invite_token_hash_unique": {
+          "name": "invite_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        },
+        "invite_id_uni_uq": {
+          "name": "invite_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
+          ]
+        }
+      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.notification": {
       "name": "notification",
@@ -888,7 +1282,13 @@
           "name": "actor_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "broadcast_id": {
+          "name": "broadcast_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "post_id": {
           "name": "post_id",
@@ -953,12 +1353,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "notification_user_id_user_id_fk": {
-          "name": "notification_user_id_user_id_fk",
+        "notification_broadcast_id_broadcast_id_fk": {
+          "name": "notification_broadcast_id_broadcast_id_fk",
           "tableFrom": "notification",
-          "tableTo": "user",
+          "tableTo": "broadcast",
           "columnsFrom": [
-            "user_id"
+            "broadcast_id"
           ],
           "columnsTo": [
             "id"
@@ -966,41 +1366,62 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "notification_actor_id_user_id_fk": {
-          "name": "notification_actor_id_user_id_fk",
+        "notification_user_fk": {
+          "name": "notification_user_fk",
           "tableFrom": "notification",
           "tableTo": "user",
           "columnsFrom": [
-            "actor_id"
+            "user_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "notification_post_id_post_id_fk": {
-          "name": "notification_post_id_post_id_fk",
+        "notification_actor_fk": {
+          "name": "notification_actor_fk",
+          "tableFrom": "notification",
+          "tableTo": "user",
+          "columnsFrom": [
+            "actor_id",
+            "university_id"
+          ],
+          "columnsTo": [
+            "id",
+            "university_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "notification_post_fk": {
+          "name": "notification_post_fk",
           "tableFrom": "notification",
           "tableTo": "post",
           "columnsFrom": [
-            "post_id"
+            "post_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "notification_comment_id_comment_id_fk": {
-          "name": "notification_comment_id_comment_id_fk",
+        "notification_comment_fk": {
+          "name": "notification_comment_fk",
           "tableFrom": "notification",
           "tableTo": "comment",
           "columnsFrom": [
-            "comment_id"
+            "comment_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -1008,20 +1429,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "notification_tenant": {
-          "name": "notification_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"notification\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"notification\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.pending_signup": {
       "name": "pending_signup",
@@ -1037,13 +1447,31 @@
           "name": "university_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "batch_year": {
-          "name": "batch_year",
+        "application_name": {
+          "name": "application_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "application_website": {
+          "name": "application_website",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "batch_number": {
+          "name": "batch_number",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "graduation_year": {
+          "name": "graduation_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "department": {
           "name": "department",
@@ -1051,11 +1479,47 @@
           "primaryKey": false,
           "notNull": true
         },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "student_id_hash": {
           "name": "student_id_hash",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "signup_token_hash": {
+          "name": "signup_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_card_key": {
+          "name": "id_card_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "roster_match": {
+          "name": "roster_match",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "student_id_hint": {
+          "name": "student_id_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invite_id": {
+          "name": "invite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "role": {
           "name": "role",
@@ -1074,6 +1538,19 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platform_admin": {
+          "name": "platform_admin",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -1090,8 +1567,141 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "pending_signup_invite_fk": {
+          "name": "pending_signup_invite_fk",
+          "tableFrom": "pending_signup",
+          "tableTo": "invite",
+          "columnsFrom": [
+            "invite_id",
+            "university_id"
+          ],
+          "columnsTo": [
+            "id",
+            "university_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "pending_signup_target_ck": {
+          "name": "pending_signup_target_ck",
+          "value": "\"pending_signup\".\"university_id\" is not null or \"pending_signup\".\"application_name\" is not null or \"pending_signup\".\"platform_admin\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.platform_admin": {
+      "name": "platform_admin",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "platform_admin_user_id_user_id_fk": {
+          "name": "platform_admin_user_id_user_id_fk",
+          "tableFrom": "platform_admin",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.platform_audit": {
+      "name": "platform_audit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target": {
+          "name": "target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ip": {
+          "name": "ip",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "meta": {
+          "name": "meta",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "platform_audit_created_idx": {
+          "name": "platform_audit_created_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -1121,6 +1731,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'QUESTION'"
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -1146,6 +1763,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "accepted_comment_id": {
+          "name": "accepted_comment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -1184,6 +1807,33 @@
           "columns": [
             {
               "expression": "university_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "post_uni_kind_created_idx": {
+          "name": "post_uni_kind_created_idx",
+          "columns": [
+            {
+              "expression": "university_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1266,36 +1916,51 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "post_author_id_user_id_fk": {
-          "name": "post_author_id_user_id_fk",
+        "post_author_fk": {
+          "name": "post_author_fk",
           "tableFrom": "post",
           "tableTo": "user",
           "columnsFrom": [
-            "author_id"
+            "author_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "post_accepted_comment_fk": {
+          "name": "post_accepted_comment_fk",
+          "tableFrom": "post",
+          "tableTo": "comment",
+          "columnsFrom": [
+            "accepted_comment_id",
+            "university_id"
+          ],
+          "columnsTo": [
+            "id",
+            "university_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "post_tenant": {
-          "name": "post_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"post\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"post\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "uniqueConstraints": {
+        "post_id_uni_uq": {
+          "name": "post_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
+          ]
         }
       },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.post_tag": {
       "name": "post_tag",
@@ -1351,28 +2016,32 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "post_tag_post_id_post_id_fk": {
-          "name": "post_tag_post_id_post_id_fk",
+        "post_tag_post_fk": {
+          "name": "post_tag_post_fk",
           "tableFrom": "post_tag",
           "tableTo": "post",
           "columnsFrom": [
-            "post_id"
+            "post_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "post_tag_tag_id_tag_id_fk": {
-          "name": "post_tag_tag_id_tag_id_fk",
+        "post_tag_tag_fk": {
+          "name": "post_tag_tag_fk",
           "tableFrom": "post_tag",
           "tableTo": "tag",
           "columnsFrom": [
-            "tag_id"
+            "tag_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -1388,20 +2057,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "post_tag_tenant": {
-          "name": "post_tag_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"post_tag\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"post_tag\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.rate_limit": {
       "name": "rate_limit",
@@ -1553,28 +2211,32 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "report_reporter_id_user_id_fk": {
-          "name": "report_reporter_id_user_id_fk",
+        "report_reporter_fk": {
+          "name": "report_reporter_fk",
           "tableFrom": "report",
           "tableTo": "user",
           "columnsFrom": [
-            "reporter_id"
+            "reporter_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "report_resolved_by_user_id_fk": {
-          "name": "report_resolved_by_user_id_fk",
+        "report_resolved_by_fk": {
+          "name": "report_resolved_by_fk",
           "tableFrom": "report",
           "tableTo": "user",
           "columnsFrom": [
-            "resolved_by"
+            "resolved_by",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -1582,20 +2244,9 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "report_tenant": {
-          "name": "report_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"report\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"report\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.roster_entry": {
       "name": "roster_entry",
@@ -1614,15 +2265,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "student_id_hash": {
-          "name": "student_id_hash",
-          "type": "text",
+        "batch_id": {
+          "name": "batch_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "batch_year": {
-          "name": "batch_year",
-          "type": "integer",
+        "student_id_hash": {
+          "name": "student_id_hash",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -1631,13 +2282,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "graduated": {
-          "name": "graduated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -1661,6 +2305,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "roster_batch_idx": {
+          "name": "roster_batch_idx",
+          "columns": [
+            {
+              "expression": "batch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1676,24 +2335,28 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "roster_batch_fk": {
+          "name": "roster_batch_fk",
+          "tableFrom": "roster_entry",
+          "tableTo": "batch",
+          "columnsFrom": [
+            "batch_id",
+            "university_id"
+          ],
+          "columnsTo": [
+            "id",
+            "university_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {
-        "roster_entry_tenant": {
-          "name": "roster_entry_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"roster_entry\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"roster_entry\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     },
     "public.session": {
       "name": "session",
@@ -1858,21 +2521,121 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "tag_tenant": {
-          "name": "tag_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"tag\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"tag\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
+      "uniqueConstraints": {
+        "tag_id_uni_uq": {
+          "name": "tag_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
+          ]
         }
       },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
+    },
+    "public.tenant_ban": {
+      "name": "tenant_ban",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "university_id": {
+          "name": "university_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_hash": {
+          "name": "email_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "student_id_hash": {
+          "name": "student_id_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tenant_ban_email_idx": {
+          "name": "tenant_ban_email_idx",
+          "columns": [
+            {
+              "expression": "university_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tenant_ban_student_idx": {
+          "name": "tenant_ban_student_idx",
+          "columns": [
+            {
+              "expression": "university_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "student_id_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tenant_ban_university_id_university_id_fk": {
+          "name": "tenant_ban_university_id_university_id_fk",
+          "tableFrom": "tenant_ban",
+          "tableTo": "university",
+          "columnsFrom": [
+            "university_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     },
     "public.university": {
       "name": "university",
@@ -1901,7 +2664,26 @@
           "name": "email_domain",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "logo_key": {
+          "name": "logo_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "website": {
+          "name": "website",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -1980,7 +2762,7 @@
           "name": "university_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "role": {
           "name": "role",
@@ -1989,21 +2771,57 @@
           "notNull": true,
           "default": "'STUDENT'"
         },
-        "batch_year": {
-          "name": "batch_year",
+        "graduation_year": {
+          "name": "graduation_year",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "batch_number": {
+          "name": "batch_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "department": {
           "name": "department",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "student_id_hash": {
           "name": "student_id_hash",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_card_key": {
+          "name": "id_card_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "roster_match": {
+          "name": "roster_match",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "student_id_hint": {
+          "name": "student_id_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -2031,6 +2849,67 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "notify_reply_post": {
+          "name": "notify_reply_post",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notify_reply_comment": {
+          "name": "notify_reply_comment",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notify_announcements": {
+          "name": "notify_announcements",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notify_followed_tag": {
+          "name": "notify_followed_tag",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notify_accepted_answer": {
+          "name": "notify_accepted_answer",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_digest": {
+          "name": "email_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'off'"
+        },
+        "last_digest_at": {
+          "name": "last_digest_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_before_ban": {
+          "name": "status_before_ban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platform_banned": {
+          "name": "platform_banned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -2079,6 +2958,14 @@
           "nullsNotDistinct": false,
           "columns": [
             "student_id_hash"
+          ]
+        },
+        "user_id_uni_uq": {
+          "name": "user_id_uni_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "university_id"
           ]
         }
       },
@@ -2225,15 +3112,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "vote_user_id_user_id_fk": {
-          "name": "vote_user_id_user_id_fk",
+        "vote_user_fk": {
+          "name": "vote_user_fk",
           "tableFrom": "vote",
           "tableTo": "user",
           "columnsFrom": [
-            "user_id"
+            "user_id",
+            "university_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "university_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -2250,20 +3139,9 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "vote_tenant": {
-          "name": "vote_tenant",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "app_user"
-          ],
-          "using": "\"vote\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid",
-          "withCheck": "\"vote\".\"university_id\" = nullif(current_setting('app.university_id', true), '')::uuid"
-        }
-      },
+      "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
+      "isRLSEnabled": false
     }
   },
   "enums": {},

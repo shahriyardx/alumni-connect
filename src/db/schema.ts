@@ -1,6 +1,5 @@
 import { type SQL, sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -10,8 +9,6 @@ import {
   integer,
   jsonb,
   type PgTableExtraConfigValue,
-  pgPolicy,
-  pgRole,
   pgTable,
   primaryKey,
   text,
@@ -55,18 +52,6 @@ export const isStaff = (r: Role) =>
   (STAFF_ROLES as readonly Role[]).includes(r);
 
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
-export const appUser = pgRole("app_user").existing();
-
-const tenantCheck = (col: AnyPgColumn) =>
-  sql`${col} = nullif(current_setting('app.university_id', true), '')::uuid`;
-const tenantPolicy = (name: string, col: AnyPgColumn) =>
-  pgPolicy(`${name}_tenant`, {
-    as: "permissive",
-    for: "all",
-    to: appUser,
-    using: tenantCheck(col),
-    withCheck: tenantCheck(col),
-  });
 
 const created = () => timestamp("created_at").defaultNow().notNull();
 const universityRef = () =>
@@ -87,7 +72,7 @@ export const university = pgTable("university", {
   createdAt: created(),
 });
 
-// ---- better-auth tables (no RLS) ----
+// ---- better-auth tables ----
 export const user = pgTable(
   "user",
   {
@@ -120,8 +105,7 @@ export const user = pgTable(
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
     suspendedUntil: timestamp("suspended_until"),
     // Notification preferences (F3). All on, digest off by default; columns
-    // on `user` rather than a separate table since `user` already isn't
-    // RLS-scoped (app-level tenant filtering) and these are 1:1 per account.
+    // on `user` rather than a separate table since they're 1:1 per account.
     notifyReplyPost: boolean("notify_reply_post").default(true).notNull(),
     notifyReplyComment: boolean("notify_reply_comment").default(true).notNull(),
     notifyAnnouncements: boolean("notify_announcements")
@@ -206,7 +190,7 @@ export const verification = pgTable(
   (t) => [index("verification_identifier_idx").on(t.identifier)],
 );
 
-/** Super admins (global, no RLS). The first row is claimed at /admin. */
+/** Super admins (global). The first row is claimed at /admin. */
 export const platformAdmin = pgTable("platform_admin", {
   userId: text("user_id")
     .primaryKey()
@@ -214,7 +198,7 @@ export const platformAdmin = pgTable("platform_admin", {
   createdAt: created(),
 });
 
-/** Platform-wide announcements (global, no RLS); fanned out as notifications. */
+/** Platform-wide announcements (global); fanned out as notifications. */
 export const broadcast = pgTable("broadcast", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
@@ -226,7 +210,7 @@ export const broadcast = pgTable("broadcast", {
   createdAt: created(),
 });
 
-/** Super admin actions (global, no RLS): audit_log needs a university. */
+/** Super admin actions (global): audit_log needs a university. */
 export const platformAudit = pgTable(
   "platform_audit",
   {
@@ -248,7 +232,7 @@ export const rateLimit = pgTable("rate_limit", {
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
 });
 
-// ---- tenant tables (RLS) ----
+// ---- tenant tables (every query filters university_id) ----
 export const batch = pgTable(
   "batch",
   {
@@ -261,9 +245,8 @@ export const batch = pgTable(
   (t) => [
     unique("batch_uni_number_uq").on(t.universityId, t.number),
     unique("batch_id_uni_uq").on(t.id, t.universityId),
-    tenantPolicy("batch", t.universityId),
   ],
-).enableRLS();
+);
 
 /** Admin-curated picklist; `user`/`invite`/`pendingSignup`.department stay free text (no FK). */
 export const department = pgTable(
@@ -280,9 +263,8 @@ export const department = pgTable(
       t.universityId,
       sql`lower(${t.name})`,
     ),
-    tenantPolicy("department", t.universityId),
   ],
-).enableRLS();
+);
 
 export const rosterEntry = pgTable(
   "roster_entry",
@@ -301,9 +283,8 @@ export const rosterEntry = pgTable(
       columns: [t.batchId, t.universityId],
       foreignColumns: [batch.id, batch.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("roster_entry", t.universityId),
   ],
-).enableRLS();
+);
 
 /**
  * Tombstone of a tenant ban on a never-verified account that was cleared
@@ -323,9 +304,8 @@ export const tenantBan = pgTable(
   (t) => [
     index("tenant_ban_email_idx").on(t.universityId, t.emailHash),
     index("tenant_ban_student_idx").on(t.universityId, t.studentIdHash),
-    tenantPolicy("tenant_ban", t.universityId),
   ],
-).enableRLS();
+);
 
 export const invite = pgTable(
   "invite",
@@ -351,35 +331,10 @@ export const invite = pgTable(
       columns: [t.invitedBy, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("invite", t.universityId),
-    // The public /invite/[token] flow doesn't know the tenant yet (that's
-    // what it's looking up), so RLS can't gate it by app.university_id.
-    // Instead it proves it already holds the secret token by setting
-    // app.lookup_token_hash to that token's hash; this permissive SELECT
-    // policy then reveals exactly the one matching row (permissive
-    // policies OR together, so tenant-scoped reads are unaffected).
-    pgPolicy("invite_token_lookup", {
-      as: "permissive",
-      for: "select",
-      to: appUser,
-      using: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
-    }),
-    // Lets findInvite() recover an invite whose accepted_at was set by a
-    // sign-up that never verified and is now abandoned (see
-    // routers/invites.ts): it resets accepted_at back to null on the one
-    // row it already holds the secret for. Same token-hash gate as above,
-    // just for UPDATE instead of SELECT.
-    pgPolicy("invite_token_recover", {
-      as: "permissive",
-      for: "update",
-      to: appUser,
-      using: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
-      withCheck: sql`${t.tokenHash} = nullif(current_setting('app.lookup_token_hash', true), '')`,
-    }),
   ],
-).enableRLS();
+);
 
-// Holds verified roster data between auth.startSignup and better-auth sign-up (no RLS: read by auth hook).
+// Holds verified roster data between auth.startSignup and better-auth sign-up (read by auth hook).
 export const pendingSignup = pgTable(
   "pending_signup",
   {
@@ -464,7 +419,7 @@ export const post = pgTable(
     // drizzle-kit has no builder for a column-scoped ON DELETE action on a
     // composite FK, so this intentionally declares "no action" (the default)
     // and the *real*, deployed constraint — ON DELETE SET NULL
-    // (accepted_comment_id) — is hand-written in drizzle/0011_accept_answer.sql.
+    // (accepted_comment_id) — is hand-written at the end of drizzle/0000_init.sql.
     // A plain composite SET NULL would also null university_id, which is
     // NOT NULL on post (see the same note on `attachment`'s post FK). This is
     // deliberate drift between this declaration and the live DB: if a future
@@ -476,9 +431,8 @@ export const post = pgTable(
       columns: [t.acceptedCommentId, t.universityId],
       foreignColumns: [comment.id, comment.universityId],
     }),
-    tenantPolicy("post", t.universityId),
   ],
-).enableRLS();
+);
 
 export const comment = pgTable(
   "comment",
@@ -516,9 +470,8 @@ export const comment = pgTable(
       columns: [t.authorId, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }),
-    tenantPolicy("comment", t.universityId),
   ],
-).enableRLS();
+);
 
 export const tag = pgTable(
   "tag",
@@ -530,9 +483,8 @@ export const tag = pgTable(
   (t) => [
     uniqueIndex("tag_uni_name_uq").on(t.universityId, t.name),
     unique("tag_id_uni_uq").on(t.id, t.universityId),
-    tenantPolicy("tag", t.universityId),
   ],
-).enableRLS();
+);
 
 export const postTag = pgTable(
   "post_tag",
@@ -554,9 +506,8 @@ export const postTag = pgTable(
       columns: [t.tagId, t.universityId],
       foreignColumns: [tag.id, tag.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("post_tag", t.universityId),
   ],
-).enableRLS();
+);
 
 export const vote = pgTable(
   "vote",
@@ -575,9 +526,8 @@ export const vote = pgTable(
       columns: [t.userId, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("vote", t.universityId),
   ],
-).enableRLS();
+);
 
 export const bookmark = pgTable(
   "bookmark",
@@ -599,9 +549,8 @@ export const bookmark = pgTable(
       columns: [t.postId, t.universityId],
       foreignColumns: [post.id, post.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("bookmark", t.universityId),
   ],
-).enableRLS();
+);
 
 export const followUser = pgTable(
   "follow_user",
@@ -623,9 +572,8 @@ export const followUser = pgTable(
       columns: [t.followeeId, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("follow_user", t.universityId),
   ],
-).enableRLS();
+);
 
 export const followTag = pgTable(
   "follow_tag",
@@ -650,9 +598,8 @@ export const followTag = pgTable(
       columns: [t.tagId, t.universityId],
       foreignColumns: [tag.id, tag.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("follow_tag", t.universityId),
   ],
-).enableRLS();
+);
 
 export const NOTIFICATION_TYPES = [
   "REPLY_POST",
@@ -702,9 +649,8 @@ export const notification = pgTable(
       columns: [t.commentId, t.universityId],
       foreignColumns: [comment.id, comment.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("notification", t.universityId),
   ],
-).enableRLS();
+);
 
 export const attachment = pgTable(
   "attachment",
@@ -750,9 +696,8 @@ export const attachment = pgTable(
       columns: [t.commentId, t.universityId],
       foreignColumns: [comment.id, comment.universityId],
     }).onDelete("cascade"),
-    tenantPolicy("attachment", t.universityId),
   ],
-).enableRLS();
+);
 
 export const report = pgTable(
   "report",
@@ -784,9 +729,8 @@ export const report = pgTable(
       columns: [t.resolvedBy, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }),
-    tenantPolicy("report", t.universityId),
   ],
-).enableRLS();
+);
 
 export const auditLog = pgTable(
   "audit_log",
@@ -800,8 +744,5 @@ export const auditLog = pgTable(
     meta: jsonb("meta").$type<Record<string, unknown>>(),
     createdAt: created(),
   },
-  (t) => [
-    index("audit_uni_created_idx").on(t.universityId, t.createdAt),
-    tenantPolicy("audit_log", t.universityId),
-  ],
-).enableRLS();
+  (t) => [index("audit_uni_created_idx").on(t.universityId, t.createdAt)],
+);

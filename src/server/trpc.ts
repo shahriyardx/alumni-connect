@@ -2,7 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
-import { db, type Tx, withTenant } from "@/db";
+import { db, type Tx } from "@/db";
 import {
   auditLog,
   isAdmin,
@@ -86,7 +86,8 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (statusError) {
     throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }
-  return withTenant(universityId, async (tx) => {
+  // Every tenant query below must filter on ctx.me.universityId.
+  return db.transaction(async (tx) => {
     // Lazy alumnus promotion: only ever STUDENT -> ALUMNUS.
     let role = me.role;
     if (

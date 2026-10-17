@@ -345,7 +345,7 @@ describe("comments and caps", () => {
     });
     expect((await rowFor(spare)).commentId).toBeNull();
 
-    // Other tenant: can't claim it (RLS) nor download a comment file.
+    // Other tenant: can't claim it nor download a comment file.
     const bPost = await makePost(b.universityId, b.id);
     await callerFor(b.id).comment.create({
       postId: bPost.id,

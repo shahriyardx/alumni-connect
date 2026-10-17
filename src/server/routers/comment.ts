@@ -33,7 +33,13 @@ export const commentRouter = router({
       const [p] = await ctx.db
         .select({ id: post.id })
         .from(post)
-        .where(and(eq(post.id, input.postId), isNull(post.deletedAt)));
+        .where(
+          and(
+            eq(post.id, input.postId),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
 
       const rows = await ctx.db
@@ -115,7 +121,13 @@ export const commentRouter = router({
           universityId: post.universityId,
         })
         .from(post)
-        .where(and(eq(post.id, input.postId), isNull(post.deletedAt)));
+        .where(
+          and(
+            eq(post.id, input.postId),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
       if (!p) throw new TRPCError({ code: "NOT_FOUND" });
       assertCanPostLinks(ctx.me, input.body);
 
@@ -217,7 +229,13 @@ export const commentRouter = router({
       const [c] = await ctx.db
         .select()
         .from(comment)
-        .where(and(eq(comment.id, input.id), isNull(comment.deletedAt)));
+        .where(
+          and(
+            eq(comment.id, input.id),
+            eq(comment.universityId, ctx.me.universityId),
+            isNull(comment.deletedAt),
+          ),
+        );
       if (!c) throw new TRPCError({ code: "NOT_FOUND" });
       const canEdit = c.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
@@ -241,7 +259,13 @@ export const commentRouter = router({
       const [c] = await ctx.db
         .select()
         .from(comment)
-        .where(and(eq(comment.id, input.id), isNull(comment.deletedAt)));
+        .where(
+          and(
+            eq(comment.id, input.id),
+            eq(comment.universityId, ctx.me.universityId),
+            isNull(comment.deletedAt),
+          ),
+        );
       if (!c) throw new TRPCError({ code: "NOT_FOUND" });
       const canEdit = c.authorId === ctx.me.id || isMod(ctx.me.role);
       if (!canEdit) throw new TRPCError({ code: "FORBIDDEN" });
