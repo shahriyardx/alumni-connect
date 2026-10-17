@@ -211,48 +211,86 @@ export function SignUpWizard() {
             }}
           >
             <StepHeading title="Where do you study?" />
-            <TextField
-              label="Search"
-              type="search"
-              placeholder="Type your university name"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
             {unis.isLoading ? (
-              <Spinner className="self-center" />
+              <Spinner className="my-6 self-center" />
+            ) : !unis.data?.length ? (
+              <div className="flex flex-col items-center rounded-3xl bg-surface-high px-6 py-10 text-center">
+                <span className="grid size-14 place-items-center rounded-2xl bg-primary/12 text-primary">
+                  <Icon name="domain_add" size={28} />
+                </span>
+                <p className="mt-4 font-semibold">No universities yet</p>
+                <p className="mt-1 max-w-xs text-sm text-muted-foreground">
+                  Your university needs to join first. Ask your registrar, or
+                  set it up yourself.
+                </p>
+                <ButtonLink
+                  href="/register-university"
+                  variant="tonal"
+                  icon="arrow_forward"
+                  className="mt-6"
+                >
+                  Register your university
+                </ButtonLink>
+              </div>
             ) : (
-              <RadioGroup
-                aria-label="University"
-                value={universityId}
-                onValueChange={(v) => setUniversityId(v as string)}
-                className="-m-1 flex max-h-80 flex-col gap-2 overflow-y-auto p-1"
-              >
-                {shown.length === 0 && (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No university matches “{query.trim()}”.
-                  </p>
-                )}
-                {shown.map((u) => (
-                  <Radio.Root
-                    key={u.id}
-                    value={u.id}
-                    className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-surface-high p-2.5 pr-4 text-left text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 data-[checked]:bg-tonal data-[checked]:text-tonal-fg"
-                  >
-                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface text-sm font-semibold group-data-[checked]:bg-primary group-data-[checked]:text-primary-foreground">
-                      {u.name.charAt(0).toUpperCase()}
-                    </span>
-                    <span className="flex-1 truncate">{u.name}</span>
-                    <Radio.Indicator className="flex text-primary">
-                      <Icon name="check_circle" filled size={20} />
-                    </Radio.Indicator>
-                  </Radio.Root>
-                ))}
-              </RadioGroup>
+              <>
+                <TextField
+                  label="Search"
+                  type="search"
+                  placeholder="Type your university name"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <RadioGroup
+                  aria-label="University"
+                  value={universityId}
+                  onValueChange={(v) => setUniversityId(v as string)}
+                  className="-m-1 flex max-h-80 flex-col gap-2 overflow-y-auto p-1"
+                >
+                  {shown.length === 0 && (
+                    <div className="flex flex-col items-center gap-1 rounded-2xl border border-dashed border-foreground/10 px-4 py-6 text-center text-sm">
+                      <Icon
+                        name="search_off"
+                        size={22}
+                        className="text-muted-foreground"
+                      />
+                      <p className="mt-1 font-medium">
+                        No match for “{query.trim()}”
+                      </p>
+                      <p className="text-muted-foreground">
+                        Check the spelling, or{" "}
+                        <Link
+                          href="/register-university"
+                          className="text-primary hover:underline"
+                        >
+                          register it
+                        </Link>
+                        .
+                      </p>
+                    </div>
+                  )}
+                  {shown.map((u) => (
+                    <Radio.Root
+                      key={u.id}
+                      value={u.id}
+                      className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-surface-high p-2.5 pr-4 text-left text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 data-[checked]:bg-tonal data-[checked]:text-tonal-fg"
+                    >
+                      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface text-sm font-semibold group-data-[checked]:bg-primary group-data-[checked]:text-primary-foreground">
+                        {u.name.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="flex-1 truncate">{u.name}</span>
+                      <Radio.Indicator className="flex text-primary">
+                        <Icon name="check_circle" filled size={20} />
+                      </Radio.Indicator>
+                    </Radio.Root>
+                  ))}
+                </RadioGroup>
+                <Button type="submit" disabled={!uni} className="w-full">
+                  Continue
+                  <Icon name="arrow_forward" size={18} />
+                </Button>
+              </>
             )}
-            <Button type="submit" disabled={!uni} className="w-full">
-              Continue
-              <Icon name="arrow_forward" size={18} />
-            </Button>
           </form>
         )}
 
