@@ -100,8 +100,10 @@ export function PostCard({ post }: { post: PostListItem }) {
           {post.commentCount}
         </span>
         {post.hasAlumnusReply && (
-          <span className={`${pill} bg-tonal text-tonal-fg`}>
-            <Icon name="school" size={16} filled />
+          <span
+            className={`${pill} border border-border text-muted-foreground`}
+          >
+            <Icon name="school" size={16} />
             Alumni replied
           </span>
         )}
