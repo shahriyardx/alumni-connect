@@ -16,10 +16,7 @@ import { Icon } from "./ui/icon";
 import { Spinner } from "./ui/spinner";
 import { focusRing } from "./ui/styles";
 import { homeFor, UserMenu, useMe, useSignOut } from "./user-menu";
-import {
-  UniversityMark,
-  UniversityPendingBanner,
-} from "./workspace/workspace-shell";
+import { UniversityMark } from "./workspace/workspace-shell";
 
 type Dest = {
   href: string;
@@ -229,10 +226,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             pathname === "/feed" && "xl:max-w-6xl",
           )}
         >
-          <StatusGate>
-            <UniversityPendingBanner />
-            {children}
-          </StatusGate>
+          <StatusGate>{children}</StatusGate>
         </main>
       </div>
 
