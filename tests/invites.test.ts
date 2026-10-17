@@ -75,6 +75,18 @@ const signUpAndCaptureOtp = (email: string, name: string) =>
   captureOtp(() => signUp(email, name));
 
 describe("invites.create", () => {
+  test("department is required for faculty only", async () => {
+    const asAdmin = callerFor(admin.id);
+    await expect(
+      asAdmin.invites.create({ email: "nodept@x.edu", role: "STAFF" }),
+    ).rejects.toThrow("Pick a department for faculty");
+    const r = await asAdmin.invites.create({
+      email: "mod-nodept@x.edu",
+      role: "MODERATOR",
+    });
+    expect(r.inviteUrl).toBeTruthy();
+  });
+
   test("admin creates a MODERATOR invite; a dup open invite is replaced, not stacked", async () => {
     const asAdmin = callerFor(admin.id);
     const r1 = await asAdmin.invites.create({
@@ -394,7 +406,7 @@ describe("invite accept lifecycle", () => {
     expect(u).toMatchObject({
       role: "OWNER",
       universityId: newUniId,
-      department: "Administration",
+      department: null,
       status: "ACTIVE",
     });
     const invRow = await inviteByEmail("newowner@x.edu");

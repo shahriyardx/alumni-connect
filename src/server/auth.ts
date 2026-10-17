@@ -290,7 +290,7 @@ export const auth = betterAuth({
               role: p.role,
               graduationYear: p.graduationYear,
               batchNumber: p.batchNumber,
-              department: p.department,
+              department: p.department || null,
               title: p.title,
               studentIdHash: p.studentIdHash,
               idCardKey: p.idCardKey,

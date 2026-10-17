@@ -93,22 +93,26 @@ export const invitesRouter = router({
       z.object({
         email,
         role: z.enum(INVITABLE_ROLES),
-        department: z.string().trim().min(1).max(80),
+        // Only faculty belong to a department; other staff roles don't.
+        department: z.string().trim().max(80).optional(),
         title: z.string().trim().max(80).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      if (input.role === "STAFF" && !input.department)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Pick a department for faculty",
+        });
       if (input.role === "ADMIN" && ctx.me.role !== "OWNER")
         throw new TRPCError({
           code: "FORBIDDEN",
           message: "Only the owner can invite admins",
         });
       const uni = ctx.me.universityId;
-      const departmentName = await resolveDepartment(
-        ctx.db,
-        uni,
-        input.department,
-      );
+      const departmentName = input.department
+        ? await resolveDepartment(ctx.db, uni, input.department)
+        : null;
 
       // A PENDING university is already fully usable by its staff (W2b), so
       // without this an unreviewed OWNER could spam the platform mailer.
@@ -349,8 +353,8 @@ export const invitesRouter = router({
           ...BLANK_PENDING,
           email: inv.email,
           universityId: inv.universityId,
-          // Platform OWNER invites carry no department (no tenant staff yet).
-          department: inv.department ?? "Administration",
+          // Non-faculty invites carry no department; "" maps to NULL on the user.
+          department: inv.department ?? "",
           title: inv.title,
           inviteId: inv.id,
           role: inv.role,

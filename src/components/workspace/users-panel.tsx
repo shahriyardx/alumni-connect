@@ -156,7 +156,8 @@ function InviteDialog({ meRole }: { meRole: Role }) {
               invite.mutate({
                 email: form.email.trim(),
                 role: form.role,
-                department: form.department.trim(),
+                department:
+                  form.role === "STAFF" ? form.department.trim() : undefined,
                 title: form.title.trim() || undefined,
               });
             }}
@@ -168,19 +169,26 @@ function InviteDialog({ meRole }: { meRole: Role }) {
               required
               {...field("email")}
             />
-            <div className="grid gap-4 sm:grid-cols-2">
+            {/* Only faculty belong to a department. */}
+            <div
+              className={
+                form.role === "STAFF" ? "grid gap-4 sm:grid-cols-2" : "grid"
+              }
+            >
               <Select
                 label="Role"
                 value={form.role}
                 onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
                 items={inviteRoleItems(meRole)}
               />
-              <DepartmentField
-                value={form.department}
-                departments={departments.data}
-                minLength={1}
-                onChange={(v) => setForm((f) => ({ ...f, department: v }))}
-              />
+              {form.role === "STAFF" && (
+                <DepartmentField
+                  value={form.department}
+                  departments={departments.data}
+                  minLength={1}
+                  onChange={(v) => setForm((f) => ({ ...f, department: v }))}
+                />
+              )}
             </div>
             <TextField
               label="Title"
