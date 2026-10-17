@@ -1,64 +1,70 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { timeAgo } from "@/components/author-line";
+import {
+  LoadError,
+  Loading,
+  UNI_STATUS_LABEL,
+} from "@/components/platform/platform-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Spinner } from "@/components/ui/spinner";
+import { Icon } from "@/components/ui/icon";
+import { focusRing } from "@/components/ui/styles";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "@/components/ui/tabs";
 import { TextField } from "@/components/ui/text-field";
 import { useToast } from "@/components/ui/toast";
-import { useMe } from "@/components/user-menu";
+import { PageHeader } from "@/components/workspace/workspace-shell";
 import { UNIVERSITY_STATUSES, type UniversityStatus } from "@/db/schema";
+import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
 
-const LABEL: Record<UniversityStatus, string> = {
-  PENDING: "Pending",
-  ACTIVE: "Active",
-  REJECTED: "Rejected",
-};
-
-export function PlatformView() {
-  const { me, isLoading } = useMe();
+export function UniversitiesView() {
   const trpc = useTRPC();
-  const list = useQuery(
-    trpc.platform.universities.queryOptions(
-      {},
-      { enabled: !!me?.isPlatformAdmin },
-    ),
+  const list = useQuery(trpc.platform.universities.queryOptions({}));
+  const initial = useSearchParams().get("status");
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const rows = (list.data ?? []).filter(
+    (u) =>
+      !needle ||
+      u.name.toLowerCase().includes(needle) ||
+      u.owner?.email.toLowerCase().includes(needle) ||
+      u.owner?.name.toLowerCase().includes(needle),
   );
 
-  if (isLoading)
-    return (
-      <div className="grid place-items-center py-24">
-        <Spinner />
-      </div>
-    );
-  if (!me?.isPlatformAdmin)
-    return (
-      <EmptyState
-        icon="block"
-        title="Platform admins only"
-        body="You don't have access to the platform console."
-      />
-    );
-
   return (
-    <div className="flex flex-col gap-5 pt-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Platform</h1>
-        <NewUniversityDialog />
-      </div>
-      <TabsRoot defaultValue="PENDING">
+    <>
+      <PageHeader
+        title="Universities"
+        sub="Applications and every workspace on the platform."
+        action={<NewUniversityDialog />}
+      />
+      <TextField
+        label="Search"
+        hideLabel
+        type="search"
+        placeholder="Search by name or owner"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        className="max-w-sm"
+      />
+      <TabsRoot
+        defaultValue={
+          UNIVERSITY_STATUSES.find((s) => s === initial) ?? "PENDING"
+        }
+      >
         <TabsList>
           {UNIVERSITY_STATUSES.map((s) => (
             <Tab key={s} value={s}>
-              {LABEL[s]}
+              {UNI_STATUS_LABEL[s]}
               {list.data && (
                 <span className="text-muted-foreground tabular-nums">
-                  {list.data.filter((u) => u.status === s).length}
+                  {rows.filter((u) => u.status === s).length}
                 </span>
               )}
             </Tab>
@@ -67,20 +73,16 @@ export function PlatformView() {
         {UNIVERSITY_STATUSES.map((s) => (
           <TabsPanel key={s} value={s}>
             {list.isError ? (
-              <p className="py-16 text-center text-sm text-destructive">
-                {list.error.message}
-              </p>
+              <LoadError message={list.error.message} />
             ) : !list.data ? (
-              <div className="grid place-items-center py-16">
-                <Spinner />
-              </div>
+              <Loading />
             ) : (
-              <UniversityList items={list.data.filter((u) => u.status === s)} />
+              <UniversityList items={rows.filter((u) => u.status === s)} />
             )}
           </TabsPanel>
         ))}
       </TabsRoot>
-    </div>
+    </>
   );
 }
 
@@ -102,7 +104,20 @@ function UniversityList({ items }: { items: Row[] }) {
       {items.map((u) => (
         <Card key={u.id} className="flex flex-wrap items-center gap-3 p-4">
           <div className="flex min-w-48 flex-1 flex-col gap-0.5">
-            <span className="truncate text-sm font-semibold">{u.name}</span>
+            <Link
+              href={`/platform/universities/${u.id}`}
+              className={cn(
+                focusRing,
+                "flex w-fit max-w-full items-center gap-1 truncate rounded-md text-sm font-semibold hover:underline",
+              )}
+            >
+              {u.name}
+              <Icon
+                name="chevron_right"
+                size={16}
+                className="text-muted-foreground"
+              />
+            </Link>
             <span className="truncate text-xs text-muted-foreground">
               {u.owner
                 ? `${u.owner.name} · ${u.owner.email}${u.owner.verified ? "" : " · Email not verified yet"}`

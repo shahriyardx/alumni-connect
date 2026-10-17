@@ -384,14 +384,20 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
                     </div>
                   </td>
                   <td className="px-3 py-2 max-sm:p-0 max-sm:pl-3">
-                    <span
-                      className={cn(
-                        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium capitalize",
-                        STATUS_TONE[u.status],
-                      )}
-                    >
-                      {u.status.toLowerCase()}
-                    </span>
+                    {u.platformBanned ? (
+                      <span className="inline-flex h-5 items-center rounded-full bg-destructive/10 px-2 text-xs font-medium whitespace-nowrap text-destructive">
+                        Banned by platform
+                      </span>
+                    ) : (
+                      <span
+                        className={cn(
+                          "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium capitalize",
+                          STATUS_TONE[u.status],
+                        )}
+                      >
+                        {u.status.toLowerCase()}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 max-sm:min-w-0 max-sm:flex-1 max-sm:p-0">
                     <Select
@@ -400,6 +406,7 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
                       value={u.role}
                       disabled={
                         u.id === meId ||
+                        u.platformBanned ||
                         u.role === "OWNER" ||
                         (u.role === "ADMIN" && meRole !== "OWNER") ||
                         setUserRole.isPending
@@ -414,7 +421,8 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
                   <td className="px-1 py-2 max-sm:p-0">
                     <RowStatusMenu
                       user={u}
-                      self={u.id === meId}
+                      // Only the platform can act on a platform-banned account.
+                      locked={u.id === meId || u.platformBanned}
                       canTransfer={meRole === "OWNER" && u.status === "ACTIVE"}
                     />
                   </td>
@@ -440,11 +448,11 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
 
 function RowStatusMenu({
   user,
-  self,
+  locked,
   canTransfer,
 }: {
   user: Parameters<typeof useAccountStatusActions>[0];
-  self: boolean;
+  locked: boolean;
   canTransfer: boolean;
 }) {
   const trpc = useTRPC();
@@ -475,7 +483,7 @@ function RowStatusMenu({
     <>
       <Menu.Root>
         <Menu.Trigger
-          disabled={self || all.length === 0}
+          disabled={locked || all.length === 0}
           render={
             <IconButton
               icon="more_vert"

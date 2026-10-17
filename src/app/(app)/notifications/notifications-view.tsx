@@ -9,6 +9,7 @@ import { timeAgo } from "@/components/author-line";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { focusRing } from "@/components/ui/styles";
 import { cn } from "@/lib/cn";
@@ -20,7 +21,7 @@ function Text({ n }: { n: Item }) {
   const title = (
     <span className="font-semibold">{n.post?.title ?? "a removed post"}</span>
   );
-  const actor = <span className="font-semibold">{n.actor.name}</span>;
+  const actor = <span className="font-semibold">{n.actor?.name}</span>;
   switch (n.type) {
     case "REPLY_POST":
       return (
@@ -52,6 +53,21 @@ function Text({ n }: { n: Item }) {
       return (
         <>
           {actor} accepted your answer on {title}
+        </>
+      );
+    case "PLATFORM_ANNOUNCEMENT":
+      return (
+        <>
+          <span className="mb-1 flex">
+            <span className="inline-flex h-5 items-center gap-1 rounded-full bg-primary/15 pr-2 pl-1.5 text-xs font-medium text-primary">
+              <Icon name="campaign" size={12} filled />
+              Alumni Connect
+            </span>
+          </span>
+          <span className="font-semibold">{n.broadcast?.title}</span>
+          <span className="mt-0.5 block whitespace-pre-line text-muted-foreground">
+            {n.broadcast?.body}
+          </span>
         </>
       );
   }
@@ -143,13 +159,21 @@ export function NotificationsView() {
                     : "bg-primary/8 hover:bg-primary/12",
                 )}
               >
-                <Avatar
-                  name={n.actor.name}
-                  src={
-                    n.actor.avatarKey ? `/api/files/${n.actor.avatarKey}` : null
-                  }
-                  size={36}
-                />
+                {n.actor ? (
+                  <Avatar
+                    name={n.actor.name}
+                    src={
+                      n.actor.avatarKey
+                        ? `/api/files/${n.actor.avatarKey}`
+                        : null
+                    }
+                    size={36}
+                  />
+                ) : (
+                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+                    <Icon name="campaign" size={18} />
+                  </span>
+                )}
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="leading-snug">
                     <Text n={n} />

@@ -57,7 +57,8 @@ export async function GET(req: Request) {
       const send = (d: unknown) => enqueue(`data: ${JSON.stringify(d)}\n\n`);
       unsubscribe = subscribe((e) => {
         if (e.universityId !== me.universityId) return;
-        if (e.kind === "notification" && e.userId !== me.id) return;
+        // A notification without userId (platform broadcast) is for everyone.
+        if (e.kind === "notification" && e.userId && e.userId !== me.id) return;
         send({
           kind: e.kind,
           postId: e.postId,

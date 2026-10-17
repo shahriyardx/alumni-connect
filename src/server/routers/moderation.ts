@@ -5,6 +5,10 @@ import type { Tx } from "@/db";
 import { comment, post, type Role, report, session, user } from "@/db/schema";
 import type { AuthorInfo } from "../queries/posts";
 import {
+  assertNotPlatformAdmin,
+  assertNotPlatformBanned,
+} from "../super-admin";
+import {
   audit,
   isAdmin,
   isMod,
@@ -318,16 +322,25 @@ export const moderationRouter = router({
         );
         if (!targetUserId) throw new TRPCError({ code: "NOT_FOUND" });
         const [targetUser] = await ctx.db
-          .select({ id: user.id, role: user.role, status: user.status })
+          .select({
+            id: user.id,
+            role: user.role,
+            status: user.status,
+            platformBanned: user.platformBanned,
+          })
           .from(user)
           .where(
             and(
               eq(user.id, targetUserId),
               eq(user.universityId, ctx.me.universityId),
             ),
-          );
+          )
+          // Row lock: a concurrent platform ban can't slip in before the write.
+          .for("update");
         if (!targetUser) throw new TRPCError({ code: "NOT_FOUND" });
         assertCanAct(ctx.me, targetUser);
+        assertNotPlatformBanned(targetUser);
+        await assertNotPlatformAdmin(ctx.db, targetUser.id);
         if (targetUser.status === "PENDING") {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -416,16 +429,25 @@ export const moderationRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const [target] = await ctx.db
-        .select({ id: user.id, role: user.role, status: user.status })
+        .select({
+          id: user.id,
+          role: user.role,
+          status: user.status,
+          platformBanned: user.platformBanned,
+        })
         .from(user)
         .where(
           and(
             eq(user.id, input.userId),
             eq(user.universityId, ctx.me.universityId),
           ),
-        );
+        )
+        // Row lock: a concurrent platform ban can't slip in before the write.
+        .for("update");
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       assertCanAct(ctx.me, target);
+      assertNotPlatformBanned(target);
+      await assertNotPlatformAdmin(ctx.db, target.id);
 
       // PENDING accounts are an admin-approval concern (workspace.decide),
       // not something a moderator can flip straight to ACTIVE.

@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { and, eq } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { university } from "@/db/schema";
+import { university, user } from "@/db/schema";
 
 function slugify(name: string) {
   return (
@@ -48,4 +49,64 @@ export async function insertUniversity(
       slug = suffixed(base);
     }
   }
+}
+
+/**
+ * Makes targetId (an ACTIVE, verified member) the OWNER; the current OWNER
+ * becomes ADMIN. With `from`, only that account may be the one demoted (the
+ * owner handing over). A university row lock serializes concurrent
+ * transfers, so exactly one OWNER remains. Returns the target's previous role.
+ */
+export async function transferOwner(
+  tx: Tx,
+  universityId: string,
+  targetId: string,
+  from?: string,
+) {
+  // Serialize every transfer for this university (platform and workspace):
+  // the second one waits here, then re-reads owner and target below.
+  await tx
+    .select({ id: university.id })
+    .from(university)
+    .where(eq(university.id, universityId))
+    .for("update");
+  const [target] = await tx
+    .select({ id: user.id, role: user.role })
+    .from(user)
+    .where(
+      and(
+        eq(user.id, targetId),
+        eq(user.universityId, universityId),
+        eq(user.status, "ACTIVE"),
+        eq(user.emailVerified, true),
+      ),
+    );
+  if (!target)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Pick an active member",
+    });
+  if (target.role === "OWNER")
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Already the owner" });
+  const demoted = await tx
+    .update(user)
+    .set({ role: "ADMIN" })
+    .where(
+      and(
+        eq(user.universityId, universityId),
+        eq(user.role, "OWNER"),
+        from ? eq(user.id, from) : undefined,
+      ),
+    )
+    .returning({ id: user.id });
+  if (from && demoted.length === 0)
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "You're no longer the owner",
+    });
+  await tx
+    .update(user)
+    .set({ role: "OWNER" })
+    .where(and(eq(user.id, target.id), eq(user.universityId, universityId)));
+  return target.role;
 }

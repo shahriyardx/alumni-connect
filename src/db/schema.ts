@@ -31,7 +31,12 @@ export const ROLES = [
 ] as const;
 export const STAFF_ROLES = ["OWNER", "ADMIN", "MODERATOR", "STAFF"] as const;
 export const STATUSES = ["PENDING", "ACTIVE", "SUSPENDED", "BANNED"] as const;
-export const UNIVERSITY_STATUSES = ["PENDING", "ACTIVE", "REJECTED"] as const;
+export const UNIVERSITY_STATUSES = [
+  "PENDING",
+  "ACTIVE",
+  "REJECTED",
+  "SUSPENDED",
+] as const;
 export const POST_KINDS = ["QUESTION", "ANNOUNCEMENT"] as const;
 export const EMAIL_DIGEST_FREQUENCIES = ["off", "daily", "weekly"] as const;
 export type Role = (typeof ROLES)[number];
@@ -130,6 +135,11 @@ export const user = pgTable(
       .default("off")
       .notNull(),
     lastDigestAt: timestamp("last_digest_at"),
+    // Platform-only: the status a platform ban replaced, restored on unban.
+    statusBeforeBan: text("status_before_ban", { enum: STATUSES }),
+    // Set only by a platform ban, cleared only by the platform unban; while
+    // true no tenant path may change the account.
+    platformBanned: boolean("platform_banned").default(false).notNull(),
   },
   (t) => [
     index("user_university_idx").on(t.universityId),
@@ -203,6 +213,33 @@ export const platformAdmin = pgTable("platform_admin", {
     .references(() => user.id, { onDelete: "cascade" }),
   createdAt: created(),
 });
+
+/** Platform-wide announcements (global, no RLS); fanned out as notifications. */
+export const broadcast = pgTable("broadcast", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  actorId: text("actor_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  recipients: integer("recipients").default(0).notNull(),
+  createdAt: created(),
+});
+
+/** Super admin actions (global, no RLS): audit_log needs a university. */
+export const platformAudit = pgTable(
+  "platform_audit",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorId: text("actor_id"),
+    action: text("action").notNull(),
+    target: text("target"),
+    ip: text("ip"),
+    meta: jsonb("meta").$type<Record<string, unknown>>(),
+    createdAt: created(),
+  },
+  (t) => [index("platform_audit_created_idx").on(t.createdAt)],
+);
 
 export const rateLimit = pgTable("rate_limit", {
   id: text("id").primaryKey(),
@@ -602,6 +639,7 @@ export const NOTIFICATION_TYPES = [
   "FOLLOWED_TAG_POST",
   "ANNOUNCEMENT",
   "ACCEPTED_ANSWER",
+  "PLATFORM_ANNOUNCEMENT",
 ] as const;
 export const notification = pgTable(
   "notification",
@@ -610,7 +648,11 @@ export const notification = pgTable(
     universityId: universityRef(),
     userId: text("user_id").notNull(),
     type: text("type", { enum: NOTIFICATION_TYPES }).notNull(),
-    actorId: text("actor_id").notNull(),
+    // Null for PLATFORM_ANNOUNCEMENT: the sender is outside the tenant.
+    actorId: text("actor_id"),
+    broadcastId: uuid("broadcast_id").references(() => broadcast.id, {
+      onDelete: "cascade",
+    }),
     postId: uuid("post_id"),
     commentId: uuid("comment_id"),
     readAt: timestamp("read_at"),

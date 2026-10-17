@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { TRPCError } from "@trpc/server";
 import { and, eq, gt, inArray, or, sql } from "drizzle-orm";
 import type { db, Tx } from "@/db";
 import { platformAdmin, user } from "@/db/schema";
@@ -17,6 +18,40 @@ export const envPlatformAdmins = new Set(
  * the sign-up before-hook and the after-hook that inserts the row. Held until
  * the caller's transaction ends.
  */
+/** SQL filter on `user`: env-listed, or holds a platform_admin row (verified or not). */
+export const platformAdminWhere = () =>
+  or(
+    envPlatformAdmins.size
+      ? inArray(sql`lower(${user.email})`, [...envPlatformAdmins])
+      : sql`false`,
+    sql`exists (select 1 from platform_admin pa where pa.user_id = ${user.id})`,
+  );
+
+/** Tenant staff may not ban, suspend or re-role a platform admin. */
+export async function assertNotPlatformAdmin(
+  tx: Tx | typeof db,
+  userId: string,
+) {
+  const [row] = await tx
+    .select({ id: user.id })
+    .from(user)
+    .where(and(eq(user.id, userId), platformAdminWhere()));
+  if (row)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Platform admins can't be moderated here",
+    });
+}
+
+/** A platform ban is the platform's to lift: tenant staff can't touch the account. */
+export function assertNotPlatformBanned(target: { platformBanned: boolean }) {
+  if (target.platformBanned)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Banned by the platform",
+    });
+}
+
 export const lockPlatformAdmin = (tx: Tx) =>
   tx.execute(sql`lock table platform_admin in exclusive mode`);
 
