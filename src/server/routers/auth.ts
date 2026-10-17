@@ -8,6 +8,7 @@ import {
   inArray,
   isNull,
   lt,
+  not,
   or,
   type SQL,
   sql,
@@ -233,6 +234,21 @@ export const BLANK_PENDING = {
   platformAdmin: false,
 } satisfies Partial<typeof pendingSignup.$inferInsert>;
 
+/** A ban outlives verification: banned rows are never swept, always block. */
+const banned = () =>
+  or(eq(user.status, "BANNED"), eq(user.platformBanned, true)) as SQL;
+
+/**
+ * Accounts that hold their email / student ID against a new sign-up:
+ * verified, still mid-signup (inside the grace window), or banned.
+ */
+export const holdsAccount = () =>
+  or(
+    eq(user.emailVerified, true),
+    gt(user.createdAt, graceCutoff()),
+    banned(),
+  ) as SQL;
+
 /**
  * Deletes stale (unverified) accounts matching `where`. One that owned a
  * still-PENDING application gets that university REJECTED first, audited in
@@ -252,7 +268,7 @@ export async function clearStaleUnverified(
       idCardKey: user.idCardKey,
     })
     .from(user)
-    .where(and(eq(user.emailVerified, false), where));
+    .where(and(eq(user.emailVerified, false), not(banned()), where));
   if (stale.length === 0) return [];
   const [{ tenant }] = await tx.execute<{ tenant: string | null }>(
     sql`select current_setting('app.university_id', true) as tenant`,
@@ -301,12 +317,7 @@ async function assertEmailFree(address: string) {
   const [dup] = await db
     .select({ id: user.id })
     .from(user)
-    .where(
-      and(
-        eq(user.email, address),
-        or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff())),
-      ),
-    );
+    .where(and(eq(user.email, address), holdsAccount()));
   if (dup)
     throw new TRPCError({
       code: "CONFLICT",
@@ -711,10 +722,7 @@ export const authRouter = router({
           .where(
             and(
               or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
-              or(
-                eq(user.emailVerified, true),
-                gt(user.createdAt, unverifiedGraceCutoff),
-              ),
+              holdsAccount(),
             ),
           );
         if (dup)

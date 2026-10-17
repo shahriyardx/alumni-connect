@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gt, isNull, lt, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Tx } from "@/db";
 import { invite, university, user } from "@/db/schema";
@@ -15,6 +15,7 @@ import { adminProcedure, audit, publicProcedure, router } from "../trpc";
 import {
   BLANK_PENDING,
   clearStaleUnverified,
+  holdsAccount,
   overLimit,
   removeAll,
   unreferenced,
@@ -38,12 +39,9 @@ const ROLE_WORD: Record<(typeof INVITABLE_ROLES)[number], string> = {
   STAFF: "a faculty member",
 };
 
-/** A verified account always blocks; a fresh (<15min) unverified one is still mid-signup. */
+/** See holdsAccount: verified, mid-signup (<15min) or banned. */
 const blocksSignup = (targetEmail: string) =>
-  and(
-    eq(user.email, targetEmail),
-    or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff())),
-  ) as SQL;
+  and(eq(user.email, targetEmail), holdsAccount()) as SQL;
 
 /**
  * Finds the invite matching `token`'s hash, regardless of tenant: the
