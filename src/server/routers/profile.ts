@@ -15,6 +15,7 @@ export const profileRouter = router({
           name: user.name,
           role: user.role,
           batchNumber: user.batchNumber,
+          graduationYear: user.graduationYear,
           department: user.department,
           title: user.title,
           avatarKey: user.avatarKey,
