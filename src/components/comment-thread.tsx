@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { buildTree, type TreeNode } from "@/lib/comment-tree";
 import { useTRPC } from "@/lib/trpc";
 import type { CommentItem } from "@/server/routers/comment";
+import { AttachmentList } from "./attachments";
 import { AuthorLine } from "./author-line";
 import { CommentForm } from "./comment-form";
 import { Markdown } from "./markdown";
@@ -150,6 +151,7 @@ function Comment({
             {node.body}
           </Markdown>
         )}
+        {mode !== "edit" && <AttachmentList items={node.attachments} />}
         {!node.deleted && mode !== "edit" && (
           <div className="-ml-2 flex flex-wrap items-center gap-0.5 text-sm">
             <VoteButtons

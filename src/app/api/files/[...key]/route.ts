@@ -1,13 +1,24 @@
+import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
 import { db, withTenant } from "@/db";
 import { attachment, university, user } from "@/db/schema";
 import { auth } from "@/server/auth";
-import { presignGet } from "@/server/storage";
+import { getObject, presignGet } from "@/server/storage";
 import { activeStatusError } from "@/server/trpc";
 
 export type FileAccessResult =
+  /** Image: 302 to a presigned GET (served inline). */
   | { ok: true; url: string }
+  /** Document: proxied through us so we control every response header. */
+  | { ok: true; key: string; headers: Record<string, string> }
   | { ok: false; status: 401 | 403 | 404; message: string };
+
+/** RFC 5987 `filename*` value. */
+const rfc5987 = (s: string) =>
+  encodeURIComponent(s).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 
 /**
  * All the authorization + lookup logic behind `GET /api/files/[...key]`,
@@ -51,14 +62,54 @@ export async function resolveFileAccess(
   // must not be fetchable here.
   const [att] = await withTenant(me.universityId, (tx) =>
     tx
-      .select({ mime: attachment.mime })
+      .select({
+        mime: attachment.mime,
+        kind: attachment.kind,
+        size: attachment.size,
+        filename: attachment.filename,
+      })
       .from(attachment)
       .where(eq(attachment.objectKey, objectKey)),
   );
   if (!att) return { ok: false, status: 404, message: "Not found" };
 
-  const url = await presignGet(objectKey, att.mime);
-  return { ok: true, url };
+  if (att.kind === "IMAGE") {
+    const url = await presignGet(objectKey, att.mime);
+    return { ok: true, url };
+  }
+  // Never rendered inline: forced detected type, download disposition, and
+  // nosniff (a presigned S3 GET can't set that header, hence the proxy).
+  const name = att.filename ?? objectKey.split("/").pop() ?? "file";
+  return {
+    ok: true,
+    key: objectKey,
+    headers: {
+      "Content-Type": att.mime,
+      "Content-Disposition": `attachment; filename*=UTF-8''${rfc5987(name)}`,
+      "Content-Length": String(att.size),
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Cache-Control": "private, max-age=240",
+    },
+  };
+}
+
+/** The HTTP response for an access result (separate for tests). */
+export async function fileResponse(result: FileAccessResult) {
+  if (!result.ok)
+    return new Response(result.message, { status: result.status });
+  if ("url" in result)
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: result.url,
+        "Cache-Control": "private, max-age=240",
+      },
+    });
+  const stream = await getObject(result.key);
+  return new Response(Readable.toWeb(stream) as unknown as ReadableStream, {
+    headers: result.headers,
+  });
 }
 
 export async function GET(
@@ -67,12 +118,5 @@ export async function GET(
 ) {
   const session = await auth.api.getSession({ headers: req.headers });
   const { key } = await params;
-  const result = await resolveFileAccess(session?.user.id ?? null, key);
-  if (!result.ok) {
-    return new Response(result.message, { status: result.status });
-  }
-  return new Response(null, {
-    status: 302,
-    headers: { Location: result.url, "Cache-Control": "private, max-age=240" },
-  });
+  return fileResponse(await resolveFileAccess(session?.user.id ?? null, key));
 }

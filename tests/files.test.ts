@@ -9,6 +9,7 @@ import {
   callerFor,
   makeUniversity,
   makeUser,
+  postUpload,
   resetDb,
 } from "./helpers";
 
@@ -22,17 +23,14 @@ beforeEach(async () => {
 
 test("upload round-trip and tenant-scoped keys", async () => {
   const c = callerFor(a.id);
-  const { key, url } = await c.files.createUpload({
+  const up = await c.files.createUpload({
     kind: "attachment",
-    mime: "image/png",
+    ext: "png",
     size: 4,
   });
+  const { key } = up;
   expect(key.startsWith(`${a.universityId}/attachment/`)).toBe(true);
-  const put = await fetch(url, {
-    method: "PUT",
-    body: new Uint8Array([137, 80, 78, 71]),
-    headers: { "Content-Type": "image/png" },
-  });
+  const put = await postUpload(up, new Uint8Array([137, 80, 78, 71]));
   expect(put.ok).toBe(true);
   const att = await c.files.confirm({ key });
   // `confirm` stores a server-only FINAL key, never the staging key the
@@ -48,13 +46,12 @@ test("upload round-trip and tenant-scoped keys", async () => {
 test("rejects bad type, oversize, missing object", async () => {
   const c = callerFor(a.id);
   await expect(
-    // @ts-expect-error invalid mime on purpose
-    c.files.createUpload({ kind: "avatar", mime: "text/html", size: 10 }),
+    c.files.createUpload({ kind: "avatar", ext: "html", size: 10 }),
   ).rejects.toThrow();
   await expect(
     c.files.createUpload({
       kind: "avatar",
-      mime: "image/png",
+      ext: "png",
       size: 6 * 1024 * 1024,
     }),
   ).rejects.toThrow();
@@ -65,16 +62,13 @@ test("rejects bad type, oversize, missing object", async () => {
 
 test("rejects content whose bytes don't match the claimed image type, and removes it", async () => {
   const c = callerFor(a.id);
-  const { key, url } = await c.files.createUpload({
+  const up = await c.files.createUpload({
     kind: "attachment",
-    mime: "image/png",
+    ext: "png",
     size: 25,
   });
-  const put = await fetch(url, {
-    method: "PUT",
-    body: "<script>alert(1)</script>",
-    headers: { "Content-Type": "image/png" },
-  });
+  const { key } = up;
+  const put = await postUpload(up, "<script>alert(1)</script>");
   expect(put.ok).toBe(true);
   await expect(c.files.confirm({ key })).rejects.toThrow(/not a valid image/i);
   expect(await stat(key)).toBeNull();
@@ -82,17 +76,13 @@ test("rejects content whose bytes don't match the claimed image type, and remove
 
 test("post.create ignores an attachmentId owned by someone else", async () => {
   const c = callerFor(a.id);
-  const { key, url } = await c.files.createUpload({
+  const up = await c.files.createUpload({
     kind: "attachment",
-    mime: "image/png",
+    ext: "png",
     size: 4,
   });
-  await fetch(url, {
-    method: "PUT",
-    body: new Uint8Array([137, 80, 78, 71]),
-    headers: { "Content-Type": "image/png" },
-  });
-  const att = await c.files.confirm({ key });
+  await postUpload(up, new Uint8Array([137, 80, 78, 71]));
+  const att = await c.files.confirm({ key: up.key });
 
   const { id: postId } = await callerFor(b.id).post.create({
     title: "Not my attachment",
@@ -106,16 +96,13 @@ test("post.create ignores an attachmentId owned by someone else", async () => {
 
 test("resolveFileAccess: session, tenant, status, and confirmed-object checks", async () => {
   const c = callerFor(a.id);
-  const { key, url } = await c.files.createUpload({
+  const up = await c.files.createUpload({
     kind: "attachment",
-    mime: "image/png",
+    ext: "png",
     size: 4,
   });
-  await fetch(url, {
-    method: "PUT",
-    body: new Uint8Array([137, 80, 78, 71]),
-    headers: { "Content-Type": "image/png" },
-  });
+  await postUpload(up, new Uint8Array([137, 80, 78, 71]));
+  const { key } = up;
 
   // Unconfirmed: never ran files.confirm, so no attachment row exists yet.
   const unconfirmed = await resolveFileAccess(a.id, key.split("/"));
@@ -148,7 +135,7 @@ test("resolveFileAccess: session, tenant, status, and confirmed-object checks", 
 
   const ok = await resolveFileAccess(a.id, finalKey);
   expect(ok.ok).toBe(true);
-  if (ok.ok) {
+  if (ok.ok && "url" in ok) {
     const u = new URL(ok.url);
     expect(u.searchParams.get("response-content-type")).toBe("image/png");
     expect(u.searchParams.get("response-content-disposition")).toBe("inline");
@@ -163,31 +150,26 @@ test("resolveFileAccess: session, tenant, status, and confirmed-object checks", 
   });
 });
 
-test("TOCTOU: replaying the staging presigned PUT after confirm doesn't touch the final object", async () => {
+test("TOCTOU: replaying the staging presigned POST after confirm doesn't touch the final object", async () => {
   const c = callerFor(a.id);
-  const { key: stagingKey, url } = await c.files.createUpload({
+  const up = await c.files.createUpload({
     kind: "attachment",
-    mime: "image/png",
+    ext: "png",
     size: 4,
   });
-  await fetch(url, {
-    method: "PUT",
-    body: new Uint8Array([137, 80, 78, 71]),
-    headers: { "Content-Type": "image/png" },
-  });
+  await postUpload(up, new Uint8Array([137, 80, 78, 71]));
+  const stagingKey = up.key;
   const att = await c.files.confirm({ key: stagingKey });
 
   const before = await stat(att.key);
   expect(before).not.toBeNull();
 
-  // The presigned PUT URL is still valid (300s) — replay it with a
-  // different, oversize, non-image payload, as a malicious or confused
-  // client might after the object was already validated and confirmed.
-  const replay = await fetch(url, {
-    method: "PUT",
-    body: new Uint8Array(6 * 1024 * 1024).fill(1),
-    headers: { "Content-Type": "image/png" },
-  });
+  // The presigned POST is still valid (300s). Oversize is refused by the
+  // policy itself; a same-size non-image payload lands in staging, as a
+  // malicious or confused client might send after confirm.
+  const big = await postUpload(up, new Uint8Array(6 * 1024 * 1024).fill(1));
+  expect(big.ok).toBe(false);
+  const replay = await postUpload(up, new Uint8Array([60, 104, 49, 62]));
   expect(replay.ok).toBe(true);
 
   // The confirmed, served object is a separate copy and is untouched.

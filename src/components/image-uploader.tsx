@@ -2,69 +2,110 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTRPC } from "@/lib/trpc";
-import { ALLOWED_MIME, MAX_BYTES } from "@/lib/uploads";
+import {
+  extOf,
+  FILE_TYPES,
+  formatBytes,
+  IMAGE_EXTS,
+  maxBytesFor,
+} from "@/lib/uploads";
 import { Button } from "./ui/button";
 import { Spinner } from "./ui/spinner";
 import { useToast } from "./ui/toast";
 
-const ALLOWED = Object.keys(ALLOWED_MIME) as (keyof typeof ALLOWED_MIME)[];
+export type Uploaded = {
+  id: string;
+  key: string;
+  name: string;
+  size: number;
+  image: boolean;
+};
 
-type Allowed = (typeof ALLOWED)[number];
+type Kind = "avatar" | "attachment" | "logo";
 
-/** Hidden file input + "Add image" button; uploads straight to MinIO via a presigned URL, then confirms. */
+/** Multipart POST to the presigned policy, reporting 0..1 progress. */
+function postForm(
+  url: string,
+  fields: Record<string, string>,
+  file: File,
+  onProgress: (p: number) => void,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.append(k, v);
+    form.append("file", file); // must come last for S3 POST
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) =>
+      e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () =>
+      xhr.status < 300 ? resolve() : reject(new Error("upload failed"));
+    xhr.onerror = () => reject(new Error("upload failed"));
+    xhr.send(form);
+  });
+}
+
+/**
+ * Validates type/size client-side (the server re-checks the real bytes),
+ * uploads straight to MinIO, then confirms. Throws with a short message.
+ */
+export function useUpload() {
+  const trpc = useTRPC();
+  const createUpload = useMutation(trpc.files.createUpload.mutationOptions());
+  const confirm = useMutation(trpc.files.confirm.mutationOptions());
+  async function run(file: File, kind: Kind, onProgress: (p: number) => void) {
+    const ext = extOf(file.name);
+    const type = FILE_TYPES[ext];
+    const image = IMAGE_EXTS.includes(ext);
+    if (!type || (kind !== "attachment" && !image))
+      throw new Error("file type not allowed");
+    const max = maxBytesFor(type);
+    if (file.size > max) throw new Error(`too large (max ${formatBytes(max)})`);
+    if (file.size === 0) throw new Error("file is empty");
+    const up = await createUpload.mutateAsync({ kind, ext, size: file.size });
+    await postForm(up.url, up.fields, file, onProgress);
+    const att = await confirm.mutateAsync({ key: up.key, name: file.name });
+    return { ...att, name: file.name, size: file.size, image };
+  }
+  return (
+    file: File,
+    kind: Kind,
+    onProgress: (p: number) => void = () => {},
+  ): Promise<Uploaded> =>
+    run(file, kind, onProgress).catch((e) => {
+      throw new Error(
+        `${file.name}: ${e instanceof Error ? e.message : "upload failed"}`,
+      );
+    });
+}
+
+/** Hidden file input + "Add image" button for avatars and logos. */
 export function ImageUploader({
   kind,
   onUploaded,
-  multiple,
   label = "Add image",
 }: {
-  kind: "avatar" | "attachment" | "logo";
+  kind: Kind;
   label?: string;
   onUploaded: (a: { id: string; key: string }) => void;
-  multiple?: boolean;
 }) {
-  const trpc = useTRPC();
   const toast = useToast();
+  const upload = useUpload();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<{ id: string; name: string }[]>([]);
-  const createUpload = useMutation(trpc.files.createUpload.mutationOptions());
-  const confirm = useMutation(trpc.files.confirm.mutationOptions());
-
-  async function uploadOne(file: File) {
-    const localId = crypto.randomUUID();
-    setPending((p) => [...p, { id: localId, name: file.name }]);
-    try {
-      if (!ALLOWED.includes(file.type as Allowed)) {
-        throw new Error(`${file.name}: unsupported file type`);
-      }
-      if (file.size > MAX_BYTES) {
-        throw new Error(`${file.name}: file is too large (max 5 MB)`);
-      }
-      const { key, url } = await createUpload.mutateAsync({
-        kind,
-        mime: file.type as Allowed,
-        size: file.size,
-      });
-      const res = await fetch(url, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      if (!res.ok) throw new Error(`${file.name}: upload failed`);
-      const att = await confirm.mutateAsync({ key });
-      onUploaded(att);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setPending((p) => p.filter((x) => x.id !== localId));
-    }
-  }
+  const [pending, setPending] = useState<string | null>(null);
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+    const file = e.target.files?.[0];
     e.target.value = "";
-    if (files.length === 0) return;
-    await Promise.all((multiple ? files : files.slice(0, 1)).map(uploadOne));
+    if (!file) return;
+    setPending(file.name);
+    try {
+      onUploaded(await upload(file, kind));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setPending(null);
+    }
   }
 
   return (
@@ -72,8 +113,7 @@ export function ImageUploader({
       <input
         ref={inputRef}
         type="file"
-        accept={ALLOWED.join(",")}
-        multiple={multiple}
+        accept={IMAGE_EXTS.map((x) => `.${x}`).join(",")}
         onChange={handleChange}
         className="hidden"
       />
@@ -85,15 +125,12 @@ export function ImageUploader({
       >
         {label}
       </Button>
-      {pending.map((p) => (
-        <span
-          key={p.id}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground"
-        >
+      {pending && (
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Spinner size={16} />
-          {p.name}
+          {pending}
         </span>
-      ))}
+      )}
     </div>
   );
 }

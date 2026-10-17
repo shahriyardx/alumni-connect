@@ -26,6 +26,8 @@ export type PostListItem = {
   bookmarked: boolean;
   hasAlumnusReply: boolean;
   acceptedCommentId: string | null;
+  /** Non-image attachments on the post itself. */
+  fileCount: number;
 };
 
 const excerptOf = (body: string) =>
@@ -89,6 +91,7 @@ export async function listPosts(
       >`(select value from vote where target_type = 'POST' and target_id = post.id and user_id = ${meId})`,
       bookmarked: sql<boolean>`exists (select 1 from bookmark where post_id = post.id and user_id = ${meId})`,
       hasAlumnusReply: hasAlumniReplySQL,
+      fileCount: sql<number>`(select count(*)::int from attachment a where a.post_id = post.id and a.kind = 'DOCUMENT')`,
     })
     .from(post)
     .innerJoin(
@@ -115,6 +118,7 @@ export async function listPosts(
     bookmarked: !!r.bookmarked,
     hasAlumnusReply: !!r.hasAlumnusReply,
     acceptedCommentId: r.acceptedCommentId,
+    fileCount: r.fileCount,
   }));
 
   return {

@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AttachmentList } from "@/components/attachments";
 import { AuthorLine } from "@/components/author-line";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { CommentForm } from "@/components/comment-form";
@@ -83,26 +84,7 @@ export function PostView({ id }: { id: string }) {
         )}
         <Markdown>{p.body}</Markdown>
 
-        {p.attachments.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {p.attachments.map((a) => (
-              <a
-                key={a.id}
-                href={`/api/files/${a.key}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {/* biome-ignore lint/performance/noImgElement: auth-gated proxy, next/image can't optimise it */}
-                <img
-                  src={`/api/files/${a.key}`}
-                  alt="Attachment"
-                  loading="lazy"
-                  className="aspect-square w-full rounded-2xl bg-surface-high object-cover"
-                />
-              </a>
-            ))}
-          </div>
-        )}
+        <AttachmentList items={p.attachments} />
 
         <div className="flex items-center gap-2">
           <div

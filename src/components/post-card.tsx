@@ -99,6 +99,15 @@ export function PostCard({ post }: { post: PostListItem }) {
           <Icon name="chat_bubble" size={16} />
           {post.commentCount}
         </span>
+        {post.fileCount > 0 && (
+          <span
+            className={`${pill} bg-surface-high`}
+            title={`${post.fileCount} attached file${post.fileCount === 1 ? "" : "s"}`}
+          >
+            <Icon name="attach_file" size={16} />
+            {post.fileCount} {post.fileCount === 1 ? "file" : "files"}
+          </span>
+        )}
         {post.acceptedCommentId ? (
           <span
             className={`${pill} bg-emerald-500/15 text-emerald-600 dark:text-emerald-400`}

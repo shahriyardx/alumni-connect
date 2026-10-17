@@ -321,3 +321,60 @@ body {
     animation: none;
   }
 }
+
+/* Syntax tokens (rehype-highlight `hljs-*` classes). `light-dark()` follows
+   the `color-scheme` both theme selectors above already set. Few hues, all
+   muted: primary blue for keywords, the rest stays near the text color. */
+:root {
+  --code-keyword: light-dark(oklch(0.5 0.17 259.66), oklch(0.72 0.13 259.66));
+  --code-string: light-dark(oklch(0.5 0.12 150), oklch(0.78 0.11 150));
+  --code-number: light-dark(oklch(0.55 0.13 55), oklch(0.8 0.11 70));
+  --code-title: light-dark(oklch(0.48 0.15 300), oklch(0.78 0.11 300));
+  --code-type: light-dark(oklch(0.5 0.09 200), oklch(0.78 0.08 200));
+  --code-comment: var(--muted-foreground);
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-literal,
+.hljs-meta .hljs-keyword {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-symbol {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--code-number);
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--code-title);
+}
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-tag {
+  color: var(--code-type);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-deletion {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}

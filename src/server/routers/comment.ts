@@ -1,7 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { comment, notification, post, user } from "@/db/schema";
+import { attachment, comment, notification, post, user } from "@/db/schema";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
+import {
+  type AttachmentItem,
+  attachmentColumns,
+  claimAttachments,
+} from "../attachments";
 import { publish } from "../events";
 import { assertCanPostLinks } from "../links";
 import type { AuthorInfo } from "../queries/posts";
@@ -17,6 +23,7 @@ export type CommentItem = {
   deleted: boolean;
   author: AuthorInfo | null;
   canEdit: boolean;
+  attachments: AttachmentItem[];
 };
 
 export const commentRouter = router({
@@ -61,6 +68,14 @@ export const commentRouter = router({
         .where(eq(comment.postId, input.postId))
         .orderBy(asc(comment.createdAt));
 
+      const files = await ctx.db
+        .select({ ...attachmentColumns, commentId: attachment.commentId })
+        .from(attachment)
+        .innerJoin(comment, eq(comment.id, attachment.commentId))
+        .where(eq(comment.postId, input.postId))
+        .orderBy(asc(attachment.createdAt));
+      const byComment = Map.groupBy(files, (f) => f.commentId);
+
       return rows.map((r) => {
         const deleted = !!r.deletedAt;
         return {
@@ -73,6 +88,9 @@ export const commentRouter = router({
           deleted,
           author: deleted ? null : (r.author as AuthorInfo),
           canEdit: !deleted && (r.authorId === ctx.me.id || isMod(ctx.me.role)),
+          attachments: deleted
+            ? []
+            : (byComment.get(r.id) ?? []).map(({ commentId: _, ...f }) => f),
         };
       });
     }),
@@ -83,6 +101,10 @@ export const commentRouter = router({
         postId: z.string().uuid(),
         parentId: z.string().uuid().optional(),
         body: z.string().min(1).max(10_000),
+        attachmentIds: z
+          .array(z.string().uuid())
+          .max(MAX_ATTACHMENTS)
+          .default([]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -151,6 +173,9 @@ export const commentRouter = router({
           body: input.body,
         })
         .returning({ id: comment.id });
+      await claimAttachments(ctx.db, ctx.me.id, input.attachmentIds, {
+        commentId: row.id,
+      });
 
       await ctx.db
         .update(post)

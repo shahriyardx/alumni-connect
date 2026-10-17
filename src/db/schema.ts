@@ -713,13 +713,25 @@ export const attachment = pgTable(
     universityId: universityRef(),
     ownerId: text("owner_id").notNull(),
     postId: uuid("post_id"),
+    commentId: uuid("comment_id"),
     objectKey: text("object_key").notNull().unique(),
     mime: text("mime").notNull(),
     size: integer("size").notNull(),
+    kind: text("kind", { enum: ["IMAGE", "DOCUMENT"] })
+      .default("IMAGE")
+      .notNull(),
+    /** Sanitized original name (src/lib/uploads.ts sanitizeFilename). */
+    filename: text("filename"),
     createdAt: created(),
   },
   (t) => [
     index("attachment_post_idx").on(t.postId),
+    index("attachment_comment_idx").on(t.commentId),
+    // One parent at most: a file belongs to a post OR a comment.
+    check(
+      "attachment_one_parent",
+      sql`${t.postId} is null or ${t.commentId} is null`,
+    ),
     foreignKey({
       name: "attachment_owner_fk",
       columns: [t.ownerId, t.universityId],
@@ -730,6 +742,12 @@ export const attachment = pgTable(
       name: "attachment_post_fk",
       columns: [t.postId, t.universityId],
       foreignColumns: [post.id, post.universityId],
+    }),
+    // Comments are only soft-deleted too.
+    foreignKey({
+      name: "attachment_comment_fk",
+      columns: [t.commentId, t.universityId],
+      foreignColumns: [comment.id, comment.universityId],
     }),
     tenantPolicy("attachment", t.universityId),
   ],

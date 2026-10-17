@@ -9,6 +9,7 @@ import {
   callerFor,
   makeUniversity,
   makeUser,
+  postUpload,
   resetDb,
 } from "./helpers";
 
@@ -383,23 +384,20 @@ describe("settings", () => {
     await expect(
       callerFor(admin.id).files.createUpload({
         kind: "logo",
-        mime: "image/png",
+        ext: "png",
         size: 4,
       }),
     ).rejects.toThrow(/FORBIDDEN/);
 
     const o = callerFor(owner.id);
-    const { key, url } = await o.files.createUpload({
+    const up = await o.files.createUpload({
       kind: "logo",
-      mime: "image/png",
+      ext: "png",
       size: 4,
     });
+    const { key } = up;
     expect(key.startsWith(`${uniId}/logo/`)).toBe(true);
-    await fetch(url, {
-      method: "PUT",
-      body: new Uint8Array([137, 80, 78, 71]),
-      headers: { "Content-Type": "image/png" },
-    });
+    await postUpload(up, new Uint8Array([137, 80, 78, 71]));
     await expect(callerFor(admin.id).files.confirm({ key })).rejects.toThrow(
       /FORBIDDEN/,
     );

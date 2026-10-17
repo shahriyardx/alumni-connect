@@ -14,6 +14,8 @@ import {
   tag,
   user,
 } from "@/db/schema";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
+import { attachmentColumns, claimAttachments } from "../attachments";
 import { publish } from "../events";
 import { assertCanPostLinks } from "../links";
 import { ANNOUNCEMENTS_PREF_SQL } from "../notification-prefs";
@@ -157,13 +159,10 @@ export const postRouter = router({
         .from(post)
         .where(eq(post.id, input.id));
       const attachments = await ctx.db
-        .select({
-          id: attachment.id,
-          key: attachment.objectKey,
-          mime: attachment.mime,
-        })
+        .select(attachmentColumns)
         .from(attachment)
-        .where(eq(attachment.postId, input.id));
+        .where(eq(attachment.postId, input.id))
+        .orderBy(attachment.createdAt);
       const canEdit = row.authorId === ctx.me.id || isMod(ctx.me.role);
       return { ...item, body: row.body, attachments, canEdit };
     }),
@@ -175,7 +174,10 @@ export const postRouter = router({
         body: z.string().min(1).max(20000),
         kind: z.enum(POST_KINDS).default("QUESTION"),
         tags: z.array(z.string()).max(10).default([]),
-        attachmentIds: z.array(z.string().uuid()).max(6).default([]),
+        attachmentIds: z
+          .array(z.string().uuid())
+          .max(MAX_ATTACHMENTS)
+          .default([]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -205,18 +207,9 @@ export const postRouter = router({
 
       const tagIds = await setPostTags(ctx.db, universityId, row.id, names);
 
-      if (input.attachmentIds.length > 0) {
-        await ctx.db
-          .update(attachment)
-          .set({ postId: row.id })
-          .where(
-            and(
-              inArray(attachment.id, input.attachmentIds),
-              eq(attachment.ownerId, ctx.me.id),
-              isNull(attachment.postId),
-            ),
-          );
-      }
+      await claimAttachments(ctx.db, ctx.me.id, input.attachmentIds, {
+        postId: row.id,
+      });
 
       if (wantsAnnouncement) {
         // Every active student/alumnus of this tenant gets notified, not

@@ -2,6 +2,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTRPC } from "@/lib/trpc";
+import { AttachmentPicker } from "./attachments";
+import type { Uploaded } from "./image-uploader";
 import { Button } from "./ui/button";
 import { useToast } from "./ui/toast";
 
@@ -23,9 +25,11 @@ export function CommentForm({
   const qc = useQueryClient();
   const toast = useToast();
   const [body, setBody] = useState(editing?.body ?? "");
+  const [files, setFiles] = useState<Uploaded[]>([]);
   const opts = {
     onSuccess: () => {
       setBody("");
+      setFiles([]);
       void qc.invalidateQueries(trpc.comment.list.queryFilter({ postId }));
       void qc.invalidateQueries(trpc.post.pathFilter());
       onDone?.();
@@ -39,7 +43,13 @@ export function CommentForm({
     e.preventDefault();
     if (!body.trim()) return;
     if (editing) update.mutate({ id: editing.id, body });
-    else create.mutate({ postId, parentId, body });
+    else
+      create.mutate({
+        postId,
+        parentId,
+        body,
+        attachmentIds: files.map((f) => f.id),
+      });
   }
 
   return (
@@ -57,6 +67,9 @@ export function CommentForm({
         }
         className="block w-full resize-y rounded-xl border border-transparent bg-surface-high px-3.5 py-2.5 text-sm leading-relaxed outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50"
       />
+      {!editing && (
+        <AttachmentPicker value={files} onChange={setFiles} size="sm" />
+      )}
       <div className="flex justify-end gap-2">
         {onDone && (
           <Button variant="ghost" size="sm" onClick={onDone}>

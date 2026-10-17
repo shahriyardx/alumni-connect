@@ -4,42 +4,63 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { attachment } from "@/db/schema";
 import {
-  ALLOWED_MIME,
-  EXT_TO_MIME,
-  finalKeyFor,
-  MAX_BYTES,
-  presignPut,
-  promoteUpload,
-  remove,
-} from "../storage";
+  ALL_EXTS,
+  FILE_TYPES,
+  IMAGE_EXTS,
+  isImageType,
+  MAX_DOC_BYTES,
+  maxBytesFor,
+  sanitizeFilename,
+} from "@/lib/uploads";
+import { finalKeyFor, presignPost, promoteUpload, remove } from "../storage";
 import { memberProcedure, router } from "../trpc";
 
 export const filesRouter = router({
+  /**
+   * Presigned POST (key, content-type and size range pinned by the policy).
+   * Avatars/logos are images only; post/comment attachments also take
+   * documents. The extension decides the type; the client's MIME is ignored.
+   */
   createUpload: memberProcedure
     .input(
       z.object({
         kind: z.enum(["avatar", "attachment", "logo"]),
-        mime: z.enum(Object.keys(ALLOWED_MIME) as [keyof typeof ALLOWED_MIME]),
-        size: z.number().int().min(1).max(MAX_BYTES),
+        ext: z.enum(ALL_EXTS as [string, ...string[]]),
+        size: z.number().int().min(1).max(MAX_DOC_BYTES),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       if (input.kind === "logo" && ctx.me.role !== "OWNER")
         throw new TRPCError({ code: "FORBIDDEN" });
-      const ext = ALLOWED_MIME[input.mime];
+      const type = FILE_TYPES[input.ext];
+      if (input.kind !== "attachment" && !isImageType(type))
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only images are allowed here",
+        });
+      const max = maxBytesFor(type);
+      if (input.size > max)
+        throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
+      const ext = input.ext === "jpeg" ? "jpg" : input.ext;
       const key = `${ctx.me.universityId}/${input.kind}/${randomUUID()}.${ext}`;
-      const url = await presignPut(key);
-      return { key, url };
+      const post = await presignPost(key, type.mime, max);
+      return { key, ...post };
     }),
 
   confirm: memberProcedure
-    .input(z.object({ key: z.string().min(1) }))
+    .input(
+      z.object({
+        key: z.string().min(1),
+        /** Original file name, shown on download (sanitized). */
+        name: z.string().max(500).optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       if (!input.key.startsWith(`${ctx.me.universityId}/`)) {
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const shapeRe = new RegExp(
-        `^${ctx.me.universityId}/(avatar|attachment|logo)/[0-9a-f-]{36}\\.(png|jpg|webp|gif)$`,
+        `^${ctx.me.universityId}/(avatar|attachment|logo)/[0-9a-f-]{36}\\.(${ALL_EXTS.join("|")})$`,
       );
       if (!shapeRe.test(input.key)) {
         throw new TRPCError({
@@ -55,19 +76,17 @@ export const filesRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
 
       const ext = input.key.slice(input.key.lastIndexOf(".") + 1);
-      const mime = EXT_TO_MIME[ext];
-      if (!mime) {
-        // Unreachable given shapeRe's extension group — keeps `mime` typed
-        // as non-optional below without a cast.
+      const type = FILE_TYPES[ext];
+      if (!input.key.includes("/attachment/") && !IMAGE_EXTS.includes(ext)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Upload not found",
         });
       }
 
-      // `input.key` is a *staging* key: it's where the presigned PUT landed,
-      // and that presigned URL stays valid for 300s after this call returns
-      // (minio can't scope a presign to "one PUT only"). Two separate
+      // `input.key` is a *staging* key: it's where the presigned POST landed,
+      // and that presigned policy stays valid for 300s after this call returns
+      // (minio can't scope a presign to "one upload only"). Two separate
       // attacks follow from that, both closed below:
       //
       // 1. TOCTOU on validation: if we validated the staging object and
@@ -78,7 +97,7 @@ export const filesRouter = router({
       //    validation — only an existence check — since nothing it says
       //    about itself can be trusted to still be true a moment later.
       // 2. Overwriting an already-confirmed final: the same staging key can
-      //    be confirmed, re-PUT with different bytes, and confirmed again
+      //    be confirmed, re-POSTed with different bytes, and confirmed again
       //    inside the 300s window. So before copying, check whether this
       //    staging key's final key already has an attachment row; if so,
       //    hand back that existing attachment untouched and never copy
@@ -102,7 +121,7 @@ export const filesRouter = router({
         await remove(input.key).catch(() => {});
         return { id: existingRow.id, key: existingRow.objectKey };
       }
-      const finalInfo = await promoteUpload(input.key, mime);
+      const finalInfo = await promoteUpload(input.key, type);
 
       // Two concurrent confirms racing on the same still-present staging
       // key both get here, both copy identical source bytes to the same
@@ -114,8 +133,10 @@ export const filesRouter = router({
           universityId: ctx.me.universityId,
           ownerId: ctx.me.id,
           objectKey: finalKey,
-          mime,
+          mime: type.mime,
           size: finalInfo.size,
+          kind: isImageType(type) ? "IMAGE" : "DOCUMENT",
+          filename: sanitizeFilename(input.name, ext),
         })
         .onConflictDoNothing({ target: attachment.objectKey })
         .returning({ id: attachment.id, objectKey: attachment.objectKey });

@@ -8,6 +8,7 @@ import {
   makePost,
   makeUniversity,
   makeUser,
+  postUpload,
   resetDb,
 } from "./helpers";
 
@@ -258,26 +259,18 @@ test("profile.setAvatar requires an owned, avatar-kind attachment", async () => 
 
   const avatar = await me.files.createUpload({
     kind: "avatar",
-    mime: "image/png",
+    ext: "png",
     size: png.length,
   });
-  await fetch(avatar.url, {
-    method: "PUT",
-    body: png,
-    headers: { "Content-Type": "image/png" },
-  });
+  await postUpload(avatar, png);
   const avatarAtt = await me.files.confirm({ key: avatar.key });
 
   const file = await me.files.createUpload({
     kind: "attachment",
-    mime: "image/png",
+    ext: "png",
     size: png.length,
   });
-  await fetch(file.url, {
-    method: "PUT",
-    body: png,
-    headers: { "Content-Type": "image/png" },
-  });
+  await postUpload(file, png);
   const fileAtt = await me.files.confirm({ key: file.key });
 
   // Wrong kind: a non-avatar attachment, even though bob owns it.
