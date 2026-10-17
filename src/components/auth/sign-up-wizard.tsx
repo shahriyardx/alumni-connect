@@ -211,15 +211,13 @@ export function SignUpWizard() {
             }}
           >
             <StepHeading title="Where do you study?" />
-            {(unis.data?.length ?? 0) > 6 && (
-              <TextField
-                label="Search"
-                type="search"
-                placeholder="University name"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            )}
+            <TextField
+              label="Search"
+              type="search"
+              placeholder="Type your university name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
             {unis.isLoading ? (
               <Spinner className="self-center" />
             ) : (
