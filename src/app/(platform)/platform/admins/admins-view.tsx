@@ -35,10 +35,10 @@ export function AdminsView() {
           {list.data.map((a) => (
             <div
               key={a.email}
-              className="flex flex-wrap items-center gap-3 rounded-2xl px-3 py-3"
+              className="flex items-center gap-3 rounded-2xl px-3 py-3"
             >
               <Avatar name={a.name ?? a.email} size={36} />
-              <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-sm font-semibold">
                   {a.name ?? "No account yet"}
                   {a.userId === me?.id && (
@@ -101,7 +101,6 @@ function AddAdmin() {
         type="email"
         required
         placeholder="Email of a verified account"
-        description="They get full platform access."
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         className="min-w-0 flex-1 basis-64 sm:max-w-sm"

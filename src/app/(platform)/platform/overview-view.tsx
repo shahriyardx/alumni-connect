@@ -17,12 +17,12 @@ import { type RouterOutputs, useTRPC } from "@/lib/trpc";
 type Day = RouterOutputs["platform"]["overview"]["signupsPerDay"][number];
 
 const ROLE_LABEL = {
-  OWNER: "Owners",
-  ADMIN: "Admins",
-  MODERATOR: "Moderators",
-  STAFF: "Faculty",
-  STUDENT: "Students",
-  ALUMNUS: "Alumni",
+  OWNER: ["Owner", "Owners"],
+  ADMIN: ["Admin", "Admins"],
+  MODERATOR: ["Moderator", "Moderators"],
+  STAFF: ["Faculty", "Faculty"],
+  STUDENT: ["Student", "Students"],
+  ALUMNUS: ["Alumnus", "Alumni"],
 } as const;
 
 export function OverviewView() {
@@ -95,7 +95,10 @@ export function OverviewView() {
         <Breakdown
           label="Users"
           total={users}
-          parts={ROLES.map((r) => [ROLE_LABEL[r], s.users[r]])}
+          parts={ROLES.map((r) => [
+            ROLE_LABEL[r][s.users[r] === 1 ? 0 : 1],
+            s.users[r],
+          ])}
         />
         <Stat label="Posts" value={s.posts} />
         <Stat label="Comments" value={s.comments} />

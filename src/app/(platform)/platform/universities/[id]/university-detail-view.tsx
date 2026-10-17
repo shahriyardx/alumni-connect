@@ -22,12 +22,12 @@ import { type RouterOutputs, useTRPC } from "@/lib/trpc";
 type Uni = RouterOutputs["platform"]["university"];
 
 const ROLE_LABEL = {
-  OWNER: "Owner",
-  ADMIN: "Admins",
-  MODERATOR: "Moderators",
-  STAFF: "Faculty",
-  STUDENT: "Students",
-  ALUMNUS: "Alumni",
+  OWNER: ["Owner", "Owners"],
+  ADMIN: ["Admin", "Admins"],
+  MODERATOR: ["Moderator", "Moderators"],
+  STAFF: ["Faculty", "Faculty"],
+  STUDENT: ["Student", "Students"],
+  ALUMNUS: ["Alumnus", "Alumni"],
 } as const;
 
 export function UniversityDetailView() {
@@ -137,7 +137,9 @@ export function UniversityDetailView() {
                 <span className="font-semibold tabular-nums">
                   {u.members[r]}
                 </span>{" "}
-                <span className="text-muted-foreground">{ROLE_LABEL[r]}</span>
+                <span className="text-muted-foreground">
+                  {ROLE_LABEL[r][u.members[r] === 1 ? 0 : 1]}
+                </span>
               </span>
             ))}
           </div>
