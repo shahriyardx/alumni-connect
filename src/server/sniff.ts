@@ -94,15 +94,43 @@ export function leadingMarkup(s: string): boolean {
   let i = 0;
   for (;;) {
     while (i < s.length && /\s/.test(s[i])) i++;
-    const close = s.startsWith("<!--", i)
-      ? "-->"
-      : s.startsWith("<?xml", i)
-        ? "?>"
-        : null;
-    if (!close) break;
-    const end = s.indexOf(close, i + 4);
-    if (end < 0) return false; // unterminated: not a document start
-    i = end + close.length;
+    if (s.startsWith("<!--", i)) {
+      // Match the HTML tokenizer, not a naive "-->" search: "<!-->" and
+      // "<!--->" are complete comments and "--!>" also closes one.
+      if (s.startsWith(">", i + 4)) {
+        i += 5;
+        continue;
+      }
+      if (s.startsWith("->", i + 4)) {
+        i += 6;
+        continue;
+      }
+      // One forward scan over "--" (two indexOf searches per comment would
+      // rescan the tail each time: quadratic on a run of comments).
+      let j = i + 4;
+      for (;;) {
+        j = s.indexOf("--", j);
+        // Unterminated comment: refuse rather than guess what follows.
+        if (j < 0) return true;
+        if (s[j + 2] === ">") {
+          i = j + 3;
+          break;
+        }
+        if (s.startsWith("!>", j + 2)) {
+          i = j + 4;
+          break;
+        }
+        j++;
+      }
+      continue;
+    }
+    if (s.startsWith("<?xml", i)) {
+      const end = s.indexOf("?>", i + 5);
+      if (end < 0) return true;
+      i = end + 2;
+      continue;
+    }
+    break;
   }
   const rest = s
     .slice(i, i + 40)

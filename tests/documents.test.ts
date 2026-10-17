@@ -400,7 +400,13 @@ describe("fix round 1", () => {
       verdicts.push(leadingMarkup(s));
       expect(performance.now() - t).toBeLessThan(50);
     }
-    expect(verdicts).toEqual([false, true, false, false, true, true, false]);
+    // Unterminated comments/prologs are refused rather than guessed at.
+    expect(verdicts).toEqual([false, true, true, true, true, true, true]);
+    // Same comment rules as the HTML tokenizer (no parser differential).
+    expect(leadingMarkup("<!--><html>")).toBe(true);
+    expect(leadingMarkup("<!---><svg>")).toBe(true);
+    expect(leadingMarkup("<!-- x --!><script>")).toBe(true);
+    expect(leadingMarkup("<!-- a --> plain notes")).toBe(false);
     expect(leadingMarkup('<?xml version="1.0"?><!-- c --><svg/>')).toBe(true);
     expect(leadingMarkup("<Script>")).toBe(true);
     expect(leadingMarkup("<htmlx>")).toBe(false);
