@@ -99,6 +99,13 @@
       "when": 1792237261642,
       "tag": "0013_platform_panel",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792238023421,
+      "tag": "0014_tenant_ban",
+      "breakpoints": true
     }
   ]
 }

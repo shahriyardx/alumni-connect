@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gt, isNull, lt, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, type Tx } from "@/db";
+import { db, type Tx, withTenant } from "@/db";
 import { invite, university, user } from "@/db/schema";
 import { env } from "@/env";
 import {
@@ -18,6 +18,7 @@ import {
   holdsAccount,
   overLimit,
   removeAll,
+  tenantBanned,
   unreferenced,
   upsertPending,
 } from "./auth";
@@ -321,7 +322,12 @@ export const invitesRouter = router({
         .select({ id: user.id })
         .from(user)
         .where(blocksSignup(inv.email, inv.universityId));
-      if (blocking)
+      if (
+        blocking ||
+        (await withTenant(inv.universityId, (tx) =>
+          tenantBanned(tx, inv.universityId, inv.email),
+        ))
+      )
         throw new TRPCError({
           code: "CONFLICT",
           message: "This email is already registered",

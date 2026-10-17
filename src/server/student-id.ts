@@ -11,6 +11,14 @@ export const hashStudentId = (universityId: string, raw: string) =>
     )
     .digest("hex");
 
+/** Same pepper pattern as hashStudentId, for tenant_ban tombstones. */
+export const hashEmail = (universityId: string, email: string) =>
+  createHash("sha256")
+    .update(
+      `${env.STUDENT_ID_PEPPER}:email:${universityId}:${email.trim().toLowerCase()}`,
+    )
+    .digest("hex");
+
 /** Alumnus once the graduation year has passed; only ever STUDENT/ALUMNUS. */
 export function roleFor({
   graduationYear,

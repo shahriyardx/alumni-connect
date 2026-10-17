@@ -305,6 +305,28 @@ export const rosterEntry = pgTable(
   ],
 ).enableRLS();
 
+/**
+ * Tombstone of a tenant ban on a never-verified account that was cleared
+ * for a sign-up elsewhere (routers/auth.ts clearStaleUnverified): keeps the
+ * person out of this university by email and student ID. Per-tenant
+ * peppered hashes, so nothing here links to another tenant.
+ */
+export const tenantBan = pgTable(
+  "tenant_ban",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: universityRef(),
+    emailHash: text("email_hash").notNull(),
+    studentIdHash: text("student_id_hash"),
+    createdAt: created(),
+  },
+  (t) => [
+    index("tenant_ban_email_idx").on(t.universityId, t.emailHash),
+    index("tenant_ban_student_idx").on(t.universityId, t.studentIdHash),
+    tenantPolicy("tenant_ban", t.universityId),
+  ],
+).enableRLS();
+
 export const invite = pgTable(
   "invite",
   {

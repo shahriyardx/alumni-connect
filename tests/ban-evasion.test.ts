@@ -162,3 +162,97 @@ describe("tenant bans of unverified accounts stay inside their tenant", () => {
     expect(await stillThere(b.id)).toBe(true);
   });
 });
+
+// Follow-up: clearing A's banned row for a sign-up at B must not let the
+// same person come straight back to A, and neither side may learn of the
+// other (no university id in A's audit, identical errors at B).
+describe("tenant ban tombstones and no cross-tenant disclosure", () => {
+  const idA = () => hashStudentId(uniId, "2019-1-60-001");
+
+  async function bannedAtAThenJoinedB(email: string) {
+    const b = await banned(email, {
+      platformBanned: false,
+      studentIdHash: idA(),
+    });
+    const uniB = (await makeUniversity()).id;
+    await callerFor(null).auth.startSignup(signupInput(email, uniB));
+    expect(await stillThere(b.id)).toBe(false);
+    return { b, uniB };
+  }
+
+  test("two-step evasion back into A is blocked by email", async () => {
+    await bannedAtAThenJoinedB("twostep@x.edu");
+    await expect(
+      callerFor(null).auth.startSignup({
+        ...signupInput("twostep@x.edu"),
+        studentId: "2019-9-99-999",
+      }),
+    ).rejects.toThrow("This student ID or email is already registered");
+  });
+
+  test("two-step evasion back into A is blocked by student ID", async () => {
+    await bannedAtAThenJoinedB("twostep2@x.edu");
+    await expect(
+      callerFor(null).auth.startSignup(signupInput("fresh-mail@x.edu")),
+    ).rejects.toThrow("This student ID or email is already registered");
+  });
+
+  test("two-step evasion back into A through an invite is blocked", async () => {
+    await bannedAtAThenJoinedB("twostep3@x.edu");
+    const admin = await makeUser(uniId, { role: "ADMIN" });
+    const r = await callerFor(admin.id).invites.create({
+      email: "twostep3@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = r.inviteUrl.split("/").pop() as string;
+    await expect(
+      callerFor(null).invites.accept({ token, name: "Back Again" }),
+    ).rejects.toThrow("This email is already registered");
+  });
+
+  test("A's purge audit row names nothing of B", async () => {
+    const { b, uniB } = await bannedAtAThenJoinedB("quiet@x.edu");
+    const [row] = await adminDb
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.target, b.id));
+    expect(row.universityId).toBe(uniId);
+    expect(JSON.stringify(row)).not.toContain(uniB);
+    expect(row.meta).not.toHaveProperty("into");
+  });
+
+  test("sign-up errors at B are identical with or without a ban at A", async () => {
+    const uniB = (await makeUniversity()).id;
+    const attempt = async (email: string) => {
+      try {
+        await callerFor(null).auth.startSignup(signupInput(email, uniB));
+        return "ok";
+      } catch (e) {
+        const err = e as { code: string; message: string };
+        return `${err.code}:${err.message}`;
+      }
+    };
+    // Fresh (mid-signup) rows at A: both block B the same way.
+    await makeUser(uniId, { email: "fa@x.edu", emailVerified: false });
+    await makeUser(uniId, {
+      email: "fb@x.edu",
+      emailVerified: false,
+      status: "BANNED",
+    });
+    const plain = await attempt("fa@x.edu");
+    expect(plain).toBe(
+      "CONFLICT:This student ID or email is already registered",
+    );
+    expect(await attempt("fb@x.edu")).toBe(plain);
+    // Stale rows at A: both are swept and B proceeds the same way.
+    await makeUser(uniId, {
+      email: "sa@x.edu",
+      emailVerified: false,
+      createdAt: stale(),
+    });
+    await banned("sb@x.edu", { platformBanned: false });
+    expect(await attempt("sa@x.edu")).toBe("ok");
+    expect(await attempt("sb@x.edu")).toBe("ok");
+  });
+});

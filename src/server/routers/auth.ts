@@ -22,6 +22,7 @@ import {
   pendingSignup,
   rateLimit,
   rosterEntry,
+  tenantBan,
   university,
   user,
 } from "@/db/schema";
@@ -36,7 +37,12 @@ import {
   promoteUpload,
   remove,
 } from "../storage";
-import { hashStudentId, normalizeStudentId, roleFor } from "../student-id";
+import {
+  hashEmail,
+  hashStudentId,
+  normalizeStudentId,
+  roleFor,
+} from "../student-id";
 import {
   lockPlatformAdmin,
   setupTokenOk,
@@ -251,6 +257,34 @@ const bannedFor = (into: string | null) =>
   ) as SQL;
 
 /**
+ * A tenant_ban tombstone for this email (or student ID hash) in
+ * `universityId`. `tx` must be scoped to that tenant (RLS).
+ */
+export async function tenantBanned(
+  tx: Tx,
+  universityId: string,
+  email: string,
+  studentIdHash?: string,
+) {
+  const [hit] = await tx
+    .select({ id: tenantBan.id })
+    .from(tenantBan)
+    .where(
+      and(
+        eq(tenantBan.universityId, universityId),
+        or(
+          eq(tenantBan.emailHash, hashEmail(universityId, email)),
+          studentIdHash
+            ? eq(tenantBan.studentIdHash, studentIdHash)
+            : undefined,
+        ),
+      ),
+    )
+    .limit(1);
+  return !!hit;
+}
+
+/**
  * Accounts that hold their email / student ID against a sign-up into
  * `into`: verified, still mid-signup (inside the grace window), or banned
  * there (see bannedFor).
@@ -282,6 +316,8 @@ export async function clearStaleUnverified(
       universityId: user.universityId,
       role: user.role,
       status: user.status,
+      email: user.email,
+      studentIdHash: user.studentIdHash,
       idCardKey: user.idCardKey,
     })
     .from(user)
@@ -295,9 +331,15 @@ export async function clearStaleUnverified(
       await tx.execute(
         sql`select set_config('app.university_id', ${s.universityId}, true)`,
       );
+      // The ban outlives the row (see tenantBanned). Nothing here names
+      // the university the sign-up is going into.
+      await tx.insert(tenantBan).values({
+        universityId: s.universityId,
+        emailHash: hashEmail(s.universityId, s.email),
+        studentIdHash: s.studentIdHash,
+      });
       await audit(tx, s.universityId, null, "user.purge", s.id, {
         reason: "banned-unverified-reclaimed",
-        into,
       });
     }
     if (s.role !== "OWNER" || !s.universityId) continue;
@@ -753,7 +795,7 @@ export const authRouter = router({
               holdsAccount(uni.id),
             ),
           );
-        if (dup)
+        if (dup || (await tenantBanned(tx, uni.id, input.email, idHash)))
           return fail(
             "CONFLICT",
             "This student ID or email is already registered",
