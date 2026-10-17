@@ -180,6 +180,12 @@ export function SignUpWizard() {
     else router.push("/pending");
   }
 
+  const needle = query.trim().toLowerCase();
+  // The picked university stays listed even when the search hides it.
+  const shown = (unis.data ?? []).filter(
+    (u) => u.id === universityId || u.name.toLowerCase().includes(needle),
+  );
+
   if (welcome) return <AlumnusWelcome name={form.name} href="/pending" />;
 
   return (
@@ -223,25 +229,26 @@ export function SignUpWizard() {
                 onValueChange={(v) => setUniversityId(v as string)}
                 className="-m-1 flex max-h-80 flex-col gap-2 overflow-y-auto p-1"
               >
-                {(unis.data ?? [])
-                  .filter((u) =>
-                    u.name.toLowerCase().includes(query.trim().toLowerCase()),
-                  )
-                  .map((u) => (
-                    <Radio.Root
-                      key={u.id}
-                      value={u.id}
-                      className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-surface-high p-2.5 pr-4 text-left text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 data-[checked]:bg-tonal data-[checked]:text-tonal-fg"
-                    >
-                      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface text-sm font-semibold group-data-[checked]:bg-primary group-data-[checked]:text-primary-foreground">
-                        {u.name.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="flex-1 truncate">{u.name}</span>
-                      <Radio.Indicator className="flex text-primary">
-                        <Icon name="check_circle" filled size={20} />
-                      </Radio.Indicator>
-                    </Radio.Root>
-                  ))}
+                {shown.length === 0 && (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No university matches “{query.trim()}”.
+                  </p>
+                )}
+                {shown.map((u) => (
+                  <Radio.Root
+                    key={u.id}
+                    value={u.id}
+                    className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-surface-high p-2.5 pr-4 text-left text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 data-[checked]:bg-tonal data-[checked]:text-tonal-fg"
+                  >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface text-sm font-semibold group-data-[checked]:bg-primary group-data-[checked]:text-primary-foreground">
+                      {u.name.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="flex-1 truncate">{u.name}</span>
+                    <Radio.Indicator className="flex text-primary">
+                      <Icon name="check_circle" filled size={20} />
+                    </Radio.Indicator>
+                  </Radio.Root>
+                ))}
               </RadioGroup>
             )}
             <Button type="submit" disabled={!uni} className="w-full">
