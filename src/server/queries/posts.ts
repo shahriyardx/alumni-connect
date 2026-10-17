@@ -31,6 +31,13 @@ export type PostListItem = {
 const excerptOf = (body: string) =>
   body.replace(/[#*_>`[\]()!]/g, "").slice(0, 240);
 
+/**
+ * True when a non-deleted comment by an ALUMNUS exists on this post.
+ * Shared between the `hasAlumnusReply` select column below and
+ * `post.search`'s `hasAlumniAnswer` filter (both query an unaliased `post`).
+ */
+export const hasAlumniReplySQL = sql<boolean>`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`;
+
 export async function listPosts(
   tx: Tx,
   meId: string,
@@ -81,7 +88,7 @@ export async function listPosts(
         number | null
       >`(select value from vote where target_type = 'POST' and target_id = post.id and user_id = ${meId})`,
       bookmarked: sql<boolean>`exists (select 1 from bookmark where post_id = post.id and user_id = ${meId})`,
-      hasAlumnusReply: sql<boolean>`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`,
+      hasAlumnusReply: hasAlumniReplySQL,
     })
     .from(post)
     .innerJoin(

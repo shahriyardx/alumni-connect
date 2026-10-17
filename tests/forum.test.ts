@@ -481,7 +481,10 @@ describe("post.accept", () => {
       body: "noted",
     });
     await expect(
-      callerFor(staff.id).post.accept({ postId: annId, commentId: annCommentId }),
+      callerFor(staff.id).post.accept({
+        postId: annId,
+        commentId: annCommentId,
+      }),
     ).rejects.toThrow(/Only questions/);
   });
 
@@ -546,9 +549,9 @@ describe("post.accept", () => {
     ).rejects.toThrow(/BAD_REQUEST/);
 
     await callerFor(alice.id).post.accept({ postId, commentId });
-    expect((await callerFor(bob.id).post.byId({ id: postId })).acceptedCommentId).toBe(
-      commentId,
-    );
+    expect(
+      (await callerFor(bob.id).post.byId({ id: postId })).acceptedCommentId,
+    ).toBe(commentId);
     const notif = await adminDb
       .select()
       .from(notification)
@@ -592,7 +595,10 @@ describe("post.search filters", () => {
       postId: solvedQ.id,
       body: "Here is my advice",
     });
-    await callerFor(cs.id).post.accept({ postId: solvedQ.id, commentId: answerId });
+    await callerFor(cs.id).post.accept({
+      postId: solvedQ.id,
+      commentId: answerId,
+    });
 
     const unsolvedQ = await callerFor(ee.id).post.create({
       title: "Internship search tips for EEE",

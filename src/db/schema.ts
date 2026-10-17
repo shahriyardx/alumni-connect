@@ -359,10 +359,7 @@ export const post = pgTable(
     body: text("body").notNull(),
     score: integer("score").default(0).notNull(),
     commentCount: integer("comment_count").default(0).notNull(),
-    // QUESTION only; set by the post's author via post.accept. The FK's
-    // ON DELETE SET NULL is scoped to this column alone in the migration SQL
-    // (a plain composite SET NULL would also null university_id, which is
-    // NOT NULL — see the same note on `attachment`'s post FK).
+    // QUESTION only; set by the post's author via post.accept.
     acceptedCommentId: uuid("accepted_comment_id"),
     createdAt: created(),
     updatedAt: timestamp("updated_at")
@@ -387,6 +384,16 @@ export const post = pgTable(
       columns: [t.authorId, t.universityId],
       foreignColumns: [user.id, user.universityId],
     }),
+    // drizzle-kit has no builder for a column-scoped ON DELETE action on a
+    // composite FK, so this intentionally declares "no action" (the default)
+    // and the *real*, deployed constraint — ON DELETE SET NULL
+    // (accepted_comment_id) — is hand-written in drizzle/0011_accept_answer.sql.
+    // A plain composite SET NULL would also null university_id, which is
+    // NOT NULL on post (see the same note on `attachment`'s post FK). This is
+    // deliberate drift between this declaration and the live DB: if a future
+    // migration ever touches `post_accepted_comment_fk` (drizzle-kit will
+    // regenerate it as "no action" from this schema), re-apply the
+    // column-scoped SET NULL by hand in that migration's SQL too.
     foreignKey({
       name: "post_accepted_comment_fk",
       columns: [t.acceptedCommentId, t.universityId],

@@ -16,7 +16,7 @@ import {
 } from "@/db/schema";
 import { publish } from "../events";
 import { assertCanPostLinks } from "../links";
-import { listPosts } from "../queries/posts";
+import { hasAlumniReplySQL, listPosts } from "../queries/posts";
 import { normalizeTags } from "../tags";
 import { audit, isMod, isStaff, memberProcedure, router } from "../trpc";
 
@@ -102,8 +102,8 @@ export const postRouter = router({
     .input(
       z.object({
         q: z.string().min(1).max(200),
-        tag: z.string().optional(),
-        department: z.string().optional(),
+        tag: z.string().max(80).optional(),
+        department: z.string().max(80).optional(),
         hasAlumniAnswer: z.boolean().optional(),
         solved: z.boolean().optional(),
         kind: z.enum(POST_KINDS).optional(),
@@ -123,11 +123,7 @@ export const postRouter = router({
       if (input.department) {
         conds.push(sql`lower(${user.department}) = lower(${input.department})`);
       }
-      if (input.hasAlumniAnswer) {
-        conds.push(
-          sql`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`,
-        );
-      }
+      if (input.hasAlumniAnswer) conds.push(hasAlumniReplySQL);
       if (input.solved) conds.push(sql`${post.acceptedCommentId} is not null`);
       if (input.kind) conds.push(eq(post.kind, input.kind));
       if (input.range !== "any") {
