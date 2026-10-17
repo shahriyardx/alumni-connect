@@ -172,33 +172,42 @@ export function FeedRail({ variant }: { variant: "aside" | "row" }) {
 
   if (variant === "row") {
     return (
-      <nav
-        aria-label="Feed controls"
-        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] min-[840px]:mx-0 min-[840px]:px-0 xl:hidden"
-      >
-        {tiles.map((t) => (
-          <Link
-            key={t.key}
-            href={t.href}
-            className={cn(
-              focusRing,
-              "flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-medium whitespace-nowrap",
-              t.primary
-                ? "bg-primary text-primary-foreground"
-                : "bg-surface-high text-foreground",
-            )}
-          >
-            <Icon name={t.icon} size={18} filled={t.primary} />
-            {t.label}
-            {t.count !== undefined && (
-              <span className="tabular-nums opacity-80">
-                {t.count}
-                {t.hasMore && "+"}
-              </span>
-            )}
-          </Link>
-        ))}
-      </nav>
+      <div className="relative -mx-4 px-4 min-[840px]:mx-0 min-[840px]:px-0 xl:hidden">
+        <nav
+          aria-label="Feed controls"
+          className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]"
+        >
+          {tiles.map((t) => (
+            <Link
+              key={t.key}
+              href={t.href}
+              className={cn(
+                focusRing,
+                "flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-medium whitespace-nowrap",
+                t.primary
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-surface-high text-foreground",
+              )}
+            >
+              <Icon name={t.icon} size={18} filled={t.primary} />
+              {t.label}
+              {t.count !== undefined && (
+                <span className="tabular-nums opacity-80">
+                  {t.count}
+                  {t.hasMore && "+"}
+                </span>
+              )}
+            </Link>
+          ))}
+        </nav>
+        {/* Hints that the strip scrolls: a fade at the trailing edge. */}
+        {tiles.length > 1 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent"
+          />
+        )}
+      </div>
     );
   }
 
