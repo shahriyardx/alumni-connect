@@ -51,7 +51,7 @@ const signUp = (email: string, name = "New Member") =>
   auth.api.signUpEmail({ body: { name, email, password: "password123" } });
 
 /**
- * There's no SMTP in tests (see src/server/mail.ts), so the OTP is printed
+ * There's no Mailroom in tests (see src/server/mail.ts), so the OTP is printed
  * to the console instead of sent — capture it the same way a developer
  * reads it in dev. Works for any call that ends up triggering
  * sendVerificationOTP (sign-up, send-verification-otp, request-password-reset).

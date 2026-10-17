@@ -11,7 +11,13 @@ const schema = z.object({
   S3_ACCESS_KEY: z.string().default("minioadmin"),
   S3_SECRET_KEY: z.string().default("minioadmin"),
   S3_BUCKET: z.string().default("alumni"),
-  SMTP_URL: z
+  // Mailroom instance; both unset = mail is printed to the server log.
+  MAILROOM_BASE_URL: z
+    .string()
+    .url()
+    .optional()
+    .transform((v) => v || undefined),
+  MAILROOM_API_KEY: z
     .string()
     .optional()
     .transform((v) => v || undefined),

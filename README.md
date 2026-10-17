@@ -26,7 +26,7 @@ bun run db:migrate
 bun run dev
 ```
 
-Open `http://localhost:3000/admin` to create the first admin. If SMTP is not configured, email codes are printed in the server log.
+Open `http://localhost:3000/admin` to create the first admin. Mail goes through [Mailroom](https://github.com/shahriyardx/mailroom). Without `MAILROOM_BASE_URL` and `MAILROOM_API_KEY`, email codes are printed in the server log.
 
 ## Scripts
 
