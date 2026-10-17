@@ -125,6 +125,7 @@ function Comment({
               variant="ghost"
               size="sm"
               icon="reply"
+              className="text-muted-foreground hover:text-foreground"
               onClick={() => setMode(mode === "reply" ? "idle" : "reply")}
             >
               Reply
@@ -134,7 +135,12 @@ function Comment({
                 targetType="COMMENT"
                 targetId={node.id}
                 trigger={
-                  <Button variant="ghost" size="sm" icon="flag">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="flag"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     Report
                   </Button>
                 }
@@ -146,6 +152,7 @@ function Comment({
                   variant="ghost"
                   size="sm"
                   icon="edit"
+                  className="text-muted-foreground hover:text-foreground"
                   onClick={() => setMode("edit")}
                 >
                   Edit

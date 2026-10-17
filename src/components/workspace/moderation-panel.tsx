@@ -143,11 +143,12 @@ function ReportCard({ r }: { r: Report }) {
     resolve.isPending && resolve.variables?.action === a;
   const href = contentHref(r);
   const p = r.preview;
+  const who = r.targetType === "USER" ? "this account" : "author";
 
   return (
     <Card className="flex flex-col gap-4 p-5">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="inline-flex h-5 items-center rounded-full bg-muted px-2 font-medium">
+        <span className="inline-flex h-5 items-center rounded-full bg-muted px-2 font-medium capitalize">
           {r.targetType.toLowerCase()}
         </span>
         <span>reported {timeAgo(r.createdAt)}</span>
@@ -191,6 +192,7 @@ function ReportCard({ r }: { r: Report }) {
           <span className="text-muted-foreground">Reason · </span>
           {r.reason}
         </p>
+        <span className="text-xs text-muted-foreground">Reported by</span>
         <AuthorLine author={r.reporter} at={r.createdAt} size={28} />
       </div>
 
@@ -221,7 +223,7 @@ function ReportCard({ r }: { r: Report }) {
             icon="timer_pause"
             onClick={() => setDialog("suspend")}
           >
-            Suspend
+            {who === "author" ? "Suspend author" : "Suspend"}
           </Button>
           <Button
             size="sm"
@@ -229,7 +231,7 @@ function ReportCard({ r }: { r: Report }) {
             className="bg-destructive text-white hover:bg-destructive/85"
             onClick={() => setDialog("ban")}
           >
-            Ban
+            {who === "author" ? "Ban author" : "Ban"}
           </Button>
         </div>
       )}
@@ -240,7 +242,7 @@ function ReportCard({ r }: { r: Report }) {
       >
         {dialog === "suspend" ? (
           <DialogContent
-            title="Suspend author"
+            title={`Suspend ${who}`}
             description="They can't sign in until the suspension ends."
           >
             <Select
@@ -263,8 +265,8 @@ function ReportCard({ r }: { r: Report }) {
           </DialogContent>
         ) : (
           <DialogContent
-            title="Ban this account?"
-            description="This blocks the account. Continue?"
+            title={`Ban ${who}?`}
+            description="They can't sign in again until an admin restores them from Members."
           >
             <div className="flex justify-end gap-2">
               <Dialog.Close render={<Button variant="ghost" />}>

@@ -42,7 +42,10 @@ export function Select<T extends string>({
           )}
         >
           <BaseSelect.Value
-            placeholder="Select…"
+            // Base UI treats "" as "no value"; show that item's label (e.g. "All departments").
+            placeholder={
+              items.find((it) => it.value === "")?.label ?? "Select…"
+            }
             className="truncate data-[placeholder]:text-muted-foreground"
           />
           <BaseSelect.Icon className="flex text-muted-foreground transition-transform duration-150 in-data-[popup-open]:rotate-180">

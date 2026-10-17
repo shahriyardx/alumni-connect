@@ -295,6 +295,7 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
     <div className="flex flex-col gap-4">
       <TextField
         label="Search members"
+        hideLabel
         type="search"
         placeholder="Name or email"
         value={q}
@@ -385,7 +386,7 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
                   <td className="px-3 py-2 max-sm:p-0 max-sm:pl-3">
                     <span
                       className={cn(
-                        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+                        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium capitalize",
                         STATUS_TONE[u.status],
                       )}
                     >

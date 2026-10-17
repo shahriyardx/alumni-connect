@@ -31,6 +31,11 @@ export function BatchesPanel() {
   const trpc = useTRPC();
   const batches = useQuery(trpc.workspace.batches.queryOptions());
   const [editing, setEditing] = useState<Batch | "new" | null>(null);
+  // Prefill "New batch" with the one after the newest.
+  const last = batches.data?.reduce<Batch | null>(
+    (a, b) => (!a || b.number > a.number ? b : a),
+    null,
+  );
 
   return (
     <>
@@ -73,7 +78,7 @@ export function BatchesPanel() {
       )}
 
       <Card className="flex flex-wrap items-center gap-x-6 gap-y-3 p-5 text-sm">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-64 flex-1 flex-col gap-1">
           <span className="font-medium">Roster files</span>
           <span className="text-muted-foreground">
             Excel (.xlsx) or CSV with columns{" "}
@@ -97,6 +102,9 @@ export function BatchesPanel() {
       <BatchDialog
         key={editing === "new" ? "new" : (editing?.id ?? "closed")}
         batch={editing}
+        next={
+          last && { number: last.number + 1, year: last.graduationYear + 1 }
+        }
         onClose={() => setEditing(null)}
       />
     </>
@@ -149,7 +157,7 @@ function BatchRow({ b, onEdit }: { b: Batch; onEdit: () => void }) {
   return (
     <Card className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex min-w-36 flex-1 items-center gap-3">
+        <div className="flex flex-1 items-center gap-3">
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-surface-high text-lg font-semibold tracking-tight tabular-nums">
             {b.number}
           </span>
@@ -157,7 +165,7 @@ function BatchRow({ b, onEdit }: { b: Batch; onEdit: () => void }) {
             <span className="font-semibold tracking-tight">
               Batch {b.number}
             </span>
-            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex items-center gap-2 text-sm whitespace-nowrap text-muted-foreground">
               Class of {b.graduationYear}
               <span
                 className={cn(
@@ -275,18 +283,22 @@ function BatchRow({ b, onEdit }: { b: Batch; onEdit: () => void }) {
 
 function BatchDialog({
   batch,
+  next,
   onClose,
 }: {
   batch: Batch | "new" | null;
+  next?: { number: number; year: number } | null;
   onClose: () => void;
 }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
   const existing = batch && batch !== "new" ? batch : null;
-  const [number, setNumber] = useState(existing ? String(existing.number) : "");
+  const [number, setNumber] = useState(
+    String(existing?.number ?? next?.number ?? ""),
+  );
   const [year, setYear] = useState(
-    existing ? String(existing.graduationYear) : "",
+    String(existing?.graduationYear ?? next?.year ?? ""),
   );
   const valid =
     Number(number) >= 1 &&
