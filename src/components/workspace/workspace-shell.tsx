@@ -310,7 +310,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             {!me || toQueue ? null : !ok ? (
               <EmptyState
                 icon="block"
-                title="403 · Staff only"
+                title="Staff only"
                 body={
                   isMod(me.role)
                     ? "This section needs a higher role."
