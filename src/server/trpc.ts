@@ -8,14 +8,15 @@ import {
   isAdmin,
   isMod,
   isStaff,
+  platformAdmin,
   type UniversityStatus,
   university,
   user,
 } from "@/db/schema";
-import { env } from "@/env";
 import { isSuspendedNow } from "@/lib/account-status";
 import { auth } from "./auth";
 import { clientIp } from "./client-ip";
+import { envPlatformAdmins } from "./super-admin";
 
 export type Context = { userId: string | null; ip: string };
 
@@ -52,7 +53,7 @@ export type Me = typeof user.$inferSelect;
  */
 export function activeStatusError(
   me: Pick<Me, "status" | "suspendedUntil"> & {
-    universityStatus: UniversityStatus;
+    universityStatus: UniversityStatus | null;
   },
 ): string | null {
   if (me.status === "BANNED") return "Account banned";
@@ -68,11 +69,15 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   const [row] = await db
     .select({ me: user, universityStatus: university.status })
     .from(user)
-    .innerJoin(university, eq(university.id, user.universityId))
+    .leftJoin(university, eq(university.id, user.universityId))
     .where(eq(user.id, ctx.userId));
   if (!row || !row.me.emailVerified)
     throw new TRPCError({ code: "UNAUTHORIZED" });
   const me = row.me;
+  // A super admin has no university, so no tenant to act in.
+  const universityId = me.universityId;
+  if (!universityId)
+    throw new TRPCError({ code: "FORBIDDEN", message: "No university" });
   const statusError = activeStatusError({
     ...me,
     universityStatus: row.universityStatus,
@@ -80,7 +85,7 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (statusError) {
     throw new TRPCError({ code: "FORBIDDEN", message: statusError });
   }
-  return withTenant(me.universityId, async (tx) => {
+  return withTenant(universityId, async (tx) => {
     // Lazy alumnus promotion: only ever STUDENT -> ALUMNUS.
     let role = me.role;
     if (
@@ -94,13 +99,15 @@ export const memberProcedure = t.procedure.use(async ({ ctx, next }) => {
         .where(
           and(
             eq(user.id, me.id),
-            eq(user.universityId, me.universityId),
+            eq(user.universityId, universityId),
             eq(user.role, "STUDENT"),
           ),
         );
       role = "ALUMNUS";
     }
-    const res = await next({ ctx: { db: tx, me: { ...me, role } } });
+    const res = await next({
+      ctx: { db: tx, me: { ...me, universityId, role } },
+    });
     if (!res.ok) throw res.error; // roll the transaction back on any procedure error
     return res;
   });
@@ -120,25 +127,30 @@ export const ownerProcedure = memberProcedure.use(({ ctx, next }) => {
   return next();
 });
 
-const platformAdmins = new Set(
-  env.PLATFORM_ADMIN_EMAILS.split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean),
-);
-export const isPlatformAdmin = (u: Pick<Me, "email" | "emailVerified">) =>
-  u.emailVerified && platformAdmins.has(u.email.toLowerCase());
+/** Verified, and either has a platform_admin row or is in the env allow-list. */
+export async function isPlatformAdmin(
+  u: Pick<Me, "id" | "email" | "emailVerified">,
+) {
+  if (!u.emailVerified) return false;
+  if (envPlatformAdmins.has(u.email.toLowerCase())) return true;
+  const [row] = await db
+    .select({ id: platformAdmin.userId })
+    .from(platformAdmin)
+    .where(eq(platformAdmin.userId, u.id));
+  return !!row;
+}
 
-/** Platform admins (env allow-list, verified email). ctx.db is the plain, untenanted db. */
+/** Platform admins (see isPlatformAdmin). ctx.db is the plain, untenanted db. */
 export const platformProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
   const [row] = await db
     .select({ me: user, universityStatus: university.status })
     .from(user)
-    .innerJoin(university, eq(university.id, user.universityId))
+    .leftJoin(university, eq(university.id, user.universityId))
     .where(eq(user.id, ctx.userId));
   if (!row) throw new TRPCError({ code: "UNAUTHORIZED" });
   const me = row.me;
-  if (!isPlatformAdmin(me)) throw new TRPCError({ code: "FORBIDDEN" });
+  if (!(await isPlatformAdmin(me))) throw new TRPCError({ code: "FORBIDDEN" });
   const statusError = activeStatusError({
     ...me,
     universityStatus: row.universityStatus,

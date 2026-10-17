@@ -10,6 +10,11 @@ import { env } from "@/env";
 import { clientIp } from "./client-ip";
 import { graceCutoff } from "./invite-token";
 import { sendMail } from "./mail";
+import {
+  lockPlatformAdmin,
+  superAdminTaken,
+  tokenMatches,
+} from "./super-admin";
 import { insertUniversity } from "./university";
 
 const field = <T extends "string" | "number" | "date" | "boolean">(type: T) =>
@@ -35,21 +40,25 @@ async function assertGrantFresh(email: string) {
       role: schema.user.role,
       createdAt: schema.user.createdAt,
       emailVerified: schema.user.emailVerified,
+      universityId: schema.user.universityId,
       universityStatus: schema.university.status,
     })
     .from(schema.user)
-    .innerJoin(
+    .leftJoin(
       schema.university,
       eq(schema.university.id, schema.user.universityId),
     )
     .where(eq(schema.user.email, email.toLowerCase()));
   if (
     row &&
-    row.role !== "STUDENT" &&
-    row.role !== "ALUMNUS" &&
-    // A rep's own application (OWNER of a still-PENDING university) is not
-    // someone else's grant that can be revoked, so it never goes stale.
-    !(row.role === "OWNER" && row.universityStatus === "PENDING") &&
+    // No university = a super admin claim: once stale, someone else may
+    // claim, so this one must never verify late.
+    (!row.universityId ||
+      (row.role !== "STUDENT" &&
+        row.role !== "ALUMNUS" &&
+        // A rep's own application (OWNER of a still-PENDING university) is not
+        // someone else's grant that can be revoked, so it never goes stale.
+        !(row.role === "OWNER" && row.universityStatus === "PENDING"))) &&
     !row.emailVerified &&
     row.createdAt < graceCutoff()
   )
@@ -125,6 +134,33 @@ export const auth = betterAuth({
             );
           if (!read) return false;
           const { p, version } = read;
+          // The first super admin (auth.claimSuperAdmin): no university.
+          // Re-checked under the lock; the after-hook settles a race.
+          if (p.platformAdmin) {
+            // The claim token from auth.claimSuperAdmin, passed through the
+            // sign-up body: the pending row alone is not a bearer grant.
+            const claimToken = (
+              ctx?.body as { claimToken?: unknown } | undefined
+            )?.claimToken;
+            if (!tokenMatches(claimToken, p.signupTokenHash)) return false;
+            const claimed = await db.transaction(async (tx) => {
+              await lockPlatformAdmin(tx);
+              if (await superAdminTaken(tx)) return false;
+              const [row] = await tx
+                .update(schema.pendingSignup)
+                .set({ claimedAt: new Date() })
+                .where(
+                  and(
+                    eq(schema.pendingSignup.email, email),
+                    sql`${schema.pendingSignup}.xmin::text = ${version}`,
+                  ),
+                )
+                .returning({ email: schema.pendingSignup.email });
+              return !!row;
+            });
+            if (!claimed) return false;
+            return { data: { ...u, email, universityId: null } };
+          }
           // Students must have confirmed an ID card photo (confirmIdCard).
           if ((p.role === "STUDENT" || p.role === "ALUMNUS") && !p.idCardKey)
             return false;
@@ -264,9 +300,28 @@ export const auth = betterAuth({
           };
         },
         after: async (u) => {
-          await db
+          const [p] = await db
             .delete(schema.pendingSignup)
-            .where(eq(schema.pendingSignup.email, u.email));
+            .where(eq(schema.pendingSignup.email, u.email))
+            .returning({ platformAdmin: schema.pendingSignup.platformAdmin });
+          if (!p?.platformAdmin) return;
+          // Two claimers can both pass the before-hook (the user row doesn't
+          // exist yet there); the first to get here wins, the other is undone.
+          // The loser is deleted in the same locked transaction as the check.
+          const won = await db.transaction(async (tx) => {
+            await lockPlatformAdmin(tx);
+            if (await superAdminTaken(tx)) {
+              await tx.delete(schema.user).where(eq(schema.user.id, u.id));
+              return false;
+            }
+            await tx.insert(schema.platformAdmin).values({ userId: u.id });
+            return true;
+          });
+          if (!won) {
+            throw new APIError("CONFLICT", {
+              message: "Alumni Connect is already set up",
+            });
+          }
         },
       },
       update: {

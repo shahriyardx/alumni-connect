@@ -94,7 +94,10 @@ export const user = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date())
       .notNull(),
-    universityId: universityRef(),
+    // Null only for a super admin (platform_admin row): no tenant at all.
+    universityId: uuid("university_id").references(() => university.id, {
+      onDelete: "cascade",
+    }),
     role: text("role", { enum: ROLES }).default("STUDENT").notNull(),
     graduationYear: integer("graduation_year"),
     batchNumber: integer("batch_number"),
@@ -174,6 +177,14 @@ export const verification = pgTable(
   },
   (t) => [index("verification_identifier_idx").on(t.identifier)],
 );
+
+/** Super admins (global, no RLS). The first row is claimed at /admin. */
+export const platformAdmin = pgTable("platform_admin", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: created(),
+});
 
 export const rateLimit = pgTable("rate_limit", {
   id: text("id").primaryKey(),
@@ -321,11 +332,13 @@ export const pendingSignup = pgTable(
     // Set when better-auth's sign-up hook claims the row; the after-hook
     // deletes it once the user exists.
     claimedAt: timestamp("claimed_at"),
+    // The first super admin's claim (auth.claimSuperAdmin): no university.
+    platformAdmin: boolean("platform_admin").default(false).notNull(),
   },
   (t) => [
     check(
       "pending_signup_target_ck",
-      sql`${t.universityId} is not null or ${t.applicationName} is not null`,
+      sql`${t.universityId} is not null or ${t.applicationName} is not null or ${t.platformAdmin}`,
     ),
     foreignKey({
       name: "pending_signup_invite_fk",

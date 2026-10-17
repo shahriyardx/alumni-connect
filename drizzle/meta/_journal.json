@@ -71,6 +71,13 @@
       "when": 1792225961560,
       "tag": "0009_post_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792227111985,
+      "tag": "0010_platform_admin",
+      "breakpoints": true
     }
   ]
 }

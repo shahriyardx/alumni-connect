@@ -24,6 +24,7 @@ import {
   university,
   user,
 } from "@/db/schema";
+import { env } from "@/env";
 import { graceCutoff } from "../invite-token";
 import {
   ALLOWED_MIME,
@@ -35,6 +36,12 @@ import {
   remove,
 } from "../storage";
 import { hashStudentId, normalizeStudentId, roleFor } from "../student-id";
+import {
+  lockPlatformAdmin,
+  setupTokenOk,
+  sha256Hex,
+  superAdminTaken,
+} from "../super-admin";
 import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
 import { resolveDepartment } from "./departments";
 import { optionalUrl } from "./platform";
@@ -223,6 +230,7 @@ export const BLANK_PENDING = {
   studentIdHint: null,
   inviteId: null,
   claimedAt: null,
+  platformAdmin: false,
 } satisfies Partial<typeof pendingSignup.$inferInsert>;
 
 /**
@@ -250,7 +258,7 @@ export async function clearStaleUnverified(
     sql`select current_setting('app.university_id', true) as tenant`,
   );
   for (const s of stale) {
-    if (s.role !== "OWNER") continue;
+    if (s.role !== "OWNER" || !s.universityId) continue;
     const [abandoned] = await tx
       .update(university)
       .set({ status: "REJECTED" })
@@ -285,6 +293,33 @@ export async function clearStaleUnverified(
   );
 }
 
+/**
+ * Same squatting rules as startSignup: a verified or fresh account blocks;
+ * a stale unverified one is left for the caller to clear.
+ */
+async function assertEmailFree(address: string) {
+  const [dup] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(
+      and(
+        eq(user.email, address),
+        or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff())),
+      ),
+    );
+  if (dup)
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "This email is already registered",
+    });
+}
+
+const alreadySetUp = () =>
+  new TRPCError({
+    code: "CONFLICT",
+    message: "Alumni Connect is already set up",
+  });
+
 export const authRouter = router({
   universities: publicProcedure.query(() =>
     db
@@ -316,11 +351,11 @@ export const authRouter = router({
         avatarKey: user.avatarKey,
       })
       .from(user)
-      .innerJoin(university, eq(university.id, user.universityId))
+      .leftJoin(university, eq(university.id, user.universityId))
       .where(eq(user.id, ctx.userId));
     if (!row) return null;
     const { emailVerified: _, ...me } = row;
-    return { ...me, isPlatformAdmin: isPlatformAdmin(row) };
+    return { ...me, isPlatformAdmin: await isPlatformAdmin(row) };
   }),
 
   registerUniversity: publicProcedure
@@ -343,22 +378,7 @@ export const authRouter = router({
           message: "Too many attempts, try again later",
         });
 
-      // Same squatting rules as startSignup: a verified or fresh account
-      // blocks; a stale unverified one is cleared.
-      const [dup] = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(
-          and(
-            eq(user.email, input.email),
-            or(eq(user.emailVerified, true), gt(user.createdAt, graceCutoff())),
-          ),
-        );
-      if (dup)
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "This email is already registered",
-        });
+      await assertEmailFree(input.email);
 
       // The university itself is created by the sign-up hook, so an
       // abandoned application leaves nothing behind. Every column is set,
@@ -387,6 +407,71 @@ export const authRouter = router({
       });
       await removeAll(orphans);
       return { ok: true };
+    }),
+
+  /** /admin: can the first super admin still be claimed? */
+  claimStatus: publicProcedure.query(async () => ({
+    open: !(await superAdminTaken(db)),
+    tokenRequired: !!env.SETUP_TOKEN,
+  })),
+
+  /**
+   * Grants the first super admin, like registerUniversity grants an owner:
+   * a pending row the sign-up hook turns into a university-less user plus
+   * its platform_admin row. Only while that table is empty.
+   */
+  claimSuperAdmin: publicProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(2).max(80),
+        email,
+        setupToken: z.string().max(200).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        (await overLimit(`app:claim-super-admin:ip:${ctx.ip}`, 5)) ||
+        (await overLimit(`app:claim-super-admin:email:${input.email}`, 3))
+      )
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many attempts, try again later",
+        });
+      if (!setupTokenOk(input.setupToken))
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Wrong setup token",
+        });
+      if (await superAdminTaken(db)) throw alreadySetUp();
+      await assertEmailFree(input.email);
+
+      // Binds the pending row to this browser: sign-up must present it.
+      const claimToken = randomBytes(32).toString("base64url");
+      const orphans = await db.transaction(async (tx) => {
+        await lockPlatformAdmin(tx);
+        // Abandoned claims (never verified) free the slot and their email.
+        const stale = await clearStaleUnverified(
+          tx,
+          or(
+            eq(user.email, input.email),
+            and(isNull(user.universityId), lt(user.createdAt, graceCutoff())),
+          ) as SQL,
+        );
+        if (await superAdminTaken(tx)) throw alreadySetUp();
+        const replaced = await upsertPending(tx, {
+          ...BLANK_PENDING,
+          email: input.email,
+          platformAdmin: true,
+          signupTokenHash: sha256Hex(claimToken),
+          department: "Platform",
+          role: "STUDENT",
+          status: "ACTIVE",
+          expiresAt: new Date(Date.now() + 30 * 60_000),
+        });
+        return [...stale, ...(await unreferenced(tx, replaced))];
+      });
+      await removeAll(orphans);
+      return { claimToken };
     }),
 
   batches: publicProcedure

@@ -54,7 +54,7 @@ export async function makeUser(
       ...over,
     })
     .returning();
-  return u;
+  return { ...u, universityId };
 }
 
 export async function makePost(

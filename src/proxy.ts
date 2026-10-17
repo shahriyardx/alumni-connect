@@ -12,7 +12,6 @@ const PROTECTED = [
   "/notifications",
   "/settings",
   "/mod",
-  "/admin",
   "/workspace",
   "/platform",
   "/pending",

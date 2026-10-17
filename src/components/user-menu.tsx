@@ -16,9 +16,17 @@ export function useMe() {
   return { me: data, isLoading };
 }
 
-/** Where an account lands after sign-in: OWNER/ADMIN run the workspace, everyone else reads the feed. */
-export const homeFor = (me: { role: Role; status: string }) =>
-  isAdmin(me.role) && me.status === "ACTIVE" ? "/workspace" : "/feed";
+/** Where an account lands after sign-in: a super admin (no university) runs the platform, OWNER/ADMIN the workspace, everyone else reads the feed. */
+export const homeFor = (me: {
+  role: Role;
+  status: string;
+  universityId: string | null;
+}) =>
+  !me.universityId
+    ? "/platform"
+    : isAdmin(me.role) && me.status === "ACTIVE"
+      ? "/workspace"
+      : "/feed";
 
 /** Leave sign-in/sign-up only for a real session; a cookie alone may be stale. `to` defaults to homeFor(me). */
 export function useRedirectIfSignedIn(to?: string, enabled = true) {
@@ -44,6 +52,7 @@ export function UserMenu() {
   const router = useRouter();
   const signOut = useSignOut();
   if (!me) return <div className="size-8" />;
+  const superAdmin = !me.universityId;
   return (
     <Menu.Root>
       <Menu.Trigger
@@ -63,13 +72,21 @@ export function UserMenu() {
             {me.email}
           </span>
           <span className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-            <RoleBadge role={me.role} />
-            <span className="truncate">{me.universityName}</span>
+            {superAdmin ? (
+              "Super admin"
+            ) : (
+              <>
+                <RoleBadge role={me.role} />
+                <span className="truncate">{me.universityName}</span>
+              </>
+            )}
           </span>
         </div>
-        <MenuItem icon="person" onClick={() => router.push(`/u/${me.id}`)}>
-          Profile
-        </MenuItem>
+        {!superAdmin && (
+          <MenuItem icon="person" onClick={() => router.push(`/u/${me.id}`)}>
+            Profile
+          </MenuItem>
+        )}
         {/* Phones have no rail, so the role-gated destinations live here. */}
         {isMod(me.role) && (
           <MenuItem
@@ -83,15 +100,17 @@ export function UserMenu() {
         {me.isPlatformAdmin && (
           <MenuItem
             icon="domain"
-            className="min-[840px]:hidden"
+            className={superAdmin ? undefined : "min-[840px]:hidden"}
             onClick={() => router.push("/platform")}
           >
             Platform
           </MenuItem>
         )}
-        <MenuItem icon="settings" onClick={() => router.push("/settings")}>
-          Settings
-        </MenuItem>
+        {!superAdmin && (
+          <MenuItem icon="settings" onClick={() => router.push("/settings")}>
+            Settings
+          </MenuItem>
+        )}
         <MenuItem icon="logout" onClick={signOut}>
           Sign out
         </MenuItem>
