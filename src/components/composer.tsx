@@ -116,39 +116,44 @@ function ComposerForm({ initial }: { initial?: Initial }) {
         maxLength={200}
       />
 
-      <Card className="overflow-hidden p-2">
-        <TabsRoot defaultValue="write">
-          <TabsList>
-            <Tab value="write" icon="edit">
-              Write
-            </Tab>
-            <Tab value="preview" icon="visibility">
-              Preview
-            </Tab>
-          </TabsList>
-          <TabsPanel value="write" className="pt-2">
-            <textarea
-              aria-label="Body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              required
-              maxLength={20000}
-              rows={12}
-              placeholder="Details (Markdown supported)"
-              className="block min-h-64 w-full resize-y rounded-xl bg-transparent px-3 py-2 font-mono text-sm leading-relaxed outline-none placeholder:font-sans placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </TabsPanel>
-          <TabsPanel value="preview" className="min-h-64 px-3 pt-4 pb-2">
-            {body.trim() ? (
-              <Markdown>{body}</Markdown>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Nothing to preview yet.
-              </p>
-            )}
-          </TabsPanel>
-        </TabsRoot>
-      </Card>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="post-body" className="text-sm font-medium">
+          Body
+        </label>
+        <Card className="overflow-hidden p-2">
+          <TabsRoot defaultValue="write">
+            <TabsList>
+              <Tab value="write" icon="edit">
+                Write
+              </Tab>
+              <Tab value="preview" icon="visibility">
+                Preview
+              </Tab>
+            </TabsList>
+            <TabsPanel value="write" className="pt-2">
+              <textarea
+                id="post-body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                required
+                maxLength={20000}
+                rows={12}
+                placeholder="Details (Markdown supported)"
+                className="block min-h-64 w-full resize-y rounded-xl bg-transparent px-3 py-2 font-mono text-sm leading-relaxed outline-none placeholder:font-sans placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              />
+            </TabsPanel>
+            <TabsPanel value="preview" className="min-h-64 px-3 pt-4 pb-2">
+              {body.trim() ? (
+                <Markdown>{body}</Markdown>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Nothing to preview yet.
+                </p>
+              )}
+            </TabsPanel>
+          </TabsRoot>
+        </Card>
+      </div>
 
       <div className="flex flex-col gap-2">
         <TextField
