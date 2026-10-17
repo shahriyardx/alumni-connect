@@ -17,6 +17,11 @@ const schema = z.object({
     .optional()
     .transform((v) => v || undefined),
   PLATFORM_ADMIN_EMAILS: z.string().default(""),
+  // When set, claiming the first super admin at /admin also needs this token.
+  SETUP_TOKEN: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   MAIL_FROM: z.string().default("Alumni Connect <no-reply@alumni.local>"),
 });
 

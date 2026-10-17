@@ -64,6 +64,13 @@
       "when": 1792146047373,
       "tag": "0008_departments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792225916583,
+      "tag": "0009_platform_admin",
+      "breakpoints": true
     }
   ]
 }

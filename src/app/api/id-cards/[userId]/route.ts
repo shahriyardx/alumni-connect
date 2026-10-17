@@ -23,7 +23,7 @@ export async function resolveIdCardAccess(
   const [row] = await db
     .select({ me: user, universityStatus: university.status })
     .from(user)
-    .innerJoin(university, eq(university.id, user.universityId))
+    .leftJoin(university, eq(university.id, user.universityId))
     .where(eq(user.id, viewerId));
   if (!row?.me?.emailVerified)
     return { ok: false, status: 401, message: "Unauthorized" };
@@ -33,7 +33,7 @@ export async function resolveIdCardAccess(
     universityStatus: row.universityStatus,
   });
   if (statusError) return { ok: false, status: 403, message: statusError };
-  const platform = isPlatformAdmin(me);
+  const platform = await isPlatformAdmin(me);
   const sameTenantAccess = me.role === "OWNER" || me.role === "ADMIN";
   if (!platform && !sameTenantAccess)
     return { ok: false, status: 403, message: "Forbidden" };
@@ -49,7 +49,9 @@ export async function resolveIdCardAccess(
       and(
         eq(user.id, targetId),
         or(
-          sameTenantAccess ? eq(user.universityId, me.universityId) : undefined,
+          sameTenantAccess && me.universityId
+            ? eq(user.universityId, me.universityId)
+            : undefined,
           platform
             ? and(eq(user.role, "OWNER"), eq(university.status, "PENDING"))
             : undefined,

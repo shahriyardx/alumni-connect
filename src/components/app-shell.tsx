@@ -137,10 +137,16 @@ function BarItem({ d, active }: { d: Dest; active: boolean }) {
   );
 }
 
-function Logo({ className }: { className?: string }) {
+export function Logo({
+  className,
+  href = "/feed",
+}: {
+  className?: string;
+  href?: string;
+}) {
   return (
     <Link
-      href="/feed"
+      href={href}
       className={cn(
         focusRing,
         "flex items-center gap-2 rounded-full text-[15px] font-semibold tracking-tight",
@@ -263,6 +269,8 @@ export function StatusGate({ children }: { children: React.ReactNode }) {
     // Stale cookie with no session: clear it, or proxy bounces /sign-in → /feed.
     if (me === null)
       void authClient.signOut().then(() => router.replace("/sign-in"));
+    // A super admin has no university: their home is /platform.
+    else if (me && !me.universityId) router.replace("/platform");
     else if (pending && pathname !== "/pending") router.replace("/pending");
     else if (me && !pending && pathname === "/pending")
       router.replace(homeFor(me));
@@ -271,7 +279,11 @@ export function StatusGate({ children }: { children: React.ReactNode }) {
   const suspended = !!me && isSuspendedNow(me);
   const rejected = me?.universityStatus === "REJECTED";
   const blocked = me?.status === "BANNED" || suspended || rejected;
-  const waiting = isLoading || !me || (pending && pathname !== "/pending");
+  const waiting =
+    isLoading ||
+    !me ||
+    !me.universityId ||
+    (pending && pathname !== "/pending");
 
   // Children always render (hidden while gated) so Next can validate the
   // page segment for instant navigation instead of dropping it.

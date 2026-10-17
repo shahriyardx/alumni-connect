@@ -98,7 +98,9 @@ Every `ip:` rate limit (register, invite lookup/accept, confirmIdCard, startSign
 
 **Roles.** `OWNER`, `ADMIN`, `MODERATOR`, `STAFF`, `STUDENT`, `ALUMNUS`, one university each. `OWNER` is unique per university (settings, ownership transfer, admin role changes); `ADMIN` runs the workspace day to day; `MODERATOR` only gets the moderation queue; `STAFF` is faculty/staff joined by email invite (a "Faculty" badge on the feed, no admin powers unless also promoted). Students belong to a batch (number + graduation year) and become `ALUMNUS` automatically once that year has passed — either lazily on their next request or immediately for everyone in a batch when an admin edits its graduation year. `isMod(role)` = `MODERATOR|ADMIN|OWNER`, `isAdmin(role)` = `ADMIN|OWNER`.
 
-**Platform admin.** A separate, DB-free layer above universities: any verified account whose email is listed (comma-separated, case-insensitive) in the `PLATFORM_ADMIN_EMAILS` env var can open `/platform` to approve or reject university applications and create universities directly. It's not a role — the same account is still whatever role it holds inside its own university, if any.
+**Platform admin.** A layer above universities: `/platform` approves or rejects university applications and creates universities directly. A verified account is a platform admin if it has a `platform_admin` row (a *super admin*, with no university at all) or its email is listed (comma-separated, case-insensitive) in the `PLATFORM_ADMIN_EMAILS` env var (the fallback; such an account keeps whatever role it holds in its own university). It's not a role.
+
+**First super admin.** On a fresh install, open `/admin`: while the `platform_admin` table is empty, the first visitor can claim it (name, email, password, then the email code) and lands on `/platform`. The claim is atomic (a table lock), so two people racing for it can't both win; an unverified claim is dropped after 15 minutes. Once claimed, `/admin` just sends the super admin to `/platform` and everyone else to sign-in. **In production, set `SETUP_TOKEN`** in the env: the claim then also asks for that token, so a stranger who finds `/admin` before you do can't take it. Left empty (the demo default), it's first come, first served.
 
 **Workspace.** `/workspace` is the management dashboard for a university's `OWNER`/`ADMIN`/`MODERATOR` (`isMod`); `STAFF` has no workspace access — just a "Faculty" badge on the feed. The public forum stays at `/feed`. Tabs are gated by role: Overview, Approvals and Batches & rosters need `ADMIN`+, Moderation needs `MODERATOR`+, Settings is `OWNER`-only. A university stays usable by its own staff while its application is still `PENDING` platform review — the one thing gated on approval is that new students can't sign up yet (the public sign-up picker only lists `ACTIVE` universities). A `REJECTED` university is blocked application-wide for everyone in it.
 
@@ -115,8 +117,9 @@ Every `ip:` rate limit (register, invite lookup/accept, confirmIdCard, startSign
 ```
 src/
   app/
-    (public)/        sign-in, sign-up, register-university, invite accept, forgot-password, landing page
-    (app)/            feed, post view, search, bookmarks, notifications, settings, platform
+    (public)/        sign-in, sign-up, register-university, invite accept, forgot-password, /admin (first super admin), landing page
+    (app)/            feed, post view, search, bookmarks, notifications, settings
+    (platform)/       /platform — the platform admin console (own minimal shell)
     (workspace)/      /workspace — the OWNER/ADMIN/MODERATOR dashboard (see Workspace below)
     api/              auth, tRPC, file upload, ID card, SSE endpoints
   components/         shared UI, plus workspace/ and auth/ specific pieces

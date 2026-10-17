@@ -37,7 +37,7 @@ async function applyAndSignUp() {
     .set({ emailVerified: true })
     .where(eq(user.email, "rep@eti.edu"))
     .returning();
-  return u.universityId;
+  return u.universityId as string;
 }
 const pendingRow = (email: string) =>
   adminDb
@@ -235,7 +235,7 @@ describe("applications", () => {
     const [old] = await adminDb
       .select()
       .from(university)
-      .where(eq(university.id, stale.universityId));
+      .where(eq(university.id, stale.universityId as string));
     expect(old.status).toBe("REJECTED");
     expect(await userByEmail("rep@eti.edu")).toBeUndefined();
   });
@@ -319,9 +319,9 @@ describe("applications", () => {
       email: "rep@eti.edu",
       verified: false,
     });
-    await expect(platform.platform.approve({ universityId })).rejects.toThrow(
-      /hasn't verified/,
-    );
+    await expect(
+      platform.platform.approve({ universityId: universityId as string }),
+    ).rejects.toThrow(/hasn't verified/);
     // The account is ACTIVE already (set on sign-up); the unverified email
     // keeps memberProcedure out, not the account status.
     expect((await userByEmail("rep@eti.edu")).status).toBe("ACTIVE");
@@ -347,7 +347,7 @@ describe("applications", () => {
     const [old] = await adminDb
       .select()
       .from(university)
-      .where(eq(university.id, stale.universityId));
+      .where(eq(university.id, stale.universityId as string));
     expect(old.status).toBe("REJECTED");
     const [log] = await adminDb
       .select()
