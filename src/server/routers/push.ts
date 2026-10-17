@@ -30,6 +30,8 @@ export const pushRouter = router({
           message: "Unknown push service",
         });
       // Same browser, another account signed in: the browser moves over.
+      // Only a caller holding that browser's secret `auth` key may move it;
+      // knowing someone's endpoint URL alone can't take their pushes.
       const values = {
         universityId: ctx.me.universityId,
         userId: ctx.me.id,
@@ -40,7 +42,14 @@ export const pushRouter = router({
       await ctx.db
         .insert(pushSubscription)
         .values(values)
-        .onConflictDoUpdate({ target: pushSubscription.endpoint, set: values });
+        .onConflictDoUpdate({
+          target: pushSubscription.endpoint,
+          set: values,
+          setWhere: and(
+            eq(pushSubscription.auth, input.keys.auth),
+            eq(pushSubscription.p256dh, input.keys.p256dh),
+          ),
+        });
       return { ok: true as const };
     }),
 

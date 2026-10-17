@@ -96,9 +96,12 @@ export async function sendPushes(
   const rows = await db.execute<Claimed>(sql`
     with claimed as (
       update notification n set pushed_at = now()
-      from "user" u
+      from "user" u, university un
       where u.id = n.user_id and u.university_id = n.university_id
-        and u.status = 'ACTIVE'
+        and un.id = n.university_id
+        -- Same gate as memberProcedure: only someone who could open the app now.
+        and u.status = 'ACTIVE' and u.email_verified
+        and un.status not in ('REJECTED', 'SUSPENDED')
         and n.university_id = ${target.universityId}
         and (${target.userId ?? null}::text is null or n.user_id = ${target.userId ?? null})
         and n.pushed_at is null and n.read_at is null
@@ -111,7 +114,10 @@ export async function sendPushes(
     from claimed c
     left join "user" a on a.id = c.actor_id and a.university_id = c.university_id
     left join post p on p.id = c.post_id and p.university_id = c.university_id
-    left join broadcast b on b.id = c.broadcast_id`);
+      and p.deleted_at is null
+    left join broadcast b on b.id = c.broadcast_id
+    -- A post deleted since: claimed, but never pushed (no title leaks).
+    where c.post_id is null or p.id is not null`);
   if (rows.length === 0) return 0;
 
   const subs = await db

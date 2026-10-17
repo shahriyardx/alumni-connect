@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { pushSubscription } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { pushSubscription, university } from "@/db/schema";
 import { isPushEndpoint, sendPushes } from "@/server/push";
 import {
   adminDb,
@@ -101,5 +102,53 @@ describe("web push", () => {
     await callerFor(bob.id).push.subscribe({ endpoint: endpoint("a"), keys });
     const rows = await adminDb.select().from(pushSubscription);
     expect(rows.map((r) => r.userId)).toEqual([bob.id]);
+  });
+});
+
+describe("web push visibility", () => {
+  test("a deleted post's title is never pushed", async () => {
+    await callerFor(alice.id).push.subscribe({ endpoint: endpoint("a"), keys });
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Secret title that gets deleted",
+      body: "b",
+      tags: [],
+    });
+    await callerFor(bob.id).comment.create({ postId, body: "answer" });
+    await callerFor(alice.id).post.remove({ id: postId });
+    const { calls, send } = fakeSend();
+    expect(
+      await sendPushes({ universityId: uniId, userId: alice.id }, send),
+    ).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  test("a suspended university's members get no pushes", async () => {
+    await callerFor(alice.id).push.subscribe({ endpoint: endpoint("a"), keys });
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Question before suspension",
+      body: "b",
+      tags: [],
+    });
+    await callerFor(bob.id).comment.create({ postId, body: "answer" });
+    await adminDb
+      .update(university)
+      .set({ status: "SUSPENDED" })
+      .where(eq(university.id, uniId));
+    const { send } = fakeSend();
+    expect(
+      await sendPushes({ universityId: uniId, userId: alice.id }, send),
+    ).toBe(0);
+  });
+
+  test("knowing an endpoint URL alone can't take over someone's browser", async () => {
+    await callerFor(alice.id).push.subscribe({ endpoint: endpoint("a"), keys });
+    await callerFor(bob.id).push.subscribe({
+      endpoint: endpoint("a"),
+      keys: { p256dh: "attacker", auth: "attacker" },
+    });
+    const rows = await adminDb.select().from(pushSubscription);
+    expect(rows.map((r) => [r.userId, r.auth])).toEqual([
+      [alice.id, keys.auth],
+    ]);
   });
 });
