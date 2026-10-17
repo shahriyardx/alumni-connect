@@ -146,3 +146,26 @@ Commit: c1fb26b fix(platform): clear status_before_ban on every tenant status wr
   - With no snapshot, an unverified account is unbanned to PENDING.
 - Checks on the private `alumni_p2_test` DB (dropped afterwards): **273 pass, 0 fail**. tsc and `biome check src tests` are clean, and the build compiled.
 - This resolves the round-1 concern about a stale stored status.
+
+## Fix round 3 (platform ban authority)
+
+Commit: 8fc10cf fix(platform): platform_banned flag locks tenant status writes; unban restores snapshot or PENDING
+
+- New column `user.platform_banned boolean NOT NULL DEFAULT false`, appended to my unmerged 0011 SQL with no meta change. Only `platform.setBanned` writes it.
+- **Platform ban:** guarded on `platform_banned = false`. It sets status BANNED, `status_before_ban` = the current status (BANNED if a tenant already banned them), and `platform_banned = true`.
+- **Platform unban:** guarded on `platform_banned = true`. It restores `coalesce(status_before_ban, 'PENDING')` (never ACTIVE) and clears both fields. Both directions are keyed by id + university_id.
+- **Tenant paths** refuse with FORBIDDEN "Banned by the platform". Each reads the target row with `FOR UPDATE`, so a concurrent platform ban can't interleave:
+  - `moderation.setUserStatus`
+  - `moderation.resolve` (user branch: suspend/ban)
+  - `admin.setRole`
+- **`workspace.decide`** excludes platform-banned accounts from its pending target, so the result is NOT_FOUND. A platform-banned applicant is BANNED, not PENDING, anyway.
+- Round 2's "tenant writes clear status_before_ban" change is reverted; `status_before_ban` is now platform-only.
+- **UI:**
+  - `admin.users` returns `platformBanned`. The workspace members list shows a "Banned by platform" pill in place of the status, and disables both the role select and the account-actions menu for that row.
+  - The platform Users page bases Ban/Unban on `platformBanned`.
+- **Tests** (these replace the round-2 tests):
+  - A tenant OWNER and a moderator can't set ACTIVE, SUSPENDED or BANNED on a platform-banned user. The OWNER can't re-role them, can't approve a platform-banned applicant, and can't resolve a report on them with suspend. `admin.users` flags the account. RED: with the setUserStatus guard removed, this test failed.
+  - Platform unban restores PENDING. With no snapshot it falls back to PENDING, not ACTIVE.
+  - Tenant ban → platform ban → platform unban stays BANNED, and the tenant can then lift its own ban.
+- **Checks** on the private `alumni_p2_test` DB (dropped afterwards): **274 pass, 0 fail**. `biome check src tests` and tsc are clean, and the build compiled.
+- **Note:** the profile page's moderator status actions (account-status-actions.tsx) aren't disabled in the UI for a platform-banned user; the server refuses with a toast. The ruling's UI item named only the members list.
