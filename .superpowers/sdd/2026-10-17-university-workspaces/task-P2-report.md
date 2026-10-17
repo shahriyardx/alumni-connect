@@ -130,3 +130,19 @@ Checks:
 Notes and concerns:
 - Only a platform ban sets `status_before_ban`. If the platform bans someone, a tenant admin lifts it, and a tenant mod bans them again, a later platform unban would restore the stale stored status. This is narrow; the column is cleared on every platform unban.
 - 0011's snapshot doesn't include `status_before_ban` because meta was left alone. The controller regenerates on merge.
+
+## Fix round 2 (status_before_ban drift)
+
+Commit: c1fb26b fix(platform): clear status_before_ban on every tenant status write; unban falls back by verification
+
+- Every tenant path that writes `user.status` now sets `status_before_ban = NULL` in the same UPDATE. I found them with `grep update(user)` across src/server:
+  - `moderation.setUserStatus`
+  - the suspend and ban branches of `moderation.resolve`
+  - approvals in `workspace.decide`
+- Two other status writes are out of scope: reject in `workspace.decide` deletes the user, and the `auth.ts:264` write is on the university's status, not a user's.
+- Platform unban now restores `coalesce(status_before_ban, case when email_verified then 'ACTIVE' else 'PENDING' end)`.
+- Tests:
+  - platform ban (snapshot SUSPENDED) → tenant unban → tenant ban → platform unban ends ACTIVE with a NULL snapshot. RED: without the setUserStatus clear it failed; GREEN with it.
+  - With no snapshot, an unverified account is unbanned to PENDING.
+- Checks on the private `alumni_p2_test` DB (dropped afterwards): **273 pass, 0 fail**. tsc and `biome check src tests` are clean, and the build compiled.
+- This resolves the round-1 concern about a stale stored status.
