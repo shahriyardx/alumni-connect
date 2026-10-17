@@ -1,8 +1,16 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "@/db";
-import { comment, post, type Role, report, session, user } from "@/db/schema";
+import {
+  auditLog,
+  comment,
+  post,
+  type Role,
+  report,
+  session,
+  user,
+} from "@/db/schema";
 import type { AuthorInfo } from "../queries/posts";
 import {
   assertNotPlatformAdmin,
@@ -88,6 +96,79 @@ async function loadPreview(
   return row ? { userName: row.name, authorId: row.id } : null;
 }
 
+/**
+ * The reported authors' profiles, for the "who" block on each report card —
+ * one `inArray` query for the whole page rather than one per card. `user`
+ * has no RLS, so it's filtered on `universityId` explicitly.
+ */
+async function loadReportedAuthors(
+  tx: Tx,
+  universityId: string,
+  authorIds: string[],
+): Promise<Map<string, AuthorInfo>> {
+  if (authorIds.length === 0) return new Map();
+  const rows = await tx
+    .select({
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      batchNumber: user.batchNumber,
+      department: user.department,
+      avatarKey: user.avatarKey,
+    })
+    .from(user)
+    .where(
+      and(inArray(user.id, authorIds), eq(user.universityId, universityId)),
+    );
+  return new Map(rows.map((r) => [r.id, r]));
+}
+
+/**
+ * Prior strikes against each of the given users: posts/comments removed by
+ * moderators, plus past suspensions/bans — whether they came through a
+ * report or a direct admin/mod action. One grouped query for the whole page
+ * rather than one per card. Reuses audit_log rather than a new table;
+ * `report.remove` / `report.suspend` / `report.ban` carry the content
+ * author's id in `meta.authorId` (see `resolve` below), and a direct
+ * `setUserStatus` call writes `user.status` straight on the target.
+ */
+async function countStrikesMany(
+  tx: Tx,
+  universityId: string,
+  userIds: string[],
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  // `report.*` rows carry the user in `meta.authorId`; a direct
+  // `user.status` change carries it in `target` instead — coalesce so both
+  // kinds of strike group onto the same key.
+  const userKey = sql`coalesce(${auditLog.meta} ->> 'authorId', ${auditLog.target})`;
+  const rows = await tx
+    .select({ userId: sql<string>`${userKey}`, c: sql<number>`count(*)` })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.universityId, universityId),
+        or(
+          and(
+            inArray(auditLog.action, [
+              "report.remove",
+              "report.suspend",
+              "report.ban",
+            ]),
+            inArray(sql`${auditLog.meta} ->> 'authorId'`, userIds),
+          ),
+          and(
+            eq(auditLog.action, "user.status"),
+            inArray(auditLog.target, userIds),
+            sql`${auditLog.meta} ->> 'status' in ('SUSPENDED', 'BANNED')`,
+          ),
+        ),
+      ),
+    )
+    .groupBy(sql`${userKey}`);
+  return new Map(rows.map((r) => [r.userId, Number(r.c)]));
+}
+
 /** Author of the post/comment, or the user themself for a USER report target. */
 async function resolveTargetUserId(
   tx: Tx,
@@ -137,30 +218,35 @@ function assertCanAct(me: Me, target: { id: string; role: Role }) {
   }
 }
 
-/** Soft-delete the reported post/comment, keeping comment counts consistent. */
+/**
+ * Soft-delete the reported post/comment, keeping comment counts consistent.
+ * Returns whether it actually removed something — a second open report on
+ * content another report already got removed is a no-op, not a new strike.
+ */
 async function removeTarget(
   tx: Tx,
   targetType: "POST" | "COMMENT",
   targetId: string,
-) {
+): Promise<boolean> {
   if (targetType === "POST") {
-    await tx
+    const removed = await tx
       .update(post)
       .set({ deletedAt: new Date() })
-      .where(and(eq(post.id, targetId), isNull(post.deletedAt)));
-    return;
+      .where(and(eq(post.id, targetId), isNull(post.deletedAt)))
+      .returning({ id: post.id });
+    return removed.length > 0;
   }
   const [removed] = await tx
     .update(comment)
     .set({ deletedAt: new Date() })
     .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)))
     .returning({ postId: comment.postId });
-  if (removed) {
-    await tx
-      .update(post)
-      .set({ commentCount: sql`${post.commentCount} - 1` })
-      .where(eq(post.id, removed.postId));
-  }
+  if (!removed) return false;
+  await tx
+    .update(post)
+    .set({ commentCount: sql`${post.commentCount} - 1` })
+    .where(eq(post.id, removed.postId));
+  return true;
 }
 
 export const moderationRouter = router({
@@ -253,8 +339,37 @@ export const moderationRouter = router({
         .offset(input.cursor);
 
       const page = rows.slice(0, limit);
-      const items = await Promise.all(
-        page.map(async (r) => ({
+      // Previews differ per target type (post/comment/user) and still need
+      // one lookup each, but the reported-author profiles and their strike
+      // counts are each fetched in one batched query for the whole page.
+      const previews = await Promise.all(
+        page.map((r) =>
+          loadPreview(ctx.db, ctx.me.universityId, r.targetType, r.targetId),
+        ),
+      );
+      const authorIds = [
+        ...new Set(
+          previews.map((p) => p?.authorId).filter((id): id is string => !!id),
+        ),
+      ];
+      const authors = await loadReportedAuthors(
+        ctx.db,
+        ctx.me.universityId,
+        authorIds,
+      );
+      const strikes = await countStrikesMany(ctx.db, ctx.me.universityId, [
+        ...authors.keys(),
+      ]);
+
+      const items = page.map((r, i) => {
+        const preview = previews[i];
+        const reportedAuthor = preview?.authorId
+          ? (authors.get(preview.authorId) ?? null)
+          : null;
+        const priorStrikes = reportedAuthor
+          ? (strikes.get(reportedAuthor.id) ?? 0)
+          : 0;
+        return {
           id: r.id,
           targetType: r.targetType,
           targetId: r.targetId,
@@ -262,15 +377,12 @@ export const moderationRouter = router({
           status: r.status,
           createdAt: r.createdAt,
           reporter: r.reporter as AuthorInfo,
-          preview: await loadPreview(
-            ctx.db,
-            ctx.me.universityId,
-            r.targetType,
-            r.targetId,
-          ),
+          preview,
+          reportedAuthor,
+          priorStrikes,
           resolvedBy: r.resolvedBy,
-        })),
-      );
+        };
+      });
 
       return {
         items,
@@ -310,10 +422,28 @@ export const moderationRouter = router({
         });
       }
 
+      // The content/account author, recorded on the audit entry below so
+      // `countStrikesMany` can tally prior violations without a new table.
+      let authorId: string | null = null;
+      // Whether this call actually flipped something in the DB — purely
+      // informational (`meta.statusChanged`) for "remove": a moderator
+      // *upholding* a report is a strike on the author regardless of
+      // whether the content was already gone by the time they acted (the
+      // author deleting their own reported post first must never erase the
+      // strike — that would be a moderation-evasion trick). It only gates
+      // the strike for suspend/ban, where "already in that status" is a
+      // genuine no-op on the *account* itself (see `isStrike` below).
+      let didChange = true;
+
       if (input.action === "remove") {
         if (rpt.targetType === "USER")
           throw new TRPCError({ code: "BAD_REQUEST" });
-        await removeTarget(ctx.db, rpt.targetType, rpt.targetId);
+        didChange = await removeTarget(ctx.db, rpt.targetType, rpt.targetId);
+        authorId = await resolveTargetUserId(
+          ctx.db,
+          rpt.targetType,
+          rpt.targetId,
+        );
       } else if (input.action === "suspend" || input.action === "ban") {
         const targetUserId = await resolveTargetUserId(
           ctx.db,
@@ -321,6 +451,7 @@ export const moderationRouter = router({
           rpt.targetId,
         );
         if (!targetUserId) throw new TRPCError({ code: "NOT_FOUND" });
+        authorId = targetUserId;
         const [targetUser] = await ctx.db
           .select({
             id: user.id,
@@ -366,18 +497,29 @@ export const moderationRouter = router({
                   eq(user.universityId, ctx.me.universityId),
                 ),
               );
+          } else {
+            didChange = false;
           }
         } else {
-          await ctx.db
-            .update(user)
-            .set({ status: "BANNED", suspendedUntil: null })
-            .where(
-              and(
-                eq(user.id, targetUserId),
-                eq(user.universityId, ctx.me.universityId),
-              ),
-            );
-          await ctx.db.delete(session).where(eq(session.userId, targetUserId));
+          // A second report resolved as "ban" against an already-banned
+          // account doesn't re-apply anything new, so it isn't a strike —
+          // but it's still a real decision, still audited, below.
+          if (targetUser.status !== "BANNED") {
+            await ctx.db
+              .update(user)
+              .set({ status: "BANNED", suspendedUntil: null })
+              .where(
+                and(
+                  eq(user.id, targetUserId),
+                  eq(user.universityId, ctx.me.universityId),
+                ),
+              );
+            await ctx.db
+              .delete(session)
+              .where(eq(session.userId, targetUserId));
+          } else {
+            didChange = false;
+          }
         }
       }
 
@@ -397,13 +539,34 @@ export const moderationRouter = router({
           ),
         );
 
+      // Always: a moderator's decision on a report must never go un-logged,
+      // whether or not it changed anything (e.g. you can't suspend an
+      // account that's already banned). `authorId` — the only field
+      // `countStrikesMany` matches on — is set whenever this is a strike;
+      // omitted otherwise, so a no-op can't be counted as one while still
+      // leaving a complete, truthful record that the action was taken.
+      //
+      // "remove" is always a strike on upholding the report, independent of
+      // `didChange`: the author (or anyone else) deleting the reported
+      // content before a moderator acts must not erase the strike, or
+      // self-deleting would be a free pass. "suspend"/"ban" are strikes only
+      // when they actually changed the *account's* status — those key off
+      // `user.status`, not content state, so an already-banned account
+      // genuinely has nothing new to strike for.
+      const isStrike = input.action === "remove" ? true : didChange;
       await audit(
         ctx.db,
         ctx.me.universityId,
         ctx.me.id,
         `report.${input.action}`,
         `${rpt.targetType}:${rpt.targetId}`,
-        { reportId: rpt.id, days: input.days, note: input.note },
+        {
+          reportId: rpt.id,
+          days: input.days,
+          note: input.note,
+          statusChanged: didChange,
+          authorId: isStrike ? (authorId ?? undefined) : undefined,
+        },
       );
 
       return { ok: true as const };

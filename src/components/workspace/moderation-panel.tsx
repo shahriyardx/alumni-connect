@@ -7,6 +7,8 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { AuthorLine, timeAgo } from "@/components/author-line";
+import { Avatar } from "@/components/ui/avatar";
+import { RoleBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -16,6 +18,7 @@ import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tab, TabsList, TabsPanel, TabsRoot } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/cn";
 import { type RouterOutputs, useTRPC } from "@/lib/trpc";
 import { PageHeader } from "./workspace-shell";
 
@@ -100,6 +103,23 @@ function Queue({ status }: { status: Status }) {
   );
 }
 
+/** Amber at 1–2 prior strikes, red at 3+; hidden at 0. */
+function StrikesPill({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-medium whitespace-nowrap",
+        n >= 3
+          ? "bg-destructive/10 text-destructive"
+          : "bg-amber-500/12 text-amber-700 dark:text-amber-300",
+      )}
+    >
+      {n} prior
+    </span>
+  );
+}
+
 function contentHref(r: Report) {
   if (r.targetType === "POST") return `/p/${r.targetId}`;
   if (r.targetType === "USER") return `/u/${r.targetId}`;
@@ -169,10 +189,37 @@ function ReportCard({ r }: { r: Report }) {
                 {p.body}
               </p>
             )}
-            {p.userName && (
-              <span className="flex items-center gap-1.5 text-sm font-medium">
-                <Icon name="person" size={16} /> {p.userName}
-              </span>
+            {r.reportedAuthor ? (
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <Avatar
+                  name={r.reportedAuthor.name}
+                  src={
+                    r.reportedAuthor.avatarKey
+                      ? `/api/files/${r.reportedAuthor.avatarKey}`
+                      : null
+                  }
+                  size={24}
+                />
+                <Link
+                  href={`/u/${r.reportedAuthor.id}`}
+                  className="text-sm font-medium hover:underline"
+                >
+                  {r.reportedAuthor.name}
+                </Link>
+                <RoleBadge role={r.reportedAuthor.role} />
+                {r.reportedAuthor.department && (
+                  <span className="text-xs text-muted-foreground">
+                    {r.reportedAuthor.department}
+                  </span>
+                )}
+                <StrikesPill n={r.priorStrikes} />
+              </div>
+            ) : (
+              p.userName && (
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <Icon name="person" size={16} /> {p.userName}
+                </span>
+              )
             )}
           </>
         )}

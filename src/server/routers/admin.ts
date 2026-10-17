@@ -1,5 +1,16 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
   auditLog,
@@ -243,16 +254,28 @@ export const adminRouter = router({
       return { ok: true as const };
     }),
 
+  // `range` omitted/undefined means "any" — the client just doesn't send it.
   audit: adminProcedure
     .input(
       z.object({
         action: z.string().min(1).max(100).optional(),
+        actorId: z.string().min(1).optional(),
+        range: z.enum(["24h", "7d", "30d"]).optional(),
         cursor: z.number().int().min(0).default(0),
       }),
     )
     .query(async ({ ctx, input }) => {
       const limit = 50;
       const conds = input.action ? [eq(auditLog.action, input.action)] : [];
+      if (input.actorId) conds.push(eq(auditLog.actorId, input.actorId));
+      if (input.range) {
+        const ms = {
+          "24h": 86_400_000,
+          "7d": 7 * 86_400_000,
+          "30d": 30 * 86_400_000,
+        }[input.range];
+        conds.push(gte(auditLog.createdAt, new Date(Date.now() - ms)));
+      }
 
       const rows = await ctx.db
         .select({
@@ -294,6 +317,21 @@ export const adminRouter = router({
         nextCursor: rows.length > limit ? input.cursor + limit : null,
       };
     }),
+
+  /** Staff who have at least one audit entry — for the audit log's actor filter. */
+  auditActors: adminProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .selectDistinct({ id: user.id, name: user.name })
+      .from(auditLog)
+      .innerJoin(
+        user,
+        and(
+          eq(user.id, auditLog.actorId),
+          eq(user.universityId, ctx.me.universityId),
+        ),
+      )
+      .orderBy(asc(user.name));
+  }),
 
   stats: adminProcedure.query(async ({ ctx }) => {
     const roleRows = await ctx.db

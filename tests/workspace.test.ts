@@ -162,6 +162,51 @@ describe("approvals", () => {
   });
 });
 
+describe("F2: bulk approve/reject", () => {
+  test("approveMany/rejectMany: role-gated, skip non-PENDING/cross-tenant ids, cap 100, audited", async () => {
+    const a = callerFor(admin.id);
+    const p1 = await makeUser(uniId, { status: "PENDING", rosterMatch: true });
+    const p2 = await makeUser(uniId, { status: "PENDING", rosterMatch: true });
+    const p3 = await makeUser(uniId, { status: "PENDING", rosterMatch: false });
+    const notPending = student; // ACTIVE already
+    const uni2 = (await makeUniversity()).id;
+    const crossTenant = await makeUser(uni2, { status: "PENDING" });
+
+    await expect(
+      callerFor(mod.id).workspace.approveMany({ userIds: [p1.id] }),
+    ).rejects.toThrow(/FORBIDDEN/);
+    await expect(
+      callerFor(student.id).workspace.rejectMany({ userIds: [p1.id] }),
+    ).rejects.toThrow(/FORBIDDEN/);
+
+    const res = await a.workspace.approveMany({
+      userIds: [p1.id, p2.id, notPending.id, crossTenant.id],
+    });
+    expect(res.processed.sort()).toEqual([p1.id, p2.id].sort());
+    expect(res.skipped.sort()).toEqual([notPending.id, crossTenant.id].sort());
+    expect((await row(p1.id)).status).toBe("ACTIVE");
+    expect((await row(p2.id)).status).toBe("ACTIVE");
+    expect((await row(crossTenant.id)).status).toBe("PENDING"); // untouched
+
+    const auditItems = (await a.admin.audit({})).items;
+    expect(auditItems.filter((x) => x.action === "user.approve")).toHaveLength(
+      2,
+    );
+
+    const resReject = await a.workspace.rejectMany({ userIds: [p3.id] });
+    expect(resReject.processed).toEqual([p3.id]);
+    expect(resReject.skipped).toEqual([]);
+    expect(await row(p3.id)).toBeUndefined(); // deleted, not just marked
+
+    // Cap: more than 100 ids in one call is rejected outright, by zod's
+    // own array-length validation (not a generic failure).
+    const tooMany = Array.from({ length: 101 }, () => randomUUID());
+    await expect(a.workspace.approveMany({ userIds: tooMany })).rejects.toThrow(
+      /expected array to have <=100 items/,
+    );
+  });
+});
+
 describe("batches", () => {
   test("CRUD, unique number, promotion recompute", async () => {
     const a = callerFor(admin.id);

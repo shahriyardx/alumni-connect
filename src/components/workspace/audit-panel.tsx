@@ -1,43 +1,35 @@
 "use client";
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Tip } from "@/components/ui/icon-button";
+import { AUDIT_ACTIONS, auditLabel } from "@/lib/audit-labels";
 import { useTRPC } from "@/lib/trpc";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { EmptyState } from "../ui/empty-state";
+import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { PageHeader } from "./workspace-shell";
 
-// Every action string the server writes (grep `audit(` in src/server).
-const ACTIONS = [
-  "report.dismiss",
-  "report.remove",
-  "report.suspend",
-  "report.ban",
-  "user.status",
-  "user.approve",
-  "user.reject",
-  "user.role",
-  "owner.transfer",
-  "batch.save",
-  "batch.delete",
-  "roster.import",
-  "settings.update",
-  "university.approve",
-  "university.reject",
-  "university.create",
-  "post.update",
-  "post.remove",
-  "comment.update",
-  "comment.remove",
-  "signup.attempt",
-] as const;
 const FILTER_ITEMS = [
   { value: "all", label: "All actions" },
-  ...ACTIONS.map((a) => ({ value: a, label: a })),
+  ...Object.entries(AUDIT_ACTIONS).map(([value, a]) => ({
+    value,
+    label: a.label,
+  })),
 ];
+const RANGE_ITEMS = [
+  { value: "all", label: "Any time" },
+  { value: "24h", label: "Last 24 hours" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+] as const;
 
 const fmt = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
@@ -46,10 +38,29 @@ const fmt = new Intl.DateTimeFormat("en", {
 
 export function AuditPanel() {
   const trpc = useTRPC();
-  const [action, setAction] = useState<string>("all");
+  const router = useRouter();
+  const params = useSearchParams();
+  const action = params.get("action") ?? "all";
+  const actor = params.get("actor") ?? "all";
+  const range = (params.get("range") ??
+    "all") as (typeof RANGE_ITEMS)[number]["value"];
+
+  const setParam = (key: string, value: string) => {
+    const sp = new URLSearchParams(params);
+    if (value === "all") sp.delete(key);
+    else sp.set(key, value);
+    const qs = sp.toString();
+    router.replace(qs ? `/workspace/audit?${qs}` : "/workspace/audit");
+  };
+
+  const actors = useQuery(trpc.admin.auditActors.queryOptions());
   const list = useInfiniteQuery(
     trpc.admin.audit.infiniteQueryOptions(
-      { action: action === "all" ? undefined : action },
+      {
+        action: action === "all" ? undefined : action,
+        actorId: actor === "all" ? undefined : actor,
+        range: range === "all" ? undefined : range,
+      },
       {
         getNextPageParam: (l) => l.nextCursor,
         placeholderData: keepPreviousData,
@@ -61,13 +72,32 @@ export function AuditPanel() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Audit log" sub="Every staff action, newest first." />
-      <Select
-        label="Action"
-        value={action}
-        onValueChange={setAction}
-        items={FILTER_ITEMS}
-        className="w-fit"
-      />
+      <div className="flex flex-wrap gap-2">
+        <Select
+          label="Action"
+          value={action}
+          onValueChange={(v) => setParam("action", v)}
+          items={FILTER_ITEMS}
+          className="w-fit"
+        />
+        <Select
+          label="Actor"
+          value={actor}
+          onValueChange={(v) => setParam("actor", v)}
+          items={[
+            { value: "all", label: "All staff" },
+            ...(actors.data ?? []).map((a) => ({ value: a.id, label: a.name })),
+          ]}
+          className="w-fit"
+        />
+        <Select
+          label="When"
+          value={range}
+          onValueChange={(v) => setParam("range", v)}
+          items={RANGE_ITEMS}
+          className="w-fit"
+        />
+      </div>
       {list.isLoading ? (
         <div className="grid place-items-center py-16">
           <Spinner />
@@ -79,50 +109,63 @@ export function AuditPanel() {
       ) : items.length === 0 ? (
         <EmptyState icon="history" title="No audit entries" />
       ) : (
-        <Card className="overflow-x-auto p-2">
-          <table className="w-full min-w-[560px] text-left text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                {["Time", "Actor", "Action", "Target", "IP"].map((h) => (
-                  <th key={h} className="px-3 py-2 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((e) => (
-                <tr key={e.id} className="align-top">
-                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground tabular-nums">
-                    {fmt.format(new Date(e.createdAt))}
-                  </td>
-                  <td className="px-3 py-2">
-                    {e.actor ? (
-                      <Link
-                        href={`/u/${e.actor.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {e.actor.name}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">system</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs">
-                      {e.action}
-                    </code>
-                  </td>
-                  <td className="max-w-48 truncate px-3 py-2 font-mono text-xs text-muted-foreground">
-                    {e.target ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                    {e.ip ?? "—"}
-                  </td>
+        <Card className="p-2">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr>
+                  {["Time", "Actor", "Action", "Target", "IP"].map((h) => (
+                    <th key={h} className="px-3 py-2 font-medium">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((e) => {
+                  const { label, icon } = auditLabel(e.action);
+                  return (
+                    <tr key={e.id} className="align-top">
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground tabular-nums">
+                        {fmt.format(new Date(e.createdAt))}
+                      </td>
+                      <td className="px-3 py-2">
+                        {e.actor ? (
+                          <Link
+                            href={`/u/${e.actor.id}`}
+                            className="font-medium hover:underline"
+                          >
+                            {e.actor.name}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">system</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Tip label={e.action}>
+                          <span className="inline-flex w-fit cursor-help items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+                            <Icon name={icon} size={14} />
+                            {label}
+                          </span>
+                        </Tip>
+                      </td>
+                      <td className="max-w-48 truncate px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {e.target ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {e.ip ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Hints the table scrolls on narrow screens. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-3xl bg-gradient-to-l from-surface to-transparent sm:hidden"
+          />
         </Card>
       )}
       {list.hasNextPage && (

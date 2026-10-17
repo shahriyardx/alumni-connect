@@ -308,6 +308,130 @@ test("resolve: suspend does not downgrade an already-banned user", async () => {
     .from(report)
     .where(eq(report.id, rSuspend.id));
   expect(reportRow.status).toBe("RESOLVED");
+
+  // F2 fix round 2: the no-op suspend still writes a `report.suspend`
+  // audit row (a moderator's decision is never left un-logged, even when
+  // it didn't change anything) — but with `statusChanged: false` and no
+  // `authorId`, so it can't be counted as a strike.
+  const suspendAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.suspend"));
+  expect(suspendAudits).toHaveLength(1);
+  expect(suspendAudits[0].actorId).toBe(mod.id);
+  expect(suspendAudits[0].meta).toMatchObject({ statusChanged: false });
+  expect(suspendAudits[0].meta).not.toHaveProperty("authorId");
+  const q = await callerFor(mod.id).moderation.queue({ status: "RESOLVED" });
+  const strikesRow = q.items.find((i) => i.id === rSuspend.id);
+  expect(strikesRow?.priorStrikes).toBe(1); // only the ban, not a phantom suspend too
+});
+
+// F2 fix round 2: every resolve() call is audited, even a no-op one — a
+// moderator's decision must never be left un-logged (repudiation gap).
+test("resolve: a no-op ban (already banned) is audited without a phantom strike", async () => {
+  // Resolving a report auto-resolves every other OPEN report on the exact
+  // same target, so to reach the no-op branch legitimately, use a second
+  // report on a *different* target that resolves to the same account —
+  // same shape as the existing already-banned/suspend test above.
+  const rBan = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "serious abuse",
+  });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rBan.id,
+    action: "ban",
+  });
+
+  const p1 = await makePost(uniId, spammer.id);
+  const rBanAgain = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p1.id,
+    reason: "still at it",
+  });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rBanAgain.id,
+    action: "ban",
+  });
+  const banAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.ban"));
+  expect(banAudits).toHaveLength(2); // both decisions logged
+  const noopBan = banAudits.find((a) => a.meta?.reportId === rBanAgain.id);
+  expect(noopBan?.meta).toMatchObject({ statusChanged: false });
+  expect(noopBan?.meta).not.toHaveProperty("authorId");
+
+  // Only the first ban counts as a strike — the no-op re-ban doesn't add
+  // another one (it's a genuine no-op on the *account*, unlike "remove"
+  // below, which is always a strike on upholding the report).
+  const r2 = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "once more",
+  });
+  const q2 = await callerFor(mod.id).moderation.queue({});
+  expect(q2.items[0].priorStrikes).toBe(1);
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r2.id,
+    action: "dismiss",
+  });
+});
+
+// F2 fix round 2: closes a moderation-evasion trick. `remove` must always
+// count as a strike on upholding a report, no matter who deleted the
+// content or when — otherwise an author could delete their own reported
+// post the moment they're reported, and a moderator later resolving that
+// (now redundant) report as "remove" would silently erase the strike.
+test("resolve: 'remove' still counts as a strike even when the content is already gone by the time a moderator acts", async () => {
+  // Case 1: the reported author deletes their own post first.
+  const p1 = await makePost(uniId, spammer.id);
+  const rSelfDeleted = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p1.id,
+    reason: "obvious spam",
+  });
+  await callerFor(spammer.id).post.remove({ id: p1.id }); // self-delete evasion attempt
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rSelfDeleted.id,
+    action: "remove",
+  });
+
+  // Case 2: someone else (another moderator) removed it first.
+  const p2 = await makePost(uniId, spammer.id);
+  const rRemovedByOther = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p2.id,
+    reason: "also spam",
+  });
+  await callerFor(admin.id).post.remove({ id: p2.id });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rRemovedByOther.id,
+    action: "remove",
+  });
+
+  const removeAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.remove"));
+  expect(removeAudits).toHaveLength(2);
+  for (const row of removeAudits) {
+    // Neither flipped `deletedAt` itself (the content was already gone),
+    // but both are still a strike on the author.
+    expect(row.meta).toMatchObject({
+      statusChanged: false,
+      authorId: spammer.id,
+    });
+  }
+
+  // Both count — resolving "remove" on already-gone content is never free.
+  await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "pattern of behavior",
+  });
+  const q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(2);
 });
 
 test("admin.importRoster dedupes duplicate student IDs and reports bad rows", async () => {
@@ -404,4 +528,139 @@ test("profile.get exposes account status to moderators only", async () => {
   const asStudent = await callerFor(student.id).profile.get({ id: spammer.id });
   expect(asStudent.moderation).toBeNull();
   expect(asStudent).not.toHaveProperty("status");
+});
+
+// F2.1: moderation queue shows the reported author + prior strikes.
+test("F2: queue shows the reported author and a running prior-strikes count, tenant isolated", async () => {
+  const p1 = await makePost(uniId, spammer.id, { title: "spam 1" });
+  const r1 = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p1.id,
+    reason: "spam post",
+  });
+  let q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0]).toMatchObject({
+    reportedAuthor: { id: spammer.id, role: "STUDENT" },
+    priorStrikes: 0,
+  });
+
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r1.id,
+    action: "remove",
+  });
+
+  const p2 = await makePost(uniId, spammer.id, { title: "spam 2" });
+  const r2 = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p2.id,
+    reason: "spam again",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(1); // 1 prior removal
+
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r2.id,
+    action: "suspend",
+    days: 3,
+  });
+
+  const r3 = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "more abuse",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(2); // + 1 prior suspension
+
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r3.id,
+    action: "ban",
+  });
+
+  const r4 = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "still bad",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(3); // + 1 prior ban
+
+  // A direct status change (no report involved) also counts as a strike.
+  await adminDb
+    .update(user)
+    .set({ status: "ACTIVE", suspendedUntil: null })
+    .where(eq(user.id, spammer.id));
+  await callerFor(mod.id).moderation.setUserStatus({
+    userId: spammer.id,
+    status: "SUSPENDED",
+    days: 1,
+  });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r4.id,
+    action: "dismiss",
+  });
+  const p3 = await makePost(uniId, spammer.id, { title: "spam 3" });
+  await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p3.id,
+    reason: "again",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(4);
+
+  // Tenant isolation: an identical scenario in a second university counts
+  // independently, never bleeding into uniId's total.
+  const uni2 = await makeUniversity();
+  const student2 = await makeUser(uni2.id);
+  const mod2 = await makeUser(uni2.id, { role: "MODERATOR" });
+  const spammer2 = await makeUser(uni2.id);
+  const p4 = await makePost(uni2.id, spammer2.id, { title: "spam in uni2" });
+  await callerFor(student2.id).moderation.report({
+    targetType: "POST",
+    targetId: p4.id,
+    reason: "spam post",
+  });
+  const q2 = await callerFor(mod2.id).moderation.queue({});
+  expect(q2.items[0].priorStrikes).toBe(0);
+  expect(q2.items[0].reportedAuthor?.id).toBe(spammer2.id);
+});
+
+// F2.3: audit log filters by actor and date range.
+test("F2: admin.audit filters by actor and date range; auditActors lists staff with entries", async () => {
+  const a = callerFor(admin.id);
+  await a.admin.setRole({ userId: student.id, role: "STAFF" }); // actor = admin
+  await callerFor(mod.id).moderation.setUserStatus({
+    userId: spammer.id,
+    status: "SUSPENDED",
+    days: 1,
+  }); // actor = mod
+  const [old] = await adminDb
+    .insert(auditLog)
+    .values({
+      universityId: uniId,
+      actorId: admin.id,
+      action: "settings.update",
+      createdAt: new Date(Date.now() - 40 * 86_400_000),
+    })
+    .returning({ id: auditLog.id });
+
+  const byAdmin = await a.admin.audit({ actorId: admin.id });
+  expect(byAdmin.items.length).toBeGreaterThan(0);
+  expect(byAdmin.items.every((i) => i.actor?.id === admin.id)).toBe(true);
+  expect(byAdmin.items.some((i) => i.action === "user.role")).toBe(true);
+
+  const byMod = await a.admin.audit({ actorId: mod.id });
+  expect(byMod.items).toHaveLength(1);
+  expect(byMod.items[0].action).toBe("user.status");
+
+  const recent = await a.admin.audit({ range: "30d" });
+  expect(recent.items.some((i) => i.id === old.id)).toBe(false);
+
+  const everything = await a.admin.audit({});
+  expect(everything.items.some((i) => i.id === old.id)).toBe(true);
+
+  const actorIds = (await a.admin.auditActors()).map((x) => x.id);
+  expect(actorIds).toContain(admin.id);
+  expect(actorIds).toContain(mod.id);
+  expect(actorIds).not.toContain(student.id); // never acted, just acted on
 });
