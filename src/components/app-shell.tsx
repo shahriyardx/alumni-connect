@@ -46,6 +46,13 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       icon: "bookmark",
     },
     {
+      href: "/people/alumni",
+      match: "/people/alumni",
+      label: "Alumni",
+      icon: "groups",
+      roles: ["STUDENT"],
+    },
+    {
       href: meId ? `/u/${meId}` : "/settings",
       match: meId ? `/u/${meId}` : "/settings",
       label: "Profile",

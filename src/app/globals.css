@@ -31,8 +31,13 @@
   --inverse-fg: #f2f3f7;
 }
 
+/* Dark tokens apply either by OS preference (unless the manual toggle forced
+   light) or by the manual toggle forcing dark — hence two selectors sharing
+   one variable set (a plain CSS rule can't OR a media feature with an
+   attribute selector). Keep both in sync; see `:root[data-theme="dark"]`
+   below and src/lib/theme.ts for the toggle that sets `data-theme`. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
@@ -65,6 +70,31 @@
     --inverse: #e8eaf0;
     --inverse-fg: #1d1f24;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --primary: oklch(0.62 0.1736 259.66);
+  --primary-foreground: oklch(0.145 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+
+  --surface-tint: var(--foreground);
+  --surface-1: color-mix(in srgb, var(--surface-tint) 5%, var(--background));
+  --surface-2: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+  --surface-box: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+  --field-card: color-mix(in srgb, var(--surface-tint) 11%, var(--background));
+  --popover: color-mix(in srgb, var(--surface-tint) 9%, var(--background));
+  --muted: oklch(0.269 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --tonal: color-mix(in srgb, var(--foreground) 11%, var(--background));
+  --tonal-hover: color-mix(in srgb, var(--foreground) 16%, var(--background));
+  --tonal-fg: var(--foreground);
+  --inverse: #e8eaf0;
+  --inverse-fg: #1d1f24;
 }
 
 @theme inline {
@@ -135,15 +165,19 @@
 /* Light mode: a field straight on the tinted page is a tint on a tint and
    barely shows; off a card (and off a dialog) it turns white with a
    hairline. It stays white while focused so it doesn't flash grey; only the
-   hairline steps aside for the focus/invalid borders. */
+   hairline steps aside for the focus/invalid borders. Applies by OS
+   preference (unless the manual toggle forced dark) or by the toggle forcing
+   light — same two-selector split as the dark tokens above. */
 @media (prefers-color-scheme: light) {
   @layer utilities {
-    :is(input, textarea, [role="combobox"]).bg-surface-high:where(
+    :root:not([data-theme="dark"])
+      :is(input, textarea, [role="combobox"]).bg-surface-high:where(
         :not(.bg-surface *, .bg-popover *)
       ) {
       background-color: #fff;
     }
-    :is(input, textarea, [role="combobox"]).bg-surface-high:where(
+    :root:not([data-theme="dark"])
+      :is(input, textarea, [role="combobox"]).bg-surface-high:where(
         :not(
             .bg-surface *,
             .bg-popover *,
@@ -154,6 +188,27 @@
       ) {
       border-color: var(--input);
     }
+  }
+}
+
+@layer utilities {
+  :root[data-theme="light"]
+    :is(input, textarea, [role="combobox"]).bg-surface-high:where(
+      :not(.bg-surface *, .bg-popover *)
+    ) {
+    background-color: #fff;
+  }
+  :root[data-theme="light"]
+    :is(input, textarea, [role="combobox"]).bg-surface-high:where(
+      :not(
+          .bg-surface *,
+          .bg-popover *,
+          :focus,
+          [data-invalid],
+          [aria-invalid="true"]
+        )
+    ) {
+    border-color: var(--input);
   }
 }
 

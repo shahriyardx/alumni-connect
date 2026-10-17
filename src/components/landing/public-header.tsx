@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeMenuButton } from "@/components/theme-menu";
 import { ButtonLink } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
-/** Floating pill bar. Account actions only on the landing page. */
+/** Floating pill bar. Account actions only on the landing page; the theme toggle shows everywhere. */
 export function PublicHeader() {
   const landing = usePathname() === "/";
   return (
@@ -19,21 +20,24 @@ export function PublicHeader() {
           </span>
           Alumni Connect
         </Link>
-        {landing && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <ButtonLink
-              href="/sign-in"
-              variant="ghost"
-              size="sm"
-              className="max-sm:hidden"
-            >
-              Sign in
-            </ButtonLink>
-            <ButtonLink href="/sign-up" size="sm">
-              Join
-            </ButtonLink>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <ThemeMenuButton />
+          {landing && (
+            <>
+              <ButtonLink
+                href="/sign-in"
+                variant="ghost"
+                size="sm"
+                className="max-sm:hidden"
+              >
+                Sign in
+              </ButtonLink>
+              <ButtonLink href="/sign-up" size="sm">
+                Join
+              </ButtonLink>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

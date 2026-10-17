@@ -1,5 +1,9 @@
+import { and, eq, isNotNull } from "drizzle-orm";
 import Link from "next/link";
+import { Suspense } from "react";
 import { Icon } from "@/components/ui/icon";
+import { db } from "@/db";
+import { university } from "@/db/schema";
 
 const tile = "rounded-[2.5rem]";
 // White pill on the brand tile; the kit's buttons are for app surfaces.
@@ -97,6 +101,39 @@ const footerLinks = [
     ],
   },
 ];
+
+/**
+ * Slim "trusted by" strip of ACTIVE universities that have uploaded a logo.
+ * Reads the DB, so per Next 16 cacheComponents rules it must render inside
+ * `<Suspense>` (the static landing page itself stays a sync component).
+ */
+async function LogoStrip() {
+  const unis = await db
+    .select({ id: university.id, name: university.name })
+    .from(university)
+    .where(and(eq(university.status, "ACTIVE"), isNotNull(university.logoKey)))
+    .orderBy(university.name)
+    .limit(12);
+  if (unis.length === 0) return null;
+  return (
+    <section className="mt-3 flex flex-col gap-3 rounded-[2.5rem] bg-surface px-7 py-6 sm:px-10">
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        Universities on Alumni Connect
+      </p>
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        {unis.map((u) => (
+          // biome-ignore lint/performance/noImgElement: public logo route, not a static asset
+          <img
+            key={u.id}
+            src={`/api/universities/${u.id}/logo`}
+            alt={u.name}
+            className="h-8 w-auto object-contain opacity-70 grayscale transition-[opacity,filter] hover:opacity-100 hover:grayscale-0"
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default function LandingPage() {
   return (
@@ -199,6 +236,10 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
+
+        <Suspense fallback={null}>
+          <LogoStrip />
+        </Suspense>
 
         <section className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {perks.map((p, i) => (

@@ -327,6 +327,10 @@ export const authRouter = router({
         id: university.id,
         name: university.name,
         emailDomain: university.emailDomain,
+        // Booleans only — the sign-up picker and landing logo strip fetch
+        // the image itself from the public /api/universities/[id]/logo
+        // route, never the raw object key.
+        hasLogo: sql<boolean>`${university.logoKey} is not null`,
       })
       .from(university)
       .where(eq(university.status, "ACTIVE"))
