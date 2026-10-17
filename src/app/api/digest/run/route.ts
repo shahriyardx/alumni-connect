@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@/db/schema";
@@ -23,6 +23,11 @@ const PERIOD_MS: Record<"daily" | "weekly", number> = {
   daily: DAY_MS,
   weekly: 7 * DAY_MS,
 };
+
+// One run's worth of subscribers. Oldest-due first (nulls — never digested
+// — sort first), so a scheduler that only ever gets through part of the
+// list under this cap still makes progress across calls; see README.
+const SUBSCRIBER_BATCH = 500;
 
 const TYPE_LABEL: Record<string, string> = {
   REPLY_POST: "replied to your post",
@@ -49,8 +54,12 @@ export type DigestResult =
  * their unread notifications since `lastDigestAt`, when their chosen period
  * has elapsed — so an external scheduler can call this as often as it likes
  * (e.g. hourly) and each user still only gets mail on their own cadence.
- * Only updates `lastDigestAt` when mail actually goes out, so an empty
- * check this run doesn't block a real digest once new notifications land.
+ *
+ * Claims a user atomically (`UPDATE ... WHERE last_digest_at IS NOT
+ * DISTINCT FROM <the value this run read>`) before sending: two overlapping
+ * runs racing on the same user can't both see it as "due" and both mail it
+ * — only the run whose compare-and-swap wins the race proceeds to send.
+ * Losing the claim (another run already advanced it) just skips the user.
  */
 export async function runDigest(secret: string | null): Promise<DigestResult> {
   if (!env.DIGEST_SECRET) return { ok: false, status: 404 };
@@ -65,7 +74,9 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
       lastDigestAt: user.lastDigestAt,
     })
     .from(user)
-    .where(inArray(user.emailDigest, ["daily", "weekly"]));
+    .where(inArray(user.emailDigest, ["daily", "weekly"]))
+    .orderBy(sql`${user.lastDigestAt} asc nulls first`)
+    .limit(SUBSCRIBER_BATCH);
 
   let sent = 0;
   for (const sub of subscribers) {
@@ -73,6 +84,17 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
     const due =
       !sub.lastDigestAt || now.getTime() - sub.lastDigestAt.getTime() >= period;
     if (!due) continue;
+
+    // Dates go in as ISO strings: the raw `sql` tag doesn't get postgres-js's
+    // usual Date handling the query builder relies on.
+    const claimed = await adminDb.execute<{ id: string }>(sql`
+      update "user"
+      set last_digest_at = ${now.toISOString()}
+      where id = ${sub.id}
+        and last_digest_at is not distinct from ${sub.lastDigestAt?.toISOString() ?? null}
+      returning id
+    `);
+    if (claimed.length === 0) continue; // another run already claimed this user
 
     const since = sub.lastDigestAt ?? new Date(0);
     const items = await adminDb
@@ -86,7 +108,7 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
         ),
       )
       .orderBy(asc(notification.createdAt));
-    if (items.length === 0) continue;
+    if (items.length === 0) continue; // claimed the slot; nothing to actually mail
 
     const lines = items.map(
       (i) => `- ${TYPE_LABEL[i.type] ?? i.type} (${i.createdAt.toISOString()})`,
@@ -96,10 +118,6 @@ export async function runDigest(secret: string | null): Promise<DigestResult> {
       `Your Alumni Connect digest (${items.length} update${items.length === 1 ? "" : "s"})`,
       lines.join("\n"),
     );
-    await adminDb
-      .update(user)
-      .set({ lastDigestAt: now })
-      .where(eq(user.id, sub.id));
     sent++;
   }
 

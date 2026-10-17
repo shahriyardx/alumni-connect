@@ -85,6 +85,8 @@ A crontab entry (hourly is enough to serve both daily and weekly subscribers pro
 0 * * * * curl -fsS -X POST https://your-host/api/digest/run -H "Authorization: Bearer $DIGEST_SECRET"
 ```
 
+Each call processes at most 500 due subscribers (oldest-last-digested first), so at demo scale this never matters, but past that, call the endpoint again (or just wait for the next scheduled run) to work through the rest — every call is safe to run concurrently with another, each user is only ever digested once per call that actually claims them.
+
 ### Tests
 
 ```bash

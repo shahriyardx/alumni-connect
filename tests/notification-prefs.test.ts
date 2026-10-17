@@ -118,6 +118,24 @@ describe("notification prefs gate notification creation", () => {
     expect(await adminDb.select().from(notification)).toEqual([]);
   });
 
+  test("FOLLOWED_TAG_POST fan-out excludes a non-ACTIVE follower, like the announcement fan-out does", async () => {
+    await callerFor(bob.id).social.followTag({ tag: "career", on: true });
+    await adminDb
+      .update(user)
+      .set({ status: "SUSPENDED" })
+      .where(eq(user.id, bob.id));
+    await callerFor(alice.id).post.create({
+      title: "Career advice for active users only",
+      body: "b",
+      tags: ["career"],
+    });
+    const rows = await adminDb
+      .select()
+      .from(notification)
+      .where(eq(notification.type, "FOLLOWED_TAG_POST"));
+    expect(rows).toEqual([]);
+  });
+
   test("per-tag bell: following muted (notify: false) suppresses FOLLOWED_TAG_POST; re-enabling fires it", async () => {
     await callerFor(bob.id).social.followTag({
       tag: "career",
@@ -220,6 +238,26 @@ describe("POST /api/digest/run", () => {
     await callerFor(bob.id).comment.create({ postId, body: "second reply" });
     const r3 = await runDigest("test-digest-secret");
     expect(r3).toMatchObject({ ok: true, sent: 1 });
+  });
+
+  test("two concurrent runs send exactly one digest per user (no double-send race)", async () => {
+    await adminDb
+      .update(user)
+      .set({ emailDigest: "daily" })
+      .where(eq(user.id, alice.id));
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Question for bob, racily digested",
+      body: "b",
+      tags: [],
+    });
+    await callerFor(bob.id).comment.create({ postId, body: "a reply" });
+
+    const [r1, r2] = await Promise.all([
+      runDigest("test-digest-secret"),
+      runDigest("test-digest-secret"),
+    ]);
+    const totalSent = (r1.ok ? r1.sent : 0) + (r2.ok ? r2.sent : 0);
+    expect(totalSent).toBe(1);
   });
 
   test("tenant isolation: opted-in users in different universities both get digested in one call", async () => {

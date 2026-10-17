@@ -106,7 +106,21 @@ export const notificationRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.update(user).set(input).where(eq(user.id, ctx.me.id));
+      // Explicit university_id filter, per house rule, alongside id.
+      // memberProcedure already rejects no-university accounts (super
+      // admins can't reach this procedure), so ctx.me.universityId is never
+      // null here — isNull is the defensive fallback if that ever changes.
+      await ctx.db
+        .update(user)
+        .set(input)
+        .where(
+          and(
+            eq(user.id, ctx.me.id),
+            ctx.me.universityId
+              ? eq(user.universityId, ctx.me.universityId)
+              : isNull(user.universityId),
+          ),
+        );
       return { ok: true as const };
     }),
 });

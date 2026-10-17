@@ -277,6 +277,7 @@ export const postRouter = router({
               inArray(followTag.tagId, tagIds),
               eq(followTag.notify, true),
               eq(user.notifyFollowedTag, true),
+              eq(user.status, "ACTIVE"),
             ),
           );
         for (const { userId } of tagFollowers) {
