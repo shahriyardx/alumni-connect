@@ -52,7 +52,11 @@ export function SearchView() {
           }
         />
       ) : (
-        <EmptyState icon="travel_explore" title="Search posts" />
+        <EmptyState
+          icon="travel_explore"
+          title="What are you looking for?"
+          body="Try a course, a company or a supervisor."
+        />
       )}
     </div>
   );

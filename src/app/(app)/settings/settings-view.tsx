@@ -44,11 +44,6 @@ export function SettingsView() {
         <>
           <ProfileForm profile={profile.data} />
           <FollowedTags />
-          <Section title="Appearance">
-            <p className="text-sm text-muted-foreground">
-              The theme follows your system's light or dark setting.
-            </p>
-          </Section>
           <Button
             variant="destructive"
             icon="logout"
@@ -79,6 +74,10 @@ function ProfileForm({
   const [name, setName] = useState(profile.name);
   const [department, setDepartment] = useState(profile.department ?? "");
   const [bio, setBio] = useState(profile.bio ?? "");
+  const dirty =
+    name.trim() !== profile.name ||
+    department.trim() !== (profile.department ?? "") ||
+    bio.trim() !== (profile.bio ?? "");
 
   const refresh = () =>
     Promise.all([
@@ -151,7 +150,12 @@ function ProfileForm({
           maxLength={BIO_MAX}
           description={`${bio.length}/${BIO_MAX}`}
         />
-        <Button type="submit" className="self-start" loading={update.isPending}>
+        <Button
+          type="submit"
+          className="self-start"
+          disabled={!dirty}
+          loading={update.isPending}
+        >
           Save
         </Button>
       </form>
