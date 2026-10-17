@@ -43,6 +43,6 @@ export async function GET(
   if (!r.ok) return new Response("Not found", { status: r.status });
   return new Response(null, {
     status: 302,
-    headers: { Location: r.url, "Cache-Control": "public, max-age=3600" },
+    headers: { Location: r.url, "Cache-Control": "public, max-age=240" },
   });
 }
