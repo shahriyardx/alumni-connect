@@ -80,6 +80,24 @@ const tools = [
   { icon: "shield", label: "Moderation" },
 ];
 
+const footerLinks = [
+  {
+    title: "Students",
+    links: [
+      { href: "/sign-up", label: "Join" },
+      { href: "/sign-in", label: "Sign in" },
+      { href: "/forgot-password", label: "Reset password" },
+    ],
+  },
+  {
+    title: "Universities",
+    links: [
+      { href: "/register-university", label: "Register" },
+      { href: "/sign-in?next=/workspace", label: "Workspace" },
+    ],
+  },
+];
+
 export default function LandingPage() {
   return (
     <main className="w-full flex-1 px-3 pt-4 pb-10 sm:px-6">
@@ -346,15 +364,56 @@ export default function LandingPage() {
           </Link>
         </section>
 
-        <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 px-3 text-xs text-muted-foreground">
-          <span>Built for every campus</span>
-          <Link
-            href="/register-university"
-            className="hover:text-foreground hover:underline"
+        <footer
+          className={`relative mt-3 overflow-hidden ${tile} bg-surface px-7 pt-8 sm:px-10 sm:pt-10`}
+        >
+          <div className="flex flex-col gap-10 sm:flex-row sm:justify-between">
+            <div className="max-w-xs">
+              <span className="flex items-center gap-2.5 text-[15px] font-semibold tracking-tight">
+                <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
+                  <Icon name="school" filled size={20} />
+                </span>
+                Alumni Connect
+              </span>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Students ask. Alumni answer. One verified network per campus.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-x-14 gap-y-2 text-sm">
+              {footerLinks.map((col) => (
+                <nav
+                  key={col.title}
+                  aria-label={col.title}
+                  className="flex flex-col gap-2"
+                >
+                  <span className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    {col.title}
+                  </span>
+                  {col.links.map((l) => (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      className="w-fit rounded-full text-foreground/80 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      {l.label}
+                    </Link>
+                  ))}
+                </nav>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-foreground/5 pt-4 text-xs text-muted-foreground">
+            <span>© {2026} Alumni Connect</span>
+            <span>Built for every campus</span>
+          </div>
+          {/* Oversized wordmark, cropped by the tile edge. */}
+          <p
+            aria-hidden
+            className="mt-6 -mb-[0.22em] text-[clamp(2.5rem,10.5vw,8.5rem)] leading-none font-bold tracking-tighter whitespace-nowrap text-foreground/[0.06] select-none"
           >
-            Register your university
-          </Link>
-          <span>© {2026} Alumni Connect</span>
+            Alumni Connect
+          </p>
         </footer>
       </div>
     </main>
