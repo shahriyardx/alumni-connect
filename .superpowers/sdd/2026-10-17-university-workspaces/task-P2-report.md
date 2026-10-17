@@ -100,3 +100,33 @@ They were taken on a throwaway `alumni_p2` with `next start -p 4000`. The DB has
    - `admin.ts`: export of escapeLike.
    - `notifications-view.tsx` and `notification.ts`: F1 may also touch these.
 5. **Cost of the Universities badge:** the sidebar badge reuses the overview query, so every platform page runs the overview aggregate once (cached by react-query).
+
+## Fix round 1
+
+Commit: 3db7e2f fix(platform): serialize owner transfers, protect platform admins from tenant moderation, restore pre-ban status, lock admin checks
+
+1. **Owner transfer race.** `transferOwner()` in `src/server/university.ts` now starts with `SELECT … FROM university WHERE id = $1 FOR UPDATE`. Both the platform and the workspace transfer go through this helper, so they serialize; the second one then re-reads the target and the current OWNER inside the lock.
+   - Test: in each of 3 rounds, two platform transfers and one workspace transfer run concurrently, and exactly one OWNER remains.
+   - RED: with the lock removed the test failed (Expected length 1, Received 2). GREEN with the lock.
+2. **Tenant moderation can't touch platform admins.**
+   - New `assertNotPlatformAdmin(tx, userId)` and `platformAdminWhere()` in `src/server/super-admin.ts`. platform.ts now uses this shared filter in place of its local `adminFilter`.
+   - The check is called in `moderation.setUserStatus`, in the user branch of `moderation.resolve` (report → suspend/ban) and in `admin.setRole`. It refuses with FORBIDDEN "Platform admins can't be moderated here".
+   - Test: a university OWNER can't ban, suspend or re-role the env admin or a platform_admin row user.
+3. **Unban restores the previous status.**
+   - New column `user.status_before_ban`, added to my unmerged `0011_platform_panel.sql` with no drizzle/meta change, per the instruction.
+   - Ban stores the current status (and leaves `suspended_until` as it was). Unban restores `coalesce(status_before_ban, 'ACTIVE')` and clears the column.
+   - Both directions are a guarded UPDATE (`status <> 'BANNED'` / `= 'BANNED'`), so a concurrent duplicate gets BAD_REQUEST.
+   - Test: a banned PENDING applicant goes back to PENDING.
+4. **setBanned UPDATE** is now keyed by `id` + `university_id`, like every other tenant user write. The target always has a university, since university-less accounts are refused earlier.
+5. **Suspend's admin check** now runs inside the tenant tx, after `lockPlatformAdmin(tx)`.
+   - `addAdmin` takes the same lock. It also refuses a member of a SUSPENDED or REJECTED university, which would otherwise lock that new admin out of /platform. That refusal is what gives the lock a purpose on this side.
+   - Test: a suspended university's member can't be added as an admin.
+6. **Mutual-removal race test:** two row admins (with no env admin present) remove each other concurrently, 3 rounds. Exactly one call succeeds and one admin remains.
+
+Checks:
+- Private `alumni_p2_test` DB (dropped afterwards): `bun test` gave **271 pass, 0 fail** (19 files). platform-panel.test.ts is 16/16.
+- `bunx biome check src tests` is clean, `bunx tsc --noEmit` is clean, and `bun run build` compiled successfully.
+
+Notes and concerns:
+- Only a platform ban sets `status_before_ban`. If the platform bans someone, a tenant admin lifts it, and a tenant mod bans them again, a later platform unban would restore the stale stored status. This is narrow; the column is cleared on every platform unban.
+- 0011's snapshot doesn't include `status_before_ban` because meta was left alone. The controller regenerates on merge.
