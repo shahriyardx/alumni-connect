@@ -743,12 +743,13 @@ export const attachment = pgTable(
       columns: [t.postId, t.universityId],
       foreignColumns: [post.id, post.universityId],
     }),
-    // Comments are only soft-deleted too.
+    // CASCADE deletes the row (never a composite SET NULL of university_id).
+    // The app only soft-deletes comments, so no app path orphans objects.
     foreignKey({
       name: "attachment_comment_fk",
       columns: [t.commentId, t.universityId],
       foreignColumns: [comment.id, comment.universityId],
-    }),
+    }).onDelete("cascade"),
     tenantPolicy("attachment", t.universityId),
   ],
 ).enableRLS();

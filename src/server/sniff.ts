@@ -43,14 +43,15 @@ async function ooxml(read: Reader, size: number, h: Buffer, dir: string) {
 }
 
 /** OLE2: magic, then the main stream's name in the first directory sector. */
-async function ole(read: Reader, h: Buffer, ext: string) {
+async function ole(read: Reader, size: number, h: Buffer, ext: string) {
   if (h.subarray(0, 8).toString("hex") !== "d0cf11e0a1b11ae1") return false;
   const shift = h.readUInt16LE(30);
   if (shift !== 9 && shift !== 12) return false;
   const sector = 1 << shift;
-  const dirSect = h.readUInt32LE(48);
+  const at = (h.readUInt32LE(48) + 1) * sector;
+  if (at + sector > size) return false;
   // ponytail: only the first directory sector is checked; Office always puts its main stream there.
-  const dir = await read((dirSect + 1) * sector, sector);
+  const dir = await read(at, sector);
   const want = {
     doc: ["WordDocument"],
     xls: ["Workbook", "Book"],
@@ -58,7 +59,7 @@ async function ole(read: Reader, h: Buffer, ext: string) {
   }[ext];
   if (!want) return false;
   for (let p = 0; p + 128 <= dir.length; p += 128) {
-    const len = dir.readUInt16LE(p + 64);
+    const len = Math.min(dir.readUInt16LE(p + 64), 64);
     const name = dir.subarray(p, p + Math.max(0, len - 2)).toString("utf16le");
     if (want.includes(name)) return true;
   }
@@ -72,10 +73,49 @@ function odf(h: Buffer, mime: string) {
   return ascii(h, start, start + mime.length) === mime;
 }
 
-// Leading HTML/SVG markup (after an optional XML prolog/comments): refused
-// even as .txt/.xml, so nothing renameable to .html ever gets stored.
-const MARKUP =
-  /^(?:\s|<\?xml[^>]*>|<!--[\s\S]*?-->)*<(?:!doctype\s+(?:html|svg)|html|head|body|script|svg|iframe)[\s>/]/i;
+const MARKUP_TAGS = [
+  "!doctype html",
+  "!doctype svg",
+  "html",
+  "head",
+  "body",
+  "script",
+  "svg",
+  "iframe",
+];
+
+/**
+ * Leading HTML/SVG markup (after whitespace, XML prologs and comments):
+ * refused even as .txt/.xml, so nothing renameable to .html gets stored.
+ * Linear on purpose (no backtracking regex): every loop step moves `i`
+ * forward, and `s` is at most the 64 KB head.
+ */
+export function leadingMarkup(s: string): boolean {
+  let i = 0;
+  for (;;) {
+    while (i < s.length && /\s/.test(s[i])) i++;
+    const close = s.startsWith("<!--", i)
+      ? "-->"
+      : s.startsWith("<?xml", i)
+        ? "?>"
+        : null;
+    if (!close) break;
+    const end = s.indexOf(close, i + 4);
+    if (end < 0) return false; // unterminated: not a document start
+    i = end + close.length;
+  }
+  const rest = s
+    .slice(i, i + 40)
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return MARKUP_TAGS.some((t) => {
+    const next = rest[t.length + 1];
+    return (
+      rest.startsWith(`<${t}`) &&
+      (next === undefined || next === " " || next === ">" || next === "/")
+    );
+  });
+}
 
 function text(h: Buffer) {
   if (h.includes(0)) return false;
@@ -84,7 +124,7 @@ function text(h: Buffer) {
     const s = new TextDecoder("utf-8", { fatal: true }).decode(h, {
       stream: true,
     });
-    return !MARKUP.test(s.replace(/^﻿/, ""));
+    return !leadingMarkup(s.replace(/^\uFEFF/, ""));
   } catch {
     return false;
   }
@@ -100,6 +140,19 @@ export async function sniff(
   type: FileType,
   ext: string,
 ): Promise<boolean> {
+  try {
+    return await check(read, size, type, ext);
+  } catch {
+    return false; // malformed offsets, short reads, etc.: just not this type
+  }
+}
+
+async function check(
+  read: Reader,
+  size: number,
+  type: FileType,
+  ext: string,
+): Promise<boolean> {
   const h = await read(0, Math.min(size, HEAD));
   const checks: Record<Check, () => boolean | Promise<boolean>> = {
     png: () => h[0] === 0x89 && ascii(h, 1, 4) === "PNG",
@@ -110,7 +163,7 @@ export async function sniff(
     docx: () => ooxml(read, size, h, "word/"),
     xlsx: () => ooxml(read, size, h, "xl/"),
     pptx: () => ooxml(read, size, h, "ppt/"),
-    ole: () => h.length >= 512 && ole(read, h, ext),
+    ole: () => h.length >= 512 && ole(read, size, h, ext),
     odf: () => odf(h, type.mime),
     text: () => text(h),
   };

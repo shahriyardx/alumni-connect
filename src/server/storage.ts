@@ -175,31 +175,34 @@ export async function promoteUpload(
   await copy(stagingKey, finalKey);
   await remove(stagingKey).catch(() => {});
 
-  const info = await stat(finalKey);
-  if (!info) throw notFound();
-  if (info.size > maxBytesFor(type)) {
-    await remove(finalKey);
-    throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
+  // Every failure from here on removes the final copy: a leftover final
+  // with no row would turn the next confirm into a permanent CONFLICT.
+  try {
+    const info = await stat(finalKey);
+    if (!info) throw notFound();
+    if (info.size > maxBytesFor(type))
+      throw new TRPCError({ code: "BAD_REQUEST", message: "File too large" });
+    // Sniff the real bytes so a .png/.pdf key can't carry HTML/script content.
+    const ext = finalKey.slice(finalKey.lastIndexOf(".") + 1);
+    const ok =
+      info.contentType === type.mime &&
+      (await sniff(
+        (offset, length) => readRange(finalKey, offset, length),
+        info.size,
+        type,
+        ext,
+      ));
+    if (!ok)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          type.icon === "image"
+            ? "File is not a valid image"
+            : "File doesn't match its type",
+      });
+    return { key: finalKey, size: info.size };
+  } catch (e) {
+    await remove(finalKey).catch(() => {});
+    throw e;
   }
-  // Sniff the real bytes so a .png/.pdf key can't carry HTML/script content.
-  const ext = finalKey.slice(finalKey.lastIndexOf(".") + 1);
-  const ok =
-    info.contentType === type.mime &&
-    (await sniff(
-      (offset, length) => readRange(finalKey, offset, length),
-      info.size,
-      type,
-      ext,
-    ));
-  if (!ok) {
-    await remove(finalKey);
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        type.icon === "image"
-          ? "File is not a valid image"
-          : "File doesn't match its type",
-    });
-  }
-  return { key: finalKey, size: info.size };
 }

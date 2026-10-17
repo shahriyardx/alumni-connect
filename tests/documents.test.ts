@@ -4,8 +4,10 @@ import {
   fileResponse,
   resolveFileAccess,
 } from "@/app/api/files/[...key]/route";
-import { attachment } from "@/db/schema";
+import { attachment, comment, post as postTable } from "@/db/schema";
 import { FILE_TYPES } from "@/lib/uploads";
+import { leadingMarkup } from "@/server/sniff";
+import { finalKeyFor, stat } from "@/server/storage";
 import {
   adminDb,
   callerFor,
@@ -378,5 +380,111 @@ describe("comments and caps", () => {
     const p = await c.post.byId({ id });
     expect(p.attachments).toHaveLength(4);
     expect(p.fileCount).toBe(3);
+  });
+});
+
+describe("fix round 1", () => {
+  test("leadingMarkup is linear on adversarial input", () => {
+    const inputs = [
+      `${"<!---->".repeat(5000)}x`,
+      `${"<!---->".repeat(5000)}<svg>`,
+      `${"<!--".repeat(15000)}`,
+      `${"<?xml".repeat(12000)}`,
+      `${" ".repeat(60000)}<html`,
+      `${"<!-- -->\n".repeat(6000)}<!doctype   html>`,
+      `<!--${"-".repeat(60000)}`,
+    ];
+    const verdicts: boolean[] = [];
+    for (const s of inputs) {
+      const t = performance.now();
+      verdicts.push(leadingMarkup(s));
+      expect(performance.now() - t).toBeLessThan(50);
+    }
+    expect(verdicts).toEqual([false, true, false, false, true, true, false]);
+    expect(leadingMarkup('<?xml version="1.0"?><!-- c --><svg/>')).toBe(true);
+    expect(leadingMarkup("<Script>")).toBe(true);
+    expect(leadingMarkup("<htmlx>")).toBe(false);
+    expect(leadingMarkup("# <html> later is fine")).toBe(false);
+  });
+
+  test("a 300-byte comment-bomb .txt is accepted quickly (no ReDoS)", async () => {
+    const t = performance.now();
+    await upload(a.id, "bomb.txt", text(`${"<!---->".repeat(40)}x`));
+    expect(performance.now() - t).toBeLessThan(5000);
+  });
+
+  test("an OLE header pointing past EOF is refused and the final copy removed", async () => {
+    const bytes = ole("WordDocument");
+    Buffer.from(bytes.buffer).writeUInt32LE(0xfffffff0, 48);
+    const c = callerFor(a.id);
+    const up = await c.files.createUpload({
+      kind: "attachment",
+      ext: "doc",
+      size: bytes.length,
+    });
+    await postUpload(up, bytes);
+    await expect(
+      c.files.confirm({ key: up.key, name: "x.doc" }),
+    ).rejects.toThrow(/doesn't match its type/);
+    expect(await stat(finalKeyFor(up.key))).toBeNull();
+    expect(await adminDb.select().from(attachment)).toHaveLength(0);
+  });
+
+  test("files of a removed comment or a deleted post stop being served", async () => {
+    const c = callerFor(a.id);
+    const doc = await upload(a.id, "notes.pdf", PDF);
+    const img = await upload(a.id, "p.png", new Uint8Array([137, 80, 78, 71]));
+    const { id: postId } = await c.post.create({
+      title: "With files",
+      body: "x",
+      attachmentIds: [doc.id, img.id],
+    });
+    const cf = await upload(a.id, "c.txt", text("comment file"));
+    const { id: commentId } = await c.comment.create({
+      postId,
+      body: "c",
+      attachmentIds: [cf.id],
+    });
+    const avatarUp = await c.files.createUpload({
+      kind: "avatar",
+      ext: "png",
+      size: 4,
+    });
+    await postUpload(avatarUp, new Uint8Array([137, 80, 78, 71]));
+    const avatar = await c.files.confirm({ key: avatarUp.key });
+
+    for (const k of [doc.key, img.key, cf.key, avatar.key])
+      expect((await serve(a.id, k)).status).toBeLessThan(400);
+
+    await c.comment.remove({ id: commentId });
+    expect((await serve(a.id, cf.key)).status).toBe(404);
+    expect((await serve(a.id, doc.key)).status).toBe(200);
+
+    await adminDb
+      .update(postTable)
+      .set({ deletedAt: new Date() })
+      .where(eq(postTable.id, postId));
+    expect((await serve(a.id, doc.key)).status).toBe(404);
+    // Post images and avatars behave as before.
+    expect((await serve(a.id, img.key)).status).toBe(302);
+    expect((await serve(a.id, avatar.key)).status).toBe(302);
+  });
+
+  test("a comment's files also go once its post is deleted; hard delete cascades", async () => {
+    const p = await makePost(uni, a.id);
+    const cf = await upload(a.id, "c.md", text("# hi"));
+    const { id: commentId } = await callerFor(a.id).comment.create({
+      postId: p.id,
+      body: "c",
+      attachmentIds: [cf.id],
+    });
+    await adminDb
+      .update(postTable)
+      .set({ deletedAt: new Date() })
+      .where(eq(postTable.id, p.id));
+    expect((await serve(a.id, cf.key)).status).toBe(404);
+
+    await adminDb.delete(comment).where(eq(comment.id, commentId));
+    expect(await rowFor(cf.id)).toBeUndefined();
   });
 });
