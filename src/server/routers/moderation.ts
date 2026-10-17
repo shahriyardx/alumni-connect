@@ -421,12 +421,14 @@ export const moderationRouter = router({
       // The content/account author, recorded on the audit entry below so
       // `countStrikesMany` can tally prior violations without a new table.
       let authorId: string | null = null;
-      // Whether this call actually changed anything — e.g. a "suspend" (or
-      // "ban") on an already-banned account, or a "remove" on content a
-      // different OPEN report already got removed. The moderator's decision
-      // is ALWAYS audited below regardless (a resolve() call must never be
-      // silently un-logged, no-op or not); this flag only controls whether
-      // that audit row also counts as a strike.
+      // Whether this call actually flipped something in the DB — purely
+      // informational (`meta.statusChanged`) for "remove": a moderator
+      // *upholding* a report is a strike on the author regardless of
+      // whether the content was already gone by the time they acted (the
+      // author deleting their own reported post first must never erase the
+      // strike — that would be a moderation-evasion trick). It only gates
+      // the strike for suspend/ban, where "already in that status" is a
+      // genuine no-op on the *account* itself (see `isStrike` below).
       let didChange = true;
 
       if (input.action === "remove") {
@@ -527,9 +529,18 @@ export const moderationRouter = router({
       // Always: a moderator's decision on a report must never go un-logged,
       // whether or not it changed anything (e.g. you can't suspend an
       // account that's already banned). `authorId` — the only field
-      // `countStrikesMany` matches on — is omitted when `didChange` is
-      // false, so a no-op can't be counted as a strike while still leaving
-      // a complete, truthful record that the action was taken.
+      // `countStrikesMany` matches on — is set whenever this is a strike;
+      // omitted otherwise, so a no-op can't be counted as one while still
+      // leaving a complete, truthful record that the action was taken.
+      //
+      // "remove" is always a strike on upholding the report, independent of
+      // `didChange`: the author (or anyone else) deleting the reported
+      // content before a moderator acts must not erase the strike, or
+      // self-deleting would be a free pass. "suspend"/"ban" are strikes only
+      // when they actually changed the *account's* status — those key off
+      // `user.status`, not content state, so an already-banned account
+      // genuinely has nothing new to strike for.
+      const isStrike = input.action === "remove" ? true : didChange;
       await audit(
         ctx.db,
         ctx.me.universityId,
@@ -541,7 +552,7 @@ export const moderationRouter = router({
           days: input.days,
           note: input.note,
           statusChanged: didChange,
-          authorId: didChange ? (authorId ?? undefined) : undefined,
+          authorId: isStrike ? (authorId ?? undefined) : undefined,
         },
       );
 

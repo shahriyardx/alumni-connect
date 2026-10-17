@@ -328,9 +328,9 @@ test("resolve: suspend does not downgrade an already-banned user", async () => {
 
 // F2 fix round 2: every resolve() call is audited, even a no-op one — a
 // moderator's decision must never be left un-logged (repudiation gap).
-test("resolve: a no-op ban (already banned) and a no-op remove (already removed) are both audited without a phantom strike", async () => {
+test("resolve: a no-op ban (already banned) is audited without a phantom strike", async () => {
   // Resolving a report auto-resolves every other OPEN report on the exact
-  // same target, so to reach each no-op branch legitimately, use a second
+  // same target, so to reach the no-op branch legitimately, use a second
   // report on a *different* target that resolves to the same account —
   // same shape as the existing already-banned/suspend test above.
   const rBan = await callerFor(student.id).moderation.report({
@@ -362,33 +362,10 @@ test("resolve: a no-op ban (already banned) and a no-op remove (already removed)
   expect(noopBan?.meta).toMatchObject({ statusChanged: false });
   expect(noopBan?.meta).not.toHaveProperty("authorId");
 
-  // A post already removed some other way (e.g. a moderator used the
-  // plain post.remove tool), then a mod resolves an older, still-open
-  // report against it as "remove" — a genuine no-op. (The already-banned
-  // spammer can't call post.remove themselves — a banned account can't
-  // use any procedure — so another mod removes it here.)
-  const p2 = await makePost(uniId, spammer.id);
-  const rRemove = await callerFor(student.id).moderation.report({
-    targetType: "POST",
-    targetId: p2.id,
-    reason: "obvious spam",
-  });
-  await callerFor(admin.id).post.remove({ id: p2.id });
-  await callerFor(mod.id).moderation.resolve({
-    reportId: rRemove.id,
-    action: "remove",
-  });
-  const removeAudits = await adminDb
-    .select()
-    .from(auditLog)
-    .where(eq(auditLog.action, "report.remove"));
-  expect(removeAudits).toHaveLength(1);
-  expect(removeAudits[0].meta).toMatchObject({ statusChanged: false });
-  expect(removeAudits[0].meta).not.toHaveProperty("authorId");
-
-  // Only the first ban counts as a strike — the no-op ban and the no-op
-  // remove don't add any more.
-  const r3 = await callerFor(student.id).moderation.report({
+  // Only the first ban counts as a strike — the no-op re-ban doesn't add
+  // another one (it's a genuine no-op on the *account*, unlike "remove"
+  // below, which is always a strike on upholding the report).
+  const r2 = await callerFor(student.id).moderation.report({
     targetType: "USER",
     targetId: spammer.id,
     reason: "once more",
@@ -396,9 +373,65 @@ test("resolve: a no-op ban (already banned) and a no-op remove (already removed)
   const q2 = await callerFor(mod.id).moderation.queue({});
   expect(q2.items[0].priorStrikes).toBe(1);
   await callerFor(mod.id).moderation.resolve({
-    reportId: r3.id,
+    reportId: r2.id,
     action: "dismiss",
   });
+});
+
+// F2 fix round 2: closes a moderation-evasion trick. `remove` must always
+// count as a strike on upholding a report, no matter who deleted the
+// content or when — otherwise an author could delete their own reported
+// post the moment they're reported, and a moderator later resolving that
+// (now redundant) report as "remove" would silently erase the strike.
+test("resolve: 'remove' still counts as a strike even when the content is already gone by the time a moderator acts", async () => {
+  // Case 1: the reported author deletes their own post first.
+  const p1 = await makePost(uniId, spammer.id);
+  const rSelfDeleted = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p1.id,
+    reason: "obvious spam",
+  });
+  await callerFor(spammer.id).post.remove({ id: p1.id }); // self-delete evasion attempt
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rSelfDeleted.id,
+    action: "remove",
+  });
+
+  // Case 2: someone else (another moderator) removed it first.
+  const p2 = await makePost(uniId, spammer.id);
+  const rRemovedByOther = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p2.id,
+    reason: "also spam",
+  });
+  await callerFor(admin.id).post.remove({ id: p2.id });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rRemovedByOther.id,
+    action: "remove",
+  });
+
+  const removeAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.remove"));
+  expect(removeAudits).toHaveLength(2);
+  for (const row of removeAudits) {
+    // Neither flipped `deletedAt` itself (the content was already gone),
+    // but both are still a strike on the author.
+    expect(row.meta).toMatchObject({
+      statusChanged: false,
+      authorId: spammer.id,
+    });
+  }
+
+  // Both count — resolving "remove" on already-gone content is never free.
+  await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "pattern of behavior",
+  });
+  const q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(2);
 });
 
 test("admin.importRoster dedupes duplicate student IDs and reports bad rows", async () => {
