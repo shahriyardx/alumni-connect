@@ -14,6 +14,7 @@ const STATUS = {
   ACTIVE: "Live — students can find and join your university.",
   PENDING: "Under review by the platform team.",
   REJECTED: "Application rejected.",
+  SUSPENDED: "Suspended by the platform team.",
 } as const;
 
 export function SettingsPanel() {

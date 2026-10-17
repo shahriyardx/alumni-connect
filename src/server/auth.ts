@@ -215,9 +215,10 @@ export const auth = betterAuth({
               inv.email !== email ||
               inv.acceptedAt ||
               inv.expiresAt <= new Date() ||
-              // A university rejected between accept() and this sign-up
+              // A university rejected/suspended between accept() and this sign-up
               // (e.g. its application was abandoned) stays blocked.
-              inv.universityStatus === "REJECTED"
+              inv.universityStatus === "REJECTED" ||
+              inv.universityStatus === "SUSPENDED"
             )
               return false;
           }

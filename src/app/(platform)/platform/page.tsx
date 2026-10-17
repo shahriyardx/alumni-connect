@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { PlatformView } from "./platform-view";
+import { OverviewView } from "./overview-view";
 
-export const metadata: Metadata = { title: "Platform" };
+export const metadata: Metadata = { title: "Overview" };
 
 export default function PlatformPage() {
-  return <PlatformView />;
+  return <OverviewView />;
 }

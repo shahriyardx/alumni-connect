@@ -22,6 +22,7 @@ import {
   ownerProcedure,
   router,
 } from "../trpc";
+import { transferOwner } from "../university";
 import { clearStaleUnverified } from "./auth";
 
 const CARD_TTL_MS = 30 * 86_400_000;
@@ -315,45 +316,9 @@ export const workspaceRouter = router({
       const uni = ctx.me.universityId;
       if (input.userId === ctx.me.id)
         throw new TRPCError({ code: "BAD_REQUEST" });
-      const [target] = await ctx.db
-        .select({ id: user.id, role: user.role })
-        .from(user)
-        .where(
-          and(
-            eq(user.id, input.userId),
-            eq(user.universityId, uni),
-            eq(user.status, "ACTIVE"),
-            eq(user.emailVerified, true),
-          ),
-        );
-      if (!target)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Pick an active member",
-        });
-      // Row lock + role check: a concurrent second transfer finds no OWNER.
-      const [demoted] = await ctx.db
-        .update(user)
-        .set({ role: "ADMIN" })
-        .where(
-          and(
-            eq(user.id, ctx.me.id),
-            eq(user.universityId, uni),
-            eq(user.role, "OWNER"),
-          ),
-        )
-        .returning({ id: user.id });
-      if (!demoted)
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "You're no longer the owner",
-        });
-      await ctx.db
-        .update(user)
-        .set({ role: "OWNER" })
-        .where(and(eq(user.id, target.id), eq(user.universityId, uni)));
-      await audit(ctx.db, uni, ctx.me.id, "owner.transfer", target.id, {
-        from: target.role,
+      const from = await transferOwner(ctx.db, uni, input.userId, ctx.me.id);
+      await audit(ctx.db, uni, ctx.me.id, "owner.transfer", input.userId, {
+        from,
       });
       return { ok: true as const };
     }),

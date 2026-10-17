@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { notification, post, user } from "@/db/schema";
+import { broadcast, notification, post, user } from "@/db/schema";
 import { memberProcedure, router } from "../trpc";
 
 const PAGE_SIZE = 30;
@@ -25,9 +25,11 @@ export const notificationRouter = router({
             avatarKey: user.avatarKey,
           },
           post: { id: post.id, title: post.title },
+          broadcast: { title: broadcast.title, body: broadcast.body },
         })
         .from(notification)
-        .innerJoin(
+        // No actor on a platform broadcast.
+        .leftJoin(
           user,
           and(
             eq(user.id, notification.actorId),
@@ -42,6 +44,7 @@ export const notificationRouter = router({
             isNull(post.deletedAt),
           ),
         )
+        .leftJoin(broadcast, eq(broadcast.id, notification.broadcastId))
         .where(eq(notification.userId, ctx.me.id))
         .orderBy(desc(notification.createdAt))
         .limit(PAGE_SIZE + 1)

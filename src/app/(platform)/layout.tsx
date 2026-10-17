@@ -1,24 +1,20 @@
-import { Logo } from "@/components/app-shell";
-import { UserMenu } from "@/components/user-menu";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { PlatformShell } from "@/components/platform/platform-shell";
 
-// A super admin has no university, so no student navigation or StatusGate.
+export const metadata: Metadata = {
+  title: { template: "%s · Platform", default: "Platform" },
+};
+
+// The shell reads usePathname(); keep it inside Suspense like the app shell.
 export default function PlatformLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="sticky top-0 z-20 flex h-16 items-center gap-3 bg-background/85 px-4 backdrop-blur-xl sm:px-8">
-        <Logo href="/platform" />
-        <span className="text-sm text-muted-foreground">Platform</span>
-        <div className="ml-auto">
-          <UserMenu />
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-3xl px-4 pb-16 sm:px-8">
-        {children}
-      </main>
-    </div>
+    <Suspense>
+      <PlatformShell>{children}</PlatformShell>
+    </Suspense>
   );
 }

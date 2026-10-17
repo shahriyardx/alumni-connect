@@ -27,7 +27,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /** Escape LIKE/ILIKE metacharacters so user search text is matched literally. */
-function escapeLike(s: string): string {
+export function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 

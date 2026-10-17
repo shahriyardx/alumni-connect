@@ -5,6 +5,7 @@ import { client, type Tx } from "@/db";
 export type LiveEvent = {
   universityId: string;
   kind: "post" | "comment" | "notification";
+  /** Omitted on kind "notification" = every member (platform broadcast). */
   userId?: string;
   postId?: string;
   /** kind "post" only: lets the author's own client skip the "new posts" pill. */

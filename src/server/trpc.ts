@@ -61,6 +61,7 @@ export function activeStatusError(
   if (isSuspendedNow(me)) return "Account suspended";
   if (me.universityStatus === "REJECTED")
     return "University application was rejected";
+  if (me.universityStatus === "SUSPENDED") return "University is suspended";
   return null;
 }
 

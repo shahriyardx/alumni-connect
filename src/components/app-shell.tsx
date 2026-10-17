@@ -292,7 +292,9 @@ export function StatusGate({ children }: { children: React.ReactNode }) {
 
   const suspended = !!me && isSuspendedNow(me);
   const rejected = me?.universityStatus === "REJECTED";
-  const blocked = me?.status === "BANNED" || suspended || rejected;
+  const uniSuspended = me?.universityStatus === "SUSPENDED";
+  const blocked =
+    me?.status === "BANNED" || suspended || rejected || uniSuspended;
   const waiting =
     isLoading ||
     !me ||
@@ -315,7 +317,7 @@ export function StatusGate({ children }: { children: React.ReactNode }) {
             icon={
               me.status === "BANNED"
                 ? "block"
-                : suspended
+                : suspended || uniSuspended
                   ? "pause_circle"
                   : "cancel"
             }
@@ -324,14 +326,18 @@ export function StatusGate({ children }: { children: React.ReactNode }) {
                 ? "This account has been banned"
                 : suspended
                   ? "Your account is suspended"
-                  : "Application rejected"
+                  : uniSuspended
+                    ? "University suspended"
+                    : "Application rejected"
             }
             body={
               me.status === "BANNED"
                 ? "A moderator removed your access to Alumni Connect. Contact your university administrator if you think this is a mistake."
                 : suspended
                   ? `You can come back ${me.suspendedUntil ? `on ${new Date(me.suspendedUntil).toLocaleString()}` : "once an admin lifts the suspension"}.`
-                  : `${me.universityName}'s application was rejected. Contact the platform team if you think this is a mistake.`
+                  : uniSuspended
+                    ? `The platform team suspended ${me.universityName}. Contact them if you think this is a mistake.`
+                    : `${me.universityName}'s application was rejected. Contact the platform team if you think this is a mistake.`
             }
             action={
               <Button variant="tonal" icon="logout" onClick={signOut}>
