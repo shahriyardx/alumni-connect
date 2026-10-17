@@ -10,6 +10,7 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
 import { ALLOWED_MIME, MAX_BYTES } from "@/lib/uploads";
+import { DepartmentField } from "../department-field";
 import { Button, ButtonLink } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
@@ -83,6 +84,9 @@ export function SignUpWizard() {
     trpc.auth.batches.queryOptions({ universityId }, { enabled: !!uni }),
   );
   const hasBatches = !!batches.data?.length;
+  const departments = useQuery(
+    trpc.auth.departments.queryOptions({ universityId }, { enabled: !!uni }),
+  );
   const field = (k: keyof Form) => ({
     value: form[k],
     error: errors[k],
@@ -305,13 +309,18 @@ export function SignUpWizard() {
                   />
                 </>
               )}
-              <TextField
-                label="Department"
+              <DepartmentField
                 className="sm:col-span-2"
-                required
-                minLength={2}
-                maxLength={80}
-                {...field("department")}
+                value={form.department}
+                departments={departments.data}
+                onChange={(v) => {
+                  setForm((f) => ({ ...f, department: v }));
+                  setErrors((er) => ({
+                    ...er,
+                    department: undefined,
+                    form: undefined,
+                  }));
+                }}
               />
               <TextField
                 label="Email"

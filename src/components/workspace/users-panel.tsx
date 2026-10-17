@@ -7,12 +7,14 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useState } from "react";
 import { ROLES, type Role } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
 import { useAccountStatusActions } from "../account-status-actions";
 import { timeAgo } from "../author-line";
+import { DepartmentField } from "../department-field";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -89,6 +91,7 @@ function InviteDialog({ meRole }: { meRole: Role }) {
     title: "",
   };
   const [form, setForm] = useState(blank);
+  const departments = useQuery(trpc.departments.list.queryOptions());
   const invite = useMutation(
     trpc.invites.create.mutationOptions({
       onError: (e) =>
@@ -172,13 +175,11 @@ function InviteDialog({ meRole }: { meRole: Role }) {
                 onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
                 items={inviteRoleItems(meRole)}
               />
-              <TextField
-                label="Department"
-                placeholder="CSE"
-                required
+              <DepartmentField
+                value={form.department}
+                departments={departments.data}
                 minLength={1}
-                maxLength={80}
-                {...field("department")}
+                onChange={(v) => setForm((f) => ({ ...f, department: v }))}
               />
             </div>
             <TextField
@@ -259,13 +260,22 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
+  const router = useRouter();
+  const department = useSearchParams().get("department") ?? undefined;
+  const departments = useQuery(trpc.departments.list.queryOptions());
   const [q, setQ] = useState("");
   const [role, setRole] = useState<Role | undefined>();
   const query = useDeferredValue(q.trim());
+  const setDepartment = (v: string) =>
+    router.replace(
+      v
+        ? `/workspace/members?department=${encodeURIComponent(v)}`
+        : "/workspace/members",
+    );
 
   const list = useInfiniteQuery(
     trpc.admin.users.infiniteQueryOptions(
-      { q: query || undefined, role },
+      { q: query || undefined, role, department },
       {
         getNextPageParam: (l) => l.nextCursor,
         placeholderData: keepPreviousData,
@@ -290,7 +300,7 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Chip label="All" selected={!role} onClick={() => setRole(undefined)} />
         {ROLES.map((r) => (
           <Chip
@@ -300,6 +310,19 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
             onClick={() => setRole(r)}
           />
         ))}
+        {!!departments.data?.length && (
+          <Select
+            label="Department"
+            hideLabel
+            className="ml-auto"
+            value={department ?? ""}
+            onValueChange={setDepartment}
+            items={[
+              { value: "", label: "All departments" },
+              ...departments.data.map((d) => ({ value: d, label: d })),
+            ]}
+          />
+        )}
       </div>
 
       {list.isLoading ? (

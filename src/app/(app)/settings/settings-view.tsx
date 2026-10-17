@@ -1,6 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { DepartmentField } from "@/components/department-field";
 import { ImageUploader } from "@/components/image-uploader";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,7 @@ function ProfileForm({
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
+  const departments = useQuery(trpc.departments.list.queryOptions());
   const [name, setName] = useState(profile.name);
   const [department, setDepartment] = useState(profile.department ?? "");
   const [bio, setBio] = useState(profile.bio ?? "");
@@ -135,13 +137,10 @@ function ProfileForm({
           minLength={2}
           maxLength={80}
         />
-        <TextField
-          label="Department"
+        <DepartmentField
           value={department}
-          onChange={(e) => setDepartment(e.target.value)}
-          required
-          minLength={2}
-          maxLength={80}
+          departments={departments.data}
+          onChange={setDepartment}
         />
         <TextField
           label="Bio"

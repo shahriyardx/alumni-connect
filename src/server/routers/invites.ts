@@ -19,6 +19,7 @@ import {
   unreferenced,
   upsertPending,
 } from "./auth";
+import { resolveDepartment } from "./departments";
 
 const email = z
   .string()
@@ -105,6 +106,11 @@ export const invitesRouter = router({
           message: "Only the owner can invite admins",
         });
       const uni = ctx.me.universityId;
+      const departmentName = await resolveDepartment(
+        ctx.db,
+        uni,
+        input.department,
+      );
 
       const [blocking] = await ctx.db
         .select({ id: user.id })
@@ -161,7 +167,7 @@ export const invitesRouter = router({
           universityId: uni,
           email: input.email,
           role: input.role,
-          department: input.department,
+          department: departmentName,
           title: input.title,
           tokenHash: hashInviteToken(token),
           invitedBy: ctx.me.id,

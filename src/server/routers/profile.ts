@@ -3,6 +3,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { attachment, comment, followUser, post, user } from "@/db/schema";
 import { isMod, memberProcedure, router } from "../trpc";
+import { resolveDepartment } from "./departments";
 
 export const profileRouter = router({
   get: memberProcedure
@@ -80,9 +81,14 @@ export const profileRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const departmentName = await resolveDepartment(
+        ctx.db,
+        ctx.me.universityId,
+        input.department,
+      );
       await ctx.db
         .update(user)
-        .set({ name: input.name, bio: input.bio, department: input.department })
+        .set({ name: input.name, bio: input.bio, department: departmentName })
         .where(
           and(
             eq(user.id, ctx.me.id),

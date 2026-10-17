@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { batch, rosterEntry } from "@/db/schema";
+import { batch, department, rosterEntry } from "@/db/schema";
 import {
   adminDb,
   callerFor,
@@ -17,6 +17,7 @@ const bIds = {} as {
   commentId: string;
   pendingId: string;
   batchId: string;
+  departmentId: string;
   uniId: string;
 };
 
@@ -61,6 +62,11 @@ beforeAll(async () => {
     department: "CSE",
   });
   bIds.batchId = bBatch.id;
+  const [bDept] = await adminDb
+    .insert(department)
+    .values({ universityId: b.id, name: "CSE" })
+    .returning();
+  bIds.departmentId = bDept.id;
   // Positive control: the B data really exists for B.
   expect(await asB.notification.unreadCount()).toBeGreaterThan(0);
   expect((await asB.social.bookmarks({})).items).toHaveLength(1);
@@ -156,6 +162,22 @@ describe("cross-tenant reads are impossible", () => {
     expect(adminA.workspace.deleteBatch({ id: bIds.batchId })).rejects.toThrow(
       /NOT_FOUND/,
     ));
+  test("departments.list excludes B", async () =>
+    expect(await asA.departments.list()).toEqual([]));
+  test("departments.withCounts excludes B", async () =>
+    expect(await adminA.departments.withCounts()).toEqual([]));
+  test("departments.rename B's department", () =>
+    expect(
+      adminA.departments.rename({ id: bIds.departmentId, name: "EEE" }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("departments.remove B's department", () =>
+    expect(
+      adminA.departments.remove({ id: bIds.departmentId }),
+    ).rejects.toThrow(/NOT_FOUND/));
+  test("departments.add: B's department name is free in A", async () => {
+    const { id } = await adminA.departments.add({ name: "CSE" });
+    await adminA.departments.remove({ id });
+  });
   test("admin.importRoster into B batch", () =>
     expect(
       adminA.admin.importRoster({
@@ -210,8 +232,13 @@ describe("cross-tenant reads are impossible", () => {
     );
   });
   test("admin.audit excludes B", async () => {
-    // Only A's own batch.save/delete from the test above.
+    // Only A's own batch/department save/delete from the tests above.
     const actions = (await adminA.admin.audit({})).items.map((i) => i.action);
-    expect(actions.sort()).toEqual(["batch.delete", "batch.save"]);
+    expect(actions.sort()).toEqual([
+      "batch.delete",
+      "batch.save",
+      "department.add",
+      "department.remove",
+    ]);
   });
 });

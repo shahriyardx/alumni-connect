@@ -98,6 +98,12 @@ function buildRoster(): RosterRow[] {
   return rows;
 }
 
+async function seedDepartments(universityId: string, names: string[]) {
+  await db
+    .insert(schema.department)
+    .values(names.map((name) => ({ universityId, name })));
+}
+
 async function seedRoster(universityId: string, rows: RosterRow[]) {
   const batches = await db
     .insert(schema.batch)
@@ -840,6 +846,11 @@ async function main() {
 
   const roster = buildRoster();
   await seedRoster(nub.id, roster);
+  // "Registry" (admin2) and "General"/"Administration" (staff-only tenants)
+  // aren't in DEPTS/the roster, but they're real seeded users' departments.
+  await seedDepartments(nub.id, [...DEPTS, "Registry"]);
+  await seedDepartments(dtu.id, ["General"]);
+  await seedDepartments(eti.id, ["Administration"]);
 
   const nubUserIds = await seedUsers(nub.id, NUB_USERS);
   const dtuUserIds = await seedUsers(dtu.id, DTU_USERS);

@@ -5,6 +5,8 @@ import { cn } from "@/lib/cn";
 
 type TextFieldProps = React.InputHTMLAttributes<HTMLInputElement> & {
   label: string;
+  /** Keep the label for screen readers only (e.g. an inline row edit). */
+  hideLabel?: boolean;
   error?: string;
   description?: string;
   multiline?: boolean;
@@ -14,6 +16,7 @@ type TextFieldProps = React.InputHTMLAttributes<HTMLInputElement> & {
 /** Label above a soft filled field; error or hint below. */
 export function TextField({
   label,
+  hideLabel,
   error,
   description,
   multiline,
@@ -36,7 +39,10 @@ export function TextField({
       disabled={props.disabled}
       className={cn("flex flex-col gap-1.5", className)}
     >
-      <Field.Label htmlFor={id} className="text-sm font-medium">
+      <Field.Label
+        htmlFor={id}
+        className={cn("text-sm font-medium", hideLabel && "sr-only")}
+      >
         {label}
       </Field.Label>
       {multiline ? (
