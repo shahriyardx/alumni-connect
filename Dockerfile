@@ -27,6 +27,7 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next
 COPY package.json next.config.ts ./
+COPY public ./public
 COPY drizzle ./drizzle
 COPY src/db/migrate.ts ./src/db/migrate.ts
 USER bun

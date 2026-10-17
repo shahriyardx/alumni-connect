@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { isAdmin, isMod, type Role } from "@/db/schema";
 import { authClient } from "@/lib/auth-client";
-import { useTRPC } from "@/lib/trpc";
+import { currentSubscription } from "@/lib/push-client";
+import { useTRPC, useTRPCClient } from "@/lib/trpc";
 import { ThemeMenuItems } from "./theme-menu";
 import { Avatar } from "./ui/avatar";
 import { RoleBadge } from "./ui/badge";
@@ -42,7 +43,16 @@ export function useRedirectIfSignedIn(to?: string, enabled = true) {
 export function useSignOut() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const client = useTRPCClient();
   return async () => {
+    // A shared computer must not keep getting this account's pushes.
+    const sub = await currentSubscription().catch(() => null);
+    if (sub) {
+      await client.push.unsubscribe
+        .mutate({ endpoint: sub.endpoint })
+        .catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
     await authClient.signOut();
     queryClient.clear();
     router.replace("/sign-in");

@@ -10,6 +10,7 @@ import { peopleRouter } from "./routers/people";
 import { platformRouter } from "./routers/platform";
 import { postRouter } from "./routers/post";
 import { profileRouter } from "./routers/profile";
+import { pushRouter } from "./routers/push";
 import { socialRouter } from "./routers/social";
 import { workspaceRouter } from "./routers/workspace";
 import { createCallerFactory, router } from "./trpc";
@@ -21,6 +22,7 @@ export const appRouter = router({
   files: filesRouter,
   social: socialRouter,
   notification: notificationRouter,
+  push: pushRouter,
   people: peopleRouter,
   profile: profileRouter,
   moderation: moderationRouter,

@@ -1,6 +1,6 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DepartmentField } from "@/components/department-field";
 import { ImageUploader } from "@/components/image-uploader";
 import { Avatar } from "@/components/ui/avatar";
@@ -11,6 +11,11 @@ import { Switch } from "@/components/ui/switch";
 import { TextField } from "@/components/ui/text-field";
 import { useToast } from "@/components/ui/toast";
 import { useMe, useSignOut } from "@/components/user-menu";
+import {
+  currentSubscription,
+  pushSupported,
+  subscribeBrowser,
+} from "@/lib/push-client";
 import { type RouterOutputs, useTRPC } from "@/lib/trpc";
 
 const BIO_MAX = 500;
@@ -231,6 +236,7 @@ function NotificationPrefs() {
 
   return (
     <Section title="Notifications">
+      <BrowserPush />
       <div className="flex flex-col gap-3">
         {PREF_ROWS.map(({ key, label }) => (
           <div key={key} className="flex items-center justify-between gap-4">
@@ -246,5 +252,79 @@ function NotificationPrefs() {
         ))}
       </div>
     </Section>
+  );
+}
+
+/** "Notify me on this device": Web Push for this browser only. */
+function BrowserPush() {
+  const trpc = useTRPC();
+  const toast = useToast();
+  const config = useQuery(trpc.push.config.queryOptions());
+  const subscribe = useMutation(trpc.push.subscribe.mutationOptions());
+  const unsubscribe = useMutation(trpc.push.unsubscribe.mutationOptions());
+  const [state, setState] = useState<
+    "loading" | "unsupported" | "blocked" | "off" | "on"
+  >("loading");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!pushSupported()) return setState("unsupported");
+    if (Notification.permission === "denied") return setState("blocked");
+    currentSubscription()
+      .then((s) => setState(s ? "on" : "off"))
+      .catch(() => setState("off"));
+  }, []);
+
+  const publicKey = config.data?.publicKey;
+  if (!publicKey || state === "loading") return null;
+
+  async function toggle(on: boolean) {
+    setBusy(true);
+    try {
+      if (on) {
+        const sub = await subscribeBrowser(publicKey as string);
+        if (!sub) {
+          setState(Notification.permission === "denied" ? "blocked" : "off");
+          return;
+        }
+        await subscribe.mutateAsync(sub);
+        setState("on");
+        toast.success("Notifications on for this device");
+      } else {
+        const sub = await currentSubscription();
+        if (sub) {
+          await unsubscribe.mutateAsync({ endpoint: sub.endpoint });
+          await sub.unsubscribe();
+        }
+        setState("off");
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Couldn't change notifications",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const hint =
+    state === "unsupported"
+      ? "This browser can't show notifications. On iPhone, add the site to your home screen first."
+      : state === "blocked"
+        ? "Notifications are blocked. Allow them for this site in your browser settings."
+        : "Get notified even when Alumni Connect isn't open.";
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-2xl bg-muted/50 p-4">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm font-medium">Notify me on this device</span>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </div>
+      <Switch
+        label="Notify me on this device"
+        checked={state === "on"}
+        disabled={busy || state === "unsupported" || state === "blocked"}
+        onCheckedChange={toggle}
+      />
+    </div>
   );
 }

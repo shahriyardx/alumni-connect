@@ -22,6 +22,13 @@
       "when": 1792255788723,
       "tag": "0002_follow_post",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792255926344,
+      "tag": "0003_push",
+      "breakpoints": true
     }
   ]
 }

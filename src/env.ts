@@ -26,6 +26,17 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v || undefined),
+  // Web Push (browser notifications); all unset = the feature is hidden.
+  // Generate with: bunx web-push generate-vapid-keys
+  VAPID_PUBLIC_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+  VAPID_PRIVATE_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+  VAPID_SUBJECT: z.string().default("mailto:admin@alumni.local"),
   MAIL_FROM: z.string().default("Alumni Connect <no-reply@alumni.local>"),
 });
 

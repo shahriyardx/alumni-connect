@@ -646,6 +646,8 @@ export const notification = pgTable(
     postId: uuid("post_id"),
     commentId: uuid("comment_id"),
     readAt: timestamp("read_at"),
+    // Set once a browser push went out (or was claimed for one).
+    pushedAt: timestamp("pushed_at"),
     createdAt: created(),
   },
   (t) => [
@@ -766,4 +768,26 @@ export const auditLog = pgTable(
     createdAt: created(),
   },
   (t) => [index("audit_uni_created_idx").on(t.universityId, t.createdAt)],
+);
+
+/** One browser (Web Push) per row; a user can have several. */
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: universityRef(),
+    userId: text("user_id").notNull(),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    index("push_subscription_user_idx").on(t.userId),
+    foreignKey({
+      name: "push_subscription_user_fk",
+      columns: [t.userId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+  ],
 );
