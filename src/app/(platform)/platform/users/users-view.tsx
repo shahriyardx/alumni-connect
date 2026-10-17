@@ -127,7 +127,7 @@ function BanButton({ p }: { p: Person }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
-  const banned = p.status === "BANNED";
+  const banned = p.platformBanned;
   const m = useMutation(
     trpc.platform.setBanned.mutationOptions({
       onSuccess: () => {

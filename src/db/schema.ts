@@ -117,8 +117,11 @@ export const user = pgTable(
     avatarKey: text("avatar_key"),
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
     suspendedUntil: timestamp("suspended_until"),
-    // Set by a platform ban, restored by the platform unban.
+    // Platform-only: the status a platform ban replaced, restored on unban.
     statusBeforeBan: text("status_before_ban", { enum: STATUSES }),
+    // Set only by a platform ban, cleared only by the platform unban; while
+    // true no tenant path may change the account.
+    platformBanned: boolean("platform_banned").default(false).notNull(),
   },
   (t) => [
     index("user_university_idx").on(t.universityId),

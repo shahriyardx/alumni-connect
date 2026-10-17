@@ -43,6 +43,15 @@ export async function assertNotPlatformAdmin(
     });
 }
 
+/** A platform ban is the platform's to lift: tenant staff can't touch the account. */
+export function assertNotPlatformBanned(target: { platformBanned: boolean }) {
+  if (target.platformBanned)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Banned by the platform",
+    });
+}
+
 export const lockPlatformAdmin = (tx: Tx) =>
   tx.execute(sql`lock table platform_admin in exclusive mode`);
 

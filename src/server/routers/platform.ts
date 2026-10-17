@@ -515,6 +515,7 @@ export const platformRouter = router({
           role: user.role,
           status: user.status,
           verified: user.emailVerified,
+          platformBanned: user.platformBanned,
           createdAt: user.createdAt,
           universityId: user.universityId,
           universityName: university.name,
@@ -561,34 +562,34 @@ export const platformRouter = router({
           code: "FORBIDDEN",
           message: "Platform admins can't be banned",
         });
-      if (input.banned === (target.status === "BANNED"))
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: input.banned ? "Already banned" : "Not banned",
-        });
       const uni = target.universityId;
       await withTenant(uni, async (tx) => {
-        // Keyed by id + university_id like every tenant user write. Ban keeps
-        // the old status (and suspended_until) so unban restores exactly it,
-        // e.g. a banned PENDING applicant goes back to PENDING.
+        // Keyed by id + university_id like every tenant user write.
+        // platform_banned is the platform's own flag (tenants can't touch the
+        // account while it's set). Ban snapshots the current status (BANNED
+        // if a tenant already banned them, so that ban survives the unban);
+        // unban restores it, falling back to PENDING, never ACTIVE, so no
+        // one skips approval.
         const [row] = await tx
           .update(user)
           .set(
             input.banned
-              ? { status: "BANNED", statusBeforeBan: sql`${user.status}` }
+              ? {
+                  status: "BANNED",
+                  statusBeforeBan: sql`${user.status}`,
+                  platformBanned: true,
+                }
               : {
-                  // No snapshot (a tenant path wrote status since): verified → ACTIVE, else PENDING.
-                  status: sql`coalesce(${user.statusBeforeBan}, case when ${user.emailVerified} then 'ACTIVE' else 'PENDING' end)`,
+                  status: sql`coalesce(${user.statusBeforeBan}, 'PENDING')`,
                   statusBeforeBan: null,
+                  platformBanned: false,
                 },
           )
           .where(
             and(
               eq(user.id, target.id),
               eq(user.universityId, uni),
-              input.banned
-                ? sql`${user.status} <> 'BANNED'`
-                : eq(user.status, "BANNED"),
+              eq(user.platformBanned, !input.banned),
             ),
           )
           .returning({ status: user.status });

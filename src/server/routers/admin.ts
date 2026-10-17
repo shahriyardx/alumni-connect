@@ -15,7 +15,10 @@ import {
 import type { AuthorInfo } from "../queries/posts";
 import { parseRosterCsv } from "../roster-csv";
 import { hashStudentId } from "../student-id";
-import { assertNotPlatformAdmin } from "../super-admin";
+import {
+  assertNotPlatformAdmin,
+  assertNotPlatformBanned,
+} from "../super-admin";
 import { adminProcedure, audit, router } from "../trpc";
 
 // Stay under Postgres's ~65535 bind-parameter limit on a single multi-row insert.
@@ -145,6 +148,7 @@ export const adminRouter = router({
           email: user.email,
           status: user.status,
           suspendedUntil: user.suspendedUntil,
+          platformBanned: user.platformBanned,
           createdAt: user.createdAt,
         })
         .from(user)
@@ -156,6 +160,7 @@ export const adminRouter = router({
       const items: (AuthorInfo & {
         email: string;
         status: string;
+        platformBanned: boolean;
         createdAt: Date;
       })[] = rows.slice(0, limit);
       return {
@@ -170,16 +175,23 @@ export const adminRouter = router({
       if (input.userId === ctx.me.id)
         throw new TRPCError({ code: "BAD_REQUEST" });
       const [target] = await ctx.db
-        .select({ id: user.id, role: user.role, status: user.status })
+        .select({
+          id: user.id,
+          role: user.role,
+          status: user.status,
+          platformBanned: user.platformBanned,
+        })
         .from(user)
         .where(
           and(
             eq(user.id, input.userId),
             eq(user.universityId, ctx.me.universityId),
           ),
-        );
+        )
+        .for("update");
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       await assertNotPlatformAdmin(ctx.db, target.id);
+      assertNotPlatformBanned(target);
       // A PENDING account is invisible to Approvals once it has any staff
       // role (pendingStudents only lists STUDENT/ALUMNUS) — decide it first.
       if (target.status === "PENDING")

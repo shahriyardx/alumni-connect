@@ -283,7 +283,12 @@ export const workspaceRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const uni = ctx.me.universityId;
-      const target = and(eq(user.id, input.userId), pendingStudents(uni));
+      // A platform-banned account is the platform's to decide.
+      const target = and(
+        eq(user.id, input.userId),
+        pendingStudents(uni),
+        eq(user.platformBanned, false),
+      );
       const [row] = await ctx.db
         .select({ id: user.id, email: user.email, key: user.idCardKey })
         .from(user)
@@ -297,11 +302,7 @@ export const workspaceRouter = router({
       if (input.action === "approve") {
         await ctx.db
           .update(user)
-          .set({
-            status: "ACTIVE",
-            statusBeforeBan: null,
-            decidedAt: new Date(),
-          })
+          .set({ status: "ACTIVE", decidedAt: new Date() })
           .where(target);
       } else {
         // Sessions/accounts cascade; the person can sign up again.

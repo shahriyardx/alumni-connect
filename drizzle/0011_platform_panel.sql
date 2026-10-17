@@ -45,4 +45,5 @@ BEGIN
 END $$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION platform_content_counts(), platform_broadcast(uuid) FROM PUBLIC;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION platform_content_counts(), platform_broadcast(uuid) TO app_user;--> statement-breakpoint
-ALTER TABLE "user" ADD COLUMN "status_before_ban" text;
+ALTER TABLE "user" ADD COLUMN "status_before_ban" text;--> statement-breakpoint
+ALTER TABLE "user" ADD COLUMN "platform_banned" boolean DEFAULT false NOT NULL;

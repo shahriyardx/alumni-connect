@@ -485,39 +485,99 @@ describe("fix round 1", () => {
   });
 });
 
-describe("fix round 2: no stale pre-ban status", () => {
-  test("platform ban → tenant unban → tenant ban → platform unban ends ACTIVE", async () => {
-    const uni = await makeUniversity("Drift");
+describe("platform ban is the platform's to lift", () => {
+  test("a tenant can't unban, suspend, re-role or approve a platform-banned user", async () => {
+    const uni = await makeUniversity("Locked");
     const owner = await makeUser(uni.id, { role: "OWNER" });
-    // Starts SUSPENDED: a stale snapshot would wrongly restore SUSPENDED.
-    const m = await makeUser(uni.id, {
-      status: "SUSPENDED",
-      suspendedUntil: new Date(Date.now() + 86_400_000),
-    });
-    const asOwner = callerFor(owner.id);
+    const mod = await makeUser(uni.id, { role: "MODERATOR" });
+    const m = await makeUser(uni.id);
+    const applicant = await makeUser(uni.id, { status: "PENDING" });
     await platform.platform.setBanned({ userId: m.id, banned: true });
-    expect((await userRow(m.id)).statusBeforeBan).toBe("SUSPENDED");
-    await asOwner.moderation.setUserStatus({ userId: m.id, status: "ACTIVE" });
-    expect(await userRow(m.id)).toMatchObject({
-      status: "ACTIVE",
-      statusBeforeBan: null,
+    await platform.platform.setBanned({
+      userId: applicant.id,
+      banned: true,
     });
-    await asOwner.moderation.setUserStatus({ userId: m.id, status: "BANNED" });
-    expect((await userRow(m.id)).statusBeforeBan).toBeNull();
-    await platform.platform.setBanned({ userId: m.id, banned: false });
-    expect(await userRow(m.id)).toMatchObject({
-      status: "ACTIVE",
-      statusBeforeBan: null,
+    for (const as of [callerFor(owner.id), callerFor(mod.id)]) {
+      for (const status of ["ACTIVE", "SUSPENDED", "BANNED"] as const)
+        await expect(
+          as.moderation.setUserStatus({ userId: m.id, status, days: 3 }),
+        ).rejects.toThrow(/Banned by the platform/);
+    }
+    const asOwner = callerFor(owner.id);
+    await expect(
+      asOwner.admin.setRole({ userId: m.id, role: "MODERATOR" }),
+    ).rejects.toThrow(/Banned by the platform/);
+    await expect(
+      asOwner.workspace.decide({ userId: applicant.id, action: "approve" }),
+    ).rejects.toThrow(/No pending account/);
+    // Report resolve (suspend) is refused too.
+    const reporter = await makeUser(uni.id);
+    await callerFor(reporter.id).moderation.report({
+      targetType: "USER",
+      targetId: m.id,
+      reason: "spam spam spam",
     });
+    const [rpt] = (await asOwner.moderation.queue({})).items;
+    await expect(
+      asOwner.moderation.resolve({
+        reportId: rpt.id,
+        action: "suspend",
+        days: 3,
+      }),
+    ).rejects.toThrow(/Banned by the platform/);
+    expect(await userRow(m.id)).toMatchObject({
+      status: "BANNED",
+      platformBanned: true,
+      role: "STUDENT",
+    });
+    // The workspace list flags it for the UI.
+    const listed = await asOwner.admin.users({});
+    expect(listed.items.find((u) => u.id === m.id)?.platformBanned).toBe(true);
   });
 
-  test("no snapshot: an unverified account is unbanned to PENDING", async () => {
-    const uni = await makeUniversity("Unv");
-    const m = await makeUser(uni.id, {
-      status: "BANNED",
-      emailVerified: false,
+  test("platform unban restores PENDING and never skips approval", async () => {
+    const uni = await makeUniversity("Approve");
+    const applicant = await makeUser(uni.id, { status: "PENDING" });
+    await platform.platform.setBanned({ userId: applicant.id, banned: true });
+    await platform.platform.setBanned({
+      userId: applicant.id,
+      banned: false,
     });
+    expect(await userRow(applicant.id)).toMatchObject({
+      status: "PENDING",
+      platformBanned: false,
+      statusBeforeBan: null,
+    });
+    // No snapshot at all: falls back to PENDING, not ACTIVE.
+    const other = await makeUser(uni.id);
+    await adminDb
+      .update(user)
+      .set({ status: "BANNED", platformBanned: true })
+      .where(eq(user.id, other.id));
+    await platform.platform.setBanned({ userId: other.id, banned: false });
+    expect((await userRow(other.id)).status).toBe("PENDING");
+  });
+
+  test("tenant ban, then platform ban, then platform unban stays BANNED", async () => {
+    const uni = await makeUniversity("Both");
+    const owner = await makeUser(uni.id, { role: "OWNER" });
+    const m = await makeUser(uni.id);
+    await callerFor(owner.id).moderation.setUserStatus({
+      userId: m.id,
+      status: "BANNED",
+    });
+    await platform.platform.setBanned({ userId: m.id, banned: true });
+    expect((await userRow(m.id)).statusBeforeBan).toBe("BANNED");
     await platform.platform.setBanned({ userId: m.id, banned: false });
-    expect((await userRow(m.id)).status).toBe("PENDING");
+    expect(await userRow(m.id)).toMatchObject({
+      status: "BANNED",
+      platformBanned: false,
+    });
+    // ...and the tenant can lift its own ban again.
+    await callerFor(owner.id).moderation.setUserStatus({
+      userId: m.id,
+      status: "ACTIVE",
+    });
+    expect((await userRow(m.id)).status).toBe("ACTIVE");
   });
 });

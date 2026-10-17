@@ -4,7 +4,10 @@ import { z } from "zod";
 import type { Tx } from "@/db";
 import { comment, post, type Role, report, session, user } from "@/db/schema";
 import type { AuthorInfo } from "../queries/posts";
-import { assertNotPlatformAdmin } from "../super-admin";
+import {
+  assertNotPlatformAdmin,
+  assertNotPlatformBanned,
+} from "../super-admin";
 import {
   audit,
   isAdmin,
@@ -319,16 +322,24 @@ export const moderationRouter = router({
         );
         if (!targetUserId) throw new TRPCError({ code: "NOT_FOUND" });
         const [targetUser] = await ctx.db
-          .select({ id: user.id, role: user.role, status: user.status })
+          .select({
+            id: user.id,
+            role: user.role,
+            status: user.status,
+            platformBanned: user.platformBanned,
+          })
           .from(user)
           .where(
             and(
               eq(user.id, targetUserId),
               eq(user.universityId, ctx.me.universityId),
             ),
-          );
+          )
+          // Row lock: a concurrent platform ban can't slip in before the write.
+          .for("update");
         if (!targetUser) throw new TRPCError({ code: "NOT_FOUND" });
         assertCanAct(ctx.me, targetUser);
+        assertNotPlatformBanned(targetUser);
         await assertNotPlatformAdmin(ctx.db, targetUser.id);
         if (targetUser.status === "PENDING") {
           throw new TRPCError({
@@ -345,7 +356,6 @@ export const moderationRouter = router({
               .update(user)
               .set({
                 status: "SUSPENDED",
-                statusBeforeBan: null,
                 suspendedUntil: new Date(
                   Date.now() + (input.days as number) * 86_400_000,
                 ),
@@ -360,11 +370,7 @@ export const moderationRouter = router({
         } else {
           await ctx.db
             .update(user)
-            .set({
-              status: "BANNED",
-              statusBeforeBan: null,
-              suspendedUntil: null,
-            })
+            .set({ status: "BANNED", suspendedUntil: null })
             .where(
               and(
                 eq(user.id, targetUserId),
@@ -423,16 +429,24 @@ export const moderationRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const [target] = await ctx.db
-        .select({ id: user.id, role: user.role, status: user.status })
+        .select({
+          id: user.id,
+          role: user.role,
+          status: user.status,
+          platformBanned: user.platformBanned,
+        })
         .from(user)
         .where(
           and(
             eq(user.id, input.userId),
             eq(user.universityId, ctx.me.universityId),
           ),
-        );
+        )
+        // Row lock: a concurrent platform ban can't slip in before the write.
+        .for("update");
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       assertCanAct(ctx.me, target);
+      assertNotPlatformBanned(target);
       await assertNotPlatformAdmin(ctx.db, target.id);
 
       // PENDING accounts are an admin-approval concern (workspace.decide),
@@ -473,8 +487,7 @@ export const moderationRouter = router({
           : null;
       await ctx.db
         .update(user)
-        // Clear any platform-ban snapshot so a later platform unban never restores it.
-        .set({ status: input.status, statusBeforeBan: null, suspendedUntil })
+        .set({ status: input.status, suspendedUntil })
         .where(
           and(
             eq(user.id, input.userId),
