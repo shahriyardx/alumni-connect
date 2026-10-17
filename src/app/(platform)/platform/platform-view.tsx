@@ -40,7 +40,7 @@ export function PlatformView() {
     return (
       <EmptyState
         icon="block"
-        title="403 · Platform admins only"
+        title="Platform admins only"
         body="You don't have access to the platform console."
       />
     );
