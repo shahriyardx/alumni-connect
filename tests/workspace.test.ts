@@ -198,11 +198,12 @@ describe("F2: bulk approve/reject", () => {
     expect(resReject.skipped).toEqual([]);
     expect(await row(p3.id)).toBeUndefined(); // deleted, not just marked
 
-    // Cap: more than 100 ids in one call is rejected outright.
+    // Cap: more than 100 ids in one call is rejected outright, by zod's
+    // own array-length validation (not a generic failure).
     const tooMany = Array.from({ length: 101 }, () => randomUUID());
-    await expect(
-      a.workspace.approveMany({ userIds: tooMany }),
-    ).rejects.toThrow();
+    await expect(a.workspace.approveMany({ userIds: tooMany })).rejects.toThrow(
+      /expected array to have <=100 items/,
+    );
   });
 });
 

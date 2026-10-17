@@ -92,14 +92,18 @@ async function loadPreview(
   return row ? { userName: row.name, authorId: row.id } : null;
 }
 
-/** The reported author's profile, for the "who" block on a report card. */
-async function loadReportedAuthor(
+/**
+ * The reported authors' profiles, for the "who" block on each report card —
+ * one `inArray` query for the whole page rather than one per card. `user`
+ * has no RLS, so it's filtered on `universityId` explicitly.
+ */
+async function loadReportedAuthors(
   tx: Tx,
   universityId: string,
-  authorId: string | null,
-): Promise<AuthorInfo | null> {
-  if (!authorId) return null;
-  const [row] = await tx
+  authorIds: string[],
+): Promise<Map<string, AuthorInfo>> {
+  if (authorIds.length === 0) return new Map();
+  const rows = await tx
     .select({
       id: user.id,
       name: user.name,
@@ -109,25 +113,33 @@ async function loadReportedAuthor(
       avatarKey: user.avatarKey,
     })
     .from(user)
-    .where(and(eq(user.id, authorId), eq(user.universityId, universityId)));
-  return row ?? null;
+    .where(
+      and(inArray(user.id, authorIds), eq(user.universityId, universityId)),
+    );
+  return new Map(rows.map((r) => [r.id, r]));
 }
 
 /**
- * Prior strikes against a user: posts/comments removed by moderators, plus
- * past suspensions/bans — whether they came through a report or a direct
- * admin/mod action. Reuses audit_log rather than a new table; `report.remove`
- * / `report.suspend` / `report.ban` carry the content author's id in
- * `meta.authorId` (see `resolve` below), and a direct `setUserStatus` call
- * writes `user.status` straight on the target.
+ * Prior strikes against each of the given users: posts/comments removed by
+ * moderators, plus past suspensions/bans — whether they came through a
+ * report or a direct admin/mod action. One grouped query for the whole page
+ * rather than one per card. Reuses audit_log rather than a new table;
+ * `report.remove` / `report.suspend` / `report.ban` carry the content
+ * author's id in `meta.authorId` (see `resolve` below), and a direct
+ * `setUserStatus` call writes `user.status` straight on the target.
  */
-async function countStrikes(
+async function countStrikesMany(
   tx: Tx,
   universityId: string,
-  userId: string,
-): Promise<number> {
-  const [row] = await tx
-    .select({ c: sql<number>`count(*)` })
+  userIds: string[],
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  // `report.*` rows carry the user in `meta.authorId`; a direct
+  // `user.status` change carries it in `target` instead — coalesce so both
+  // kinds of strike group onto the same key.
+  const userKey = sql`coalesce(${auditLog.meta} ->> 'authorId', ${auditLog.target})`;
+  const rows = await tx
+    .select({ userId: sql<string>`${userKey}`, c: sql<number>`count(*)` })
     .from(auditLog)
     .where(
       and(
@@ -139,17 +151,18 @@ async function countStrikes(
               "report.suspend",
               "report.ban",
             ]),
-            sql`${auditLog.meta} ->> 'authorId' = ${userId}`,
+            inArray(sql`${auditLog.meta} ->> 'authorId'`, userIds),
           ),
           and(
             eq(auditLog.action, "user.status"),
-            eq(auditLog.target, userId),
+            inArray(auditLog.target, userIds),
             sql`${auditLog.meta} ->> 'status' in ('SUSPENDED', 'BANNED')`,
           ),
         ),
       ),
-    );
-  return Number(row?.c ?? 0);
+    )
+    .groupBy(sql`${userKey}`);
+  return new Map(rows.map((r) => [r.userId, Number(r.c)]));
 }
 
 /** Author of the post/comment, or the user themself for a USER report target. */
@@ -317,37 +330,50 @@ export const moderationRouter = router({
         .offset(input.cursor);
 
       const page = rows.slice(0, limit);
-      const items = await Promise.all(
-        page.map(async (r) => {
-          const preview = await loadPreview(
-            ctx.db,
-            ctx.me.universityId,
-            r.targetType,
-            r.targetId,
-          );
-          const reportedAuthor = await loadReportedAuthor(
-            ctx.db,
-            ctx.me.universityId,
-            preview?.authorId ?? null,
-          );
-          const priorStrikes = reportedAuthor
-            ? await countStrikes(ctx.db, ctx.me.universityId, reportedAuthor.id)
-            : 0;
-          return {
-            id: r.id,
-            targetType: r.targetType,
-            targetId: r.targetId,
-            reason: r.reason,
-            status: r.status,
-            createdAt: r.createdAt,
-            reporter: r.reporter as AuthorInfo,
-            preview,
-            reportedAuthor,
-            priorStrikes,
-            resolvedBy: r.resolvedBy,
-          };
-        }),
+      // Previews differ per target type (post/comment/user) and still need
+      // one lookup each, but the reported-author profiles and their strike
+      // counts are each fetched in one batched query for the whole page.
+      const previews = await Promise.all(
+        page.map((r) =>
+          loadPreview(ctx.db, ctx.me.universityId, r.targetType, r.targetId),
+        ),
       );
+      const authorIds = [
+        ...new Set(
+          previews.map((p) => p?.authorId).filter((id): id is string => !!id),
+        ),
+      ];
+      const authors = await loadReportedAuthors(
+        ctx.db,
+        ctx.me.universityId,
+        authorIds,
+      );
+      const strikes = await countStrikesMany(ctx.db, ctx.me.universityId, [
+        ...authors.keys(),
+      ]);
+
+      const items = page.map((r, i) => {
+        const preview = previews[i];
+        const reportedAuthor = preview?.authorId
+          ? (authors.get(preview.authorId) ?? null)
+          : null;
+        const priorStrikes = reportedAuthor
+          ? (strikes.get(reportedAuthor.id) ?? 0)
+          : 0;
+        return {
+          id: r.id,
+          targetType: r.targetType,
+          targetId: r.targetId,
+          reason: r.reason,
+          status: r.status,
+          createdAt: r.createdAt,
+          reporter: r.reporter as AuthorInfo,
+          preview,
+          reportedAuthor,
+          priorStrikes,
+          resolvedBy: r.resolvedBy,
+        };
+      });
 
       return {
         items,
@@ -390,6 +416,10 @@ export const moderationRouter = router({
       // The content/account author, recorded on the audit entry below so
       // `countStrikes` can tally prior violations without a new table.
       let authorId: string | null = null;
+      // False only for a "suspend" that was a no-op (target already
+      // BANNED) — skip the audit row so a repeat/ineffective suspend can't
+      // inflate `countStrikes` with a strike that didn't actually happen.
+      let didChange = true;
 
       if (input.action === "remove") {
         if (rpt.targetType === "USER")
@@ -444,6 +474,8 @@ export const moderationRouter = router({
                   eq(user.universityId, ctx.me.universityId),
                 ),
               );
+          } else {
+            didChange = false;
           }
         } else {
           await ctx.db
@@ -475,19 +507,21 @@ export const moderationRouter = router({
           ),
         );
 
-      await audit(
-        ctx.db,
-        ctx.me.universityId,
-        ctx.me.id,
-        `report.${input.action}`,
-        `${rpt.targetType}:${rpt.targetId}`,
-        {
-          reportId: rpt.id,
-          days: input.days,
-          note: input.note,
-          authorId: authorId ?? undefined,
-        },
-      );
+      if (didChange) {
+        await audit(
+          ctx.db,
+          ctx.me.universityId,
+          ctx.me.id,
+          `report.${input.action}`,
+          `${rpt.targetType}:${rpt.targetId}`,
+          {
+            reportId: rpt.id,
+            days: input.days,
+            note: input.note,
+            authorId: authorId ?? undefined,
+          },
+        );
+      }
 
       return { ok: true as const };
     }),

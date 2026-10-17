@@ -308,6 +308,17 @@ test("resolve: suspend does not downgrade an already-banned user", async () => {
     .from(report)
     .where(eq(report.id, rSuspend.id));
   expect(reportRow.status).toBe("RESOLVED");
+
+  // F2 fix round 1: the no-op suspend wrote no audit row (it would
+  // otherwise inflate countStrikes with a strike that never happened).
+  const suspendAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.suspend"));
+  expect(suspendAudits).toHaveLength(0);
+  const q = await callerFor(mod.id).moderation.queue({ status: "RESOLVED" });
+  const strikesRow = q.items.find((i) => i.id === rSuspend.id);
+  expect(strikesRow?.priorStrikes).toBe(1); // only the ban, not a phantom suspend too
 });
 
 test("admin.importRoster dedupes duplicate student IDs and reports bad rows", async () => {

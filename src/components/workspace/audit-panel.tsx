@@ -109,56 +109,63 @@ export function AuditPanel() {
       ) : items.length === 0 ? (
         <EmptyState icon="history" title="No audit entries" />
       ) : (
-        <Card className="overflow-x-auto p-2">
-          <table className="w-full min-w-[560px] text-left text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                {["Time", "Actor", "Action", "Target", "IP"].map((h) => (
-                  <th key={h} className="px-3 py-2 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((e) => {
-                const { label, icon } = auditLabel(e.action);
-                return (
-                  <tr key={e.id} className="align-top">
-                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground tabular-nums">
-                      {fmt.format(new Date(e.createdAt))}
-                    </td>
-                    <td className="px-3 py-2">
-                      {e.actor ? (
-                        <Link
-                          href={`/u/${e.actor.id}`}
-                          className="font-medium hover:underline"
-                        >
-                          {e.actor.name}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">system</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Tip label={e.action}>
-                        <span className="inline-flex w-fit cursor-help items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium whitespace-nowrap">
-                          <Icon name={icon} size={14} />
-                          {label}
-                        </span>
-                      </Tip>
-                    </td>
-                    <td className="max-w-48 truncate px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {e.target ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {e.ip ?? "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <Card className="p-2">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr>
+                  {["Time", "Actor", "Action", "Target", "IP"].map((h) => (
+                    <th key={h} className="px-3 py-2 font-medium">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((e) => {
+                  const { label, icon } = auditLabel(e.action);
+                  return (
+                    <tr key={e.id} className="align-top">
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground tabular-nums">
+                        {fmt.format(new Date(e.createdAt))}
+                      </td>
+                      <td className="px-3 py-2">
+                        {e.actor ? (
+                          <Link
+                            href={`/u/${e.actor.id}`}
+                            className="font-medium hover:underline"
+                          >
+                            {e.actor.name}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">system</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Tip label={e.action}>
+                          <span className="inline-flex w-fit cursor-help items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+                            <Icon name={icon} size={14} />
+                            {label}
+                          </span>
+                        </Tip>
+                      </td>
+                      <td className="max-w-48 truncate px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {e.target ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {e.ip ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Hints the table scrolls on narrow screens. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-3xl bg-gradient-to-l from-surface to-transparent sm:hidden"
+          />
         </Card>
       )}
       {list.hasNextPage && (
