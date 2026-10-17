@@ -55,4 +55,5 @@ When the container starts, it applies pending migrations and then serves on port
 
 - Set `SETUP_TOKEN`, so `/admin` can't be claimed by anyone else.
 - Use strong values for `BETTER_AUTH_SECRET` and `STUDENT_ID_PEPPER`.
+- For browser notifications, set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (`bunx web-push generate-vapid-keys`). Needs HTTPS.
 - Run behind a reverse proxy; the rate limits rely on its `X-Forwarded-For` header.
