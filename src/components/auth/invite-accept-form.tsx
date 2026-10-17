@@ -89,7 +89,7 @@ export function InviteAcceptForm({ token }: { token: string }) {
   if (!lookup.data)
     return (
       <AuthFrame icon="mail" title="Invite not found">
-        <div className="flex flex-col items-center gap-4 text-center">
+        <div className="flex flex-col items-start gap-4">
           <p className="text-sm text-muted-foreground">
             This invite link is invalid, expired or already used. Ask whoever
             invited you to send a new one.
