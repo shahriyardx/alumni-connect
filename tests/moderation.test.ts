@@ -405,3 +405,138 @@ test("profile.get exposes account status to moderators only", async () => {
   expect(asStudent.moderation).toBeNull();
   expect(asStudent).not.toHaveProperty("status");
 });
+
+// F2.1: moderation queue shows the reported author + prior strikes.
+test("F2: queue shows the reported author and a running prior-strikes count, tenant isolated", async () => {
+  const p1 = await makePost(uniId, spammer.id, { title: "spam 1" });
+  const r1 = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p1.id,
+    reason: "spam post",
+  });
+  let q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0]).toMatchObject({
+    reportedAuthor: { id: spammer.id, role: "STUDENT" },
+    priorStrikes: 0,
+  });
+
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r1.id,
+    action: "remove",
+  });
+
+  const p2 = await makePost(uniId, spammer.id, { title: "spam 2" });
+  const r2 = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p2.id,
+    reason: "spam again",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(1); // 1 prior removal
+
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r2.id,
+    action: "suspend",
+    days: 3,
+  });
+
+  const r3 = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "more abuse",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(2); // + 1 prior suspension
+
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r3.id,
+    action: "ban",
+  });
+
+  const r4 = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "still bad",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(3); // + 1 prior ban
+
+  // A direct status change (no report involved) also counts as a strike.
+  await adminDb
+    .update(user)
+    .set({ status: "ACTIVE", suspendedUntil: null })
+    .where(eq(user.id, spammer.id));
+  await callerFor(mod.id).moderation.setUserStatus({
+    userId: spammer.id,
+    status: "SUSPENDED",
+    days: 1,
+  });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r4.id,
+    action: "dismiss",
+  });
+  const p3 = await makePost(uniId, spammer.id, { title: "spam 3" });
+  await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p3.id,
+    reason: "again",
+  });
+  q = await callerFor(mod.id).moderation.queue({});
+  expect(q.items[0].priorStrikes).toBe(4);
+
+  // Tenant isolation: an identical scenario in a second university counts
+  // independently, never bleeding into uniId's total.
+  const uni2 = await makeUniversity();
+  const student2 = await makeUser(uni2.id);
+  const mod2 = await makeUser(uni2.id, { role: "MODERATOR" });
+  const spammer2 = await makeUser(uni2.id);
+  const p4 = await makePost(uni2.id, spammer2.id, { title: "spam in uni2" });
+  await callerFor(student2.id).moderation.report({
+    targetType: "POST",
+    targetId: p4.id,
+    reason: "spam post",
+  });
+  const q2 = await callerFor(mod2.id).moderation.queue({});
+  expect(q2.items[0].priorStrikes).toBe(0);
+  expect(q2.items[0].reportedAuthor?.id).toBe(spammer2.id);
+});
+
+// F2.3: audit log filters by actor and date range.
+test("F2: admin.audit filters by actor and date range; auditActors lists staff with entries", async () => {
+  const a = callerFor(admin.id);
+  await a.admin.setRole({ userId: student.id, role: "STAFF" }); // actor = admin
+  await callerFor(mod.id).moderation.setUserStatus({
+    userId: spammer.id,
+    status: "SUSPENDED",
+    days: 1,
+  }); // actor = mod
+  const [old] = await adminDb
+    .insert(auditLog)
+    .values({
+      universityId: uniId,
+      actorId: admin.id,
+      action: "settings.update",
+      createdAt: new Date(Date.now() - 40 * 86_400_000),
+    })
+    .returning({ id: auditLog.id });
+
+  const byAdmin = await a.admin.audit({ actorId: admin.id });
+  expect(byAdmin.items.length).toBeGreaterThan(0);
+  expect(byAdmin.items.every((i) => i.actor?.id === admin.id)).toBe(true);
+  expect(byAdmin.items.some((i) => i.action === "user.role")).toBe(true);
+
+  const byMod = await a.admin.audit({ actorId: mod.id });
+  expect(byMod.items).toHaveLength(1);
+  expect(byMod.items[0].action).toBe("user.status");
+
+  const recent = await a.admin.audit({ range: "30d" });
+  expect(recent.items.some((i) => i.id === old.id)).toBe(false);
+
+  const everything = await a.admin.audit({});
+  expect(everything.items.some((i) => i.id === old.id)).toBe(true);
+
+  const actorIds = (await a.admin.auditActors()).map((x) => x.id);
+  expect(actorIds).toContain(admin.id);
+  expect(actorIds).toContain(mod.id);
+  expect(actorIds).not.toContain(student.id); // never acted, just acted on
+});

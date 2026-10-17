@@ -1,8 +1,16 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "@/db";
-import { comment, post, type Role, report, session, user } from "@/db/schema";
+import {
+  auditLog,
+  comment,
+  post,
+  type Role,
+  report,
+  session,
+  user,
+} from "@/db/schema";
 import type { AuthorInfo } from "../queries/posts";
 import {
   audit,
@@ -82,6 +90,66 @@ async function loadPreview(
     .from(user)
     .where(and(eq(user.id, targetId), eq(user.universityId, universityId)));
   return row ? { userName: row.name, authorId: row.id } : null;
+}
+
+/** The reported author's profile, for the "who" block on a report card. */
+async function loadReportedAuthor(
+  tx: Tx,
+  universityId: string,
+  authorId: string | null,
+): Promise<AuthorInfo | null> {
+  if (!authorId) return null;
+  const [row] = await tx
+    .select({
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      batchNumber: user.batchNumber,
+      department: user.department,
+      avatarKey: user.avatarKey,
+    })
+    .from(user)
+    .where(and(eq(user.id, authorId), eq(user.universityId, universityId)));
+  return row ?? null;
+}
+
+/**
+ * Prior strikes against a user: posts/comments removed by moderators, plus
+ * past suspensions/bans — whether they came through a report or a direct
+ * admin/mod action. Reuses audit_log rather than a new table; `report.remove`
+ * / `report.suspend` / `report.ban` carry the content author's id in
+ * `meta.authorId` (see `resolve` below), and a direct `setUserStatus` call
+ * writes `user.status` straight on the target.
+ */
+async function countStrikes(
+  tx: Tx,
+  universityId: string,
+  userId: string,
+): Promise<number> {
+  const [row] = await tx
+    .select({ c: sql<number>`count(*)` })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.universityId, universityId),
+        or(
+          and(
+            inArray(auditLog.action, [
+              "report.remove",
+              "report.suspend",
+              "report.ban",
+            ]),
+            sql`${auditLog.meta} ->> 'authorId' = ${userId}`,
+          ),
+          and(
+            eq(auditLog.action, "user.status"),
+            eq(auditLog.target, userId),
+            sql`${auditLog.meta} ->> 'status' in ('SUSPENDED', 'BANNED')`,
+          ),
+        ),
+      ),
+    );
+  return Number(row?.c ?? 0);
 }
 
 /** Author of the post/comment, or the user themself for a USER report target. */
@@ -250,22 +318,35 @@ export const moderationRouter = router({
 
       const page = rows.slice(0, limit);
       const items = await Promise.all(
-        page.map(async (r) => ({
-          id: r.id,
-          targetType: r.targetType,
-          targetId: r.targetId,
-          reason: r.reason,
-          status: r.status,
-          createdAt: r.createdAt,
-          reporter: r.reporter as AuthorInfo,
-          preview: await loadPreview(
+        page.map(async (r) => {
+          const preview = await loadPreview(
             ctx.db,
             ctx.me.universityId,
             r.targetType,
             r.targetId,
-          ),
-          resolvedBy: r.resolvedBy,
-        })),
+          );
+          const reportedAuthor = await loadReportedAuthor(
+            ctx.db,
+            ctx.me.universityId,
+            preview?.authorId ?? null,
+          );
+          const priorStrikes = reportedAuthor
+            ? await countStrikes(ctx.db, ctx.me.universityId, reportedAuthor.id)
+            : 0;
+          return {
+            id: r.id,
+            targetType: r.targetType,
+            targetId: r.targetId,
+            reason: r.reason,
+            status: r.status,
+            createdAt: r.createdAt,
+            reporter: r.reporter as AuthorInfo,
+            preview,
+            reportedAuthor,
+            priorStrikes,
+            resolvedBy: r.resolvedBy,
+          };
+        }),
       );
 
       return {
@@ -306,10 +387,19 @@ export const moderationRouter = router({
         });
       }
 
+      // The content/account author, recorded on the audit entry below so
+      // `countStrikes` can tally prior violations without a new table.
+      let authorId: string | null = null;
+
       if (input.action === "remove") {
         if (rpt.targetType === "USER")
           throw new TRPCError({ code: "BAD_REQUEST" });
         await removeTarget(ctx.db, rpt.targetType, rpt.targetId);
+        authorId = await resolveTargetUserId(
+          ctx.db,
+          rpt.targetType,
+          rpt.targetId,
+        );
       } else if (input.action === "suspend" || input.action === "ban") {
         const targetUserId = await resolveTargetUserId(
           ctx.db,
@@ -317,6 +407,7 @@ export const moderationRouter = router({
           rpt.targetId,
         );
         if (!targetUserId) throw new TRPCError({ code: "NOT_FOUND" });
+        authorId = targetUserId;
         const [targetUser] = await ctx.db
           .select({ id: user.id, role: user.role, status: user.status })
           .from(user)
@@ -390,7 +481,12 @@ export const moderationRouter = router({
         ctx.me.id,
         `report.${input.action}`,
         `${rpt.targetType}:${rpt.targetId}`,
-        { reportId: rpt.id, days: input.days, note: input.note },
+        {
+          reportId: rpt.id,
+          days: input.days,
+          note: input.note,
+          authorId: authorId ?? undefined,
+        },
       );
 
       return { ok: true as const };

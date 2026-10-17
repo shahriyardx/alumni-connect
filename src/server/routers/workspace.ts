@@ -41,6 +41,57 @@ const pendingStudents = (universityId: string): SQL =>
     inArray(user.role, ["STUDENT", "ALUMNUS"]),
   ) as SQL;
 
+/** The single-item approve/reject code path; shared by `decide` and the bulk mutations below. */
+async function decideOne(
+  tx: Tx,
+  universityId: string,
+  actorId: string,
+  userId: string,
+  action: "approve" | "reject",
+): Promise<boolean> {
+  const target = and(eq(user.id, userId), pendingStudents(universityId));
+  const [row] = await tx
+    .select({ id: user.id, email: user.email, key: user.idCardKey })
+    .from(user)
+    .where(target)
+    .for("update");
+  if (!row) return false;
+  if (action === "approve") {
+    await tx
+      .update(user)
+      .set({ status: "ACTIVE", decidedAt: new Date() })
+      .where(target);
+  } else {
+    // Sessions/accounts cascade; the person can sign up again.
+    await tx.delete(user).where(target);
+  }
+  await audit(tx, universityId, actorId, `user.${action}`, row.id, {
+    email: row.email,
+  });
+  if (action === "reject" && row.key) await removeAll([row.key]);
+  return true;
+}
+
+async function decideMany(
+  ctx: { db: Tx; me: { id: string; universityId: string } },
+  userIds: string[],
+  action: "approve" | "reject",
+) {
+  const processed: string[] = [];
+  const skipped: string[] = [];
+  for (const id of new Set(userIds)) {
+    const ok = await decideOne(
+      ctx.db,
+      ctx.me.universityId,
+      ctx.me.id,
+      id,
+      action,
+    );
+    (ok ? processed : skipped).push(id);
+  }
+  return { processed, skipped };
+}
+
 /**
  * STUDENT -> ALUMNUS for everyone in a batch whose new graduation year has
  * passed; staff roles are never touched. One-way, like every other
@@ -281,33 +332,35 @@ export const workspaceRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const uni = ctx.me.universityId;
-      const target = and(eq(user.id, input.userId), pendingStudents(uni));
-      const [row] = await ctx.db
-        .select({ id: user.id, email: user.email, key: user.idCardKey })
-        .from(user)
-        .where(target)
-        .for("update");
-      if (!row)
+      const ok = await decideOne(
+        ctx.db,
+        ctx.me.universityId,
+        ctx.me.id,
+        input.userId,
+        input.action,
+      );
+      if (!ok)
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "No pending account",
         });
-      if (input.action === "approve") {
-        await ctx.db
-          .update(user)
-          .set({ status: "ACTIVE", decidedAt: new Date() })
-          .where(target);
-      } else {
-        // Sessions/accounts cascade; the person can sign up again.
-        await ctx.db.delete(user).where(target);
-      }
-      await audit(ctx.db, uni, ctx.me.id, `user.${input.action}`, row.id, {
-        email: row.email,
-      });
-      if (input.action === "reject" && row.key) await removeAll([row.key]);
       return { ok: true as const };
     }),
+
+  // Same validations and audit trail as `decide`, just over a list. Each id
+  // is independent (a bad one is skipped, not a reason to fail the rest) —
+  // they all still land in the one transaction the request runs in.
+  approveMany: adminProcedure
+    .input(z.object({ userIds: z.array(z.string().min(1)).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) =>
+      decideMany(ctx, input.userIds, "approve"),
+    ),
+
+  rejectMany: adminProcedure
+    .input(z.object({ userIds: z.array(z.string().min(1)).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) =>
+      decideMany(ctx, input.userIds, "reject"),
+    ),
 
   transferOwnership: ownerProcedure
     .input(z.object({ userId: z.string().min(1) }))

@@ -17,8 +17,49 @@ type Pending = RouterOutputs["workspace"]["approvals"][number];
 
 export function ApprovalsPanel() {
   const trpc = useTRPC();
+  const qc = useQueryClient();
+  const toast = useToast();
   const list = useQuery(trpc.workspace.approvals.queryOptions());
   const n = list.data?.length ?? 0;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [confirmRejectSelected, setConfirmRejectSelected] = useState(false);
+
+  const onSettled = () => {
+    setSelected(new Set());
+    setConfirmBulk(false);
+    setConfirmRejectSelected(false);
+    void qc.invalidateQueries(trpc.workspace.pathFilter());
+    void qc.invalidateQueries(trpc.admin.pathFilter());
+  };
+  const approveMany = useMutation(
+    trpc.workspace.approveMany.mutationOptions({
+      onSuccess: (r) =>
+        toast.success(
+          `${r.processed.length} sign-up${r.processed.length === 1 ? "" : "s"} approved`,
+        ),
+      onError: (e) => toast.error(e.message),
+      onSettled,
+    }),
+  );
+  const rejectMany = useMutation(
+    trpc.workspace.rejectMany.mutationOptions({
+      onSuccess: (r) =>
+        toast.success(
+          `${r.processed.length} sign-up${r.processed.length === 1 ? "" : "s"} rejected`,
+        ),
+      onError: (e) => toast.error(e.message),
+      onSettled,
+    }),
+  );
+
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const rosterMatches = (list.data ?? []).filter((u) => u.rosterMatch === true);
 
   return (
     <>
@@ -30,6 +71,40 @@ export function ApprovalsPanel() {
             : "New student sign-ups wait here for you."
         }
       />
+      {n > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {rosterMatches.length > 0 && (
+            <Button
+              variant="tonal"
+              icon="verified"
+              onClick={() => setConfirmBulk(true)}
+            >
+              Approve all roster matches ({rosterMatches.length})
+            </Button>
+          )}
+          {selected.size > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">
+                {selected.size} selected
+              </span>
+              <Button
+                size="sm"
+                loading={approveMany.isPending}
+                onClick={() => approveMany.mutate({ userIds: [...selected] })}
+              >
+                Approve selected
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setConfirmRejectSelected(true)}
+              >
+                Reject selected
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       {list.isError ? (
         <p className="py-16 text-center text-sm text-destructive">
           {list.error.message}
@@ -49,18 +124,77 @@ export function ApprovalsPanel() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {list.data.map((u) => (
-            <ApprovalCard key={u.id} u={u} />
+            <ApprovalCard
+              key={u.id}
+              u={u}
+              selected={selected.has(u.id)}
+              onToggle={() => toggle(u.id)}
+            />
           ))}
         </div>
       )}
       <p className="text-xs text-muted-foreground">
         ID card photos are deleted 30 days after your decision.
       </p>
+
+      <Dialog.Root open={confirmBulk} onOpenChange={setConfirmBulk}>
+        <DialogContent
+          title={`Approve ${rosterMatches.length} roster-matched sign-up${rosterMatches.length === 1 ? "" : "s"}?`}
+          description="Each one matched a roster entry for their batch. This can't be undone."
+        >
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button variant="ghost" />}>
+              Cancel
+            </Dialog.Close>
+            <Button
+              loading={approveMany.isPending}
+              onClick={() =>
+                approveMany.mutate({
+                  userIds: rosterMatches.map((u) => u.id),
+                })
+              }
+            >
+              Approve all
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={confirmRejectSelected}
+        onOpenChange={setConfirmRejectSelected}
+      >
+        <DialogContent
+          title={`Reject ${selected.size} sign-up${selected.size === 1 ? "" : "s"}?`}
+          description="Their pending accounts and ID card photos are deleted. They can sign up again."
+        >
+          <div className="flex justify-end gap-2">
+            <Dialog.Close render={<Button variant="ghost" />}>
+              Cancel
+            </Dialog.Close>
+            <Button
+              variant="destructive"
+              loading={rejectMany.isPending}
+              onClick={() => rejectMany.mutate({ userIds: [...selected] })}
+            >
+              Reject
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog.Root>
     </>
   );
 }
 
-function ApprovalCard({ u }: { u: Pending }) {
+function ApprovalCard({
+  u,
+  selected,
+  onToggle,
+}: {
+  u: Pending;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
@@ -85,6 +219,15 @@ function ApprovalCard({ u }: { u: Pending }) {
 
   return (
     <Card className="flex flex-col gap-4 p-3">
+      <label className="flex w-fit items-center gap-2 px-1 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          className="size-4 rounded accent-primary"
+          checked={selected}
+          onChange={onToggle}
+        />
+        Select
+      </label>
       {u.hasIdCard ? (
         <a
           href={card}
