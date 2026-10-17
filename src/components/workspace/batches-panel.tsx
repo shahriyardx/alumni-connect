@@ -19,8 +19,8 @@ type Batch = RouterOutputs["workspace"]["batches"][number];
 type ImportResult = RouterOutputs["admin"]["importRoster"];
 
 const SAMPLE = `student_id,department,name
-NUB-20300001,CSE,Rahim Uddin
-NUB-20300002,EEE,
+STU-20300001,CSE,Rahim Uddin
+STU-20300002,EEE,
 `;
 const SAMPLE_HREF = `data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE)}`;
 // Server caps `csv` at 2,000,000 chars; xlsx is zipped, so allow a bit more.
