@@ -16,30 +16,12 @@ type Tile = {
   label: string;
   primary?: boolean;
   count?: number;
-  hasMore?: boolean;
 };
-
-function useUnansweredCount(enabled: boolean) {
-  const trpc = useTRPC();
-  const { data } = useQuery(
-    trpc.post.feed.queryOptions({ unanswered: true, cursor: 0 }, { enabled }),
-  );
-  return { count: data?.items.length ?? 0, hasMore: !!data?.nextCursor };
-}
 
 function tilesFor(
   role: Role | undefined,
   counts: { approvals: number; reports: number } | undefined,
-  unanswered: { count: number; hasMore: boolean },
 ): Tile[] {
-  const unansweredTile = (label: string): Tile => ({
-    key: "unanswered",
-    href: "/feed?tab=unanswered",
-    icon: "help",
-    label,
-    count: unanswered.count,
-    hasMore: unanswered.hasMore,
-  });
   switch (role) {
     case "OWNER":
     case "ADMIN":
@@ -92,10 +74,7 @@ function tilesFor(
           label: "Announce",
           primary: true,
         },
-        unansweredTile("Unanswered"),
       ];
-    case "ALUMNUS":
-      return [unansweredTile("Unanswered questions")];
     case "STUDENT":
       return [
         {
@@ -183,15 +162,12 @@ function CountTile({ tile }: { tile: Tile }) {
       <span className="min-w-0 flex-1 truncate text-sm font-medium">
         {tile.label}
       </span>
-      <span className="text-lg font-semibold tabular-nums">
-        {tile.count}
-        {tile.hasMore && "+"}
-      </span>
+      <span className="text-lg font-semibold tabular-nums">{tile.count}</span>
     </Link>
   );
 }
 
-/** Role-specific feed controls: a primary CTA tile plus count tiles (approvals, reports, unanswered). */
+/** Role-specific feed controls: a primary CTA tile plus count tiles (approvals, reports). */
 export function FeedRail({ variant }: { variant: "aside" | "row" }) {
   const { me } = useMe();
   const trpc = useTRPC();
@@ -199,10 +175,7 @@ export function FeedRail({ variant }: { variant: "aside" | "row" }) {
   const { data: counts } = useQuery(
     trpc.workspace.counts.queryOptions(undefined, { enabled: mod }),
   );
-  const unanswered = useUnansweredCount(
-    me?.role === "STAFF" || me?.role === "ALUMNUS",
-  );
-  const tiles = tilesFor(me?.role, counts, unanswered);
+  const tiles = tilesFor(me?.role, counts);
   if (tiles.length === 0) return null;
 
   if (variant === "row") {
@@ -227,10 +200,7 @@ export function FeedRail({ variant }: { variant: "aside" | "row" }) {
               <Icon name={t.icon} size={18} filled={t.primary} />
               {t.label}
               {t.count !== undefined && (
-                <span className="tabular-nums opacity-80">
-                  {t.count}
-                  {t.hasMore && "+"}
-                </span>
+                <span className="tabular-nums opacity-80">{t.count}</span>
               )}
             </Link>
           ))}
