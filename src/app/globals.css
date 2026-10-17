@@ -133,14 +133,25 @@
 }
 
 /* Light mode: a field straight on the tinted page is a tint on a tint and
-   barely shows; off a card it turns white with a hairline (not while
-   focused or invalid, so those borders show). */
+   barely shows; off a card (and off a dialog) it turns white with a
+   hairline. It stays white while focused so it doesn't flash grey; only the
+   hairline steps aside for the focus/invalid borders. */
 @media (prefers-color-scheme: light) {
   @layer utilities {
     :is(input, textarea, [role="combobox"]).bg-surface-high:where(
-        :not(.bg-surface *, :focus, [data-invalid], [aria-invalid="true"])
+        :not(.bg-surface *, .bg-popover *)
       ) {
       background-color: #fff;
+    }
+    :is(input, textarea, [role="combobox"]).bg-surface-high:where(
+        :not(
+            .bg-surface *,
+            .bg-popover *,
+            :focus,
+            [data-invalid],
+            [aria-invalid="true"]
+          )
+      ) {
       border-color: var(--input);
     }
   }
