@@ -33,11 +33,13 @@ export const STAFF_ROLES = ["OWNER", "ADMIN", "MODERATOR", "STAFF"] as const;
 export const STATUSES = ["PENDING", "ACTIVE", "SUSPENDED", "BANNED"] as const;
 export const UNIVERSITY_STATUSES = ["PENDING", "ACTIVE", "REJECTED"] as const;
 export const POST_KINDS = ["QUESTION", "ANNOUNCEMENT"] as const;
+export const EMAIL_DIGEST_FREQUENCIES = ["off", "daily", "weekly"] as const;
 export type Role = (typeof ROLES)[number];
 export type StaffRole = (typeof STAFF_ROLES)[number];
 export type Status = (typeof STATUSES)[number];
 export type UniversityStatus = (typeof UNIVERSITY_STATUSES)[number];
 export type PostKind = (typeof POST_KINDS)[number];
+export type EmailDigestFrequency = (typeof EMAIL_DIGEST_FREQUENCIES)[number];
 
 // Shared with client components (trpc.ts re-exports them for server code).
 export const isMod = (r: Role) =>
@@ -112,6 +114,22 @@ export const user = pgTable(
     avatarKey: text("avatar_key"),
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
     suspendedUntil: timestamp("suspended_until"),
+    // Notification preferences (F3). All on, digest off by default; columns
+    // on `user` rather than a separate table since `user` already isn't
+    // RLS-scoped (app-level tenant filtering) and these are 1:1 per account.
+    notifyReplyPost: boolean("notify_reply_post").default(true).notNull(),
+    notifyReplyComment: boolean("notify_reply_comment").default(true).notNull(),
+    notifyAnnouncements: boolean("notify_announcements")
+      .default(true)
+      .notNull(),
+    notifyFollowedTag: boolean("notify_followed_tag").default(true).notNull(),
+    notifyAcceptedAnswer: boolean("notify_accepted_answer")
+      .default(true)
+      .notNull(),
+    emailDigest: text("email_digest", { enum: EMAIL_DIGEST_FREQUENCIES })
+      .default("off")
+      .notNull(),
+    lastDigestAt: timestamp("last_digest_at"),
   },
   (t) => [
     index("user_university_idx").on(t.universityId),
@@ -556,6 +574,9 @@ export const followTag = pgTable(
     universityId: universityRef(),
     userId: text("user_id").notNull(),
     tagId: uuid("tag_id").notNull(),
+    // Per-tag mute: following with notify=false keeps the follow (shows in
+    // "followed tags") but skips FOLLOWED_TAG_POST notifications.
+    notify: boolean("notify").default(true).notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.tagId] }),

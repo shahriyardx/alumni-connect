@@ -109,7 +109,23 @@ test("follow user + notifications read flow", async () => {
 test("follow tag", async () => {
   await callerFor(bob.id).social.followTag({ tag: "Career Advice", on: true });
   expect(await callerFor(bob.id).social.followedTags()).toEqual([
-    "career-advice",
+    { name: "career-advice", notify: true },
+  ]);
+});
+
+test("follow tag: the bell's mute state keeps the follow but turns off notify", async () => {
+  await callerFor(bob.id).social.followTag({
+    tag: "career",
+    on: true,
+    notify: false,
+  });
+  expect(await callerFor(bob.id).social.followedTags()).toEqual([
+    { name: "career", notify: false },
+  ]);
+  // Re-following flips notify back on without creating a duplicate row.
+  await callerFor(bob.id).social.followTag({ tag: "career", on: true });
+  expect(await callerFor(bob.id).social.followedTags()).toEqual([
+    { name: "career", notify: true },
   ]);
 });
 

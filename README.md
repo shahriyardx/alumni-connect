@@ -69,6 +69,22 @@ Optional: unconfirmed ID card uploads stay under `*/staging/`; expire them with 
 
 > The `minio` service in `docker-compose.yml` runs the `pgsty/silo` image, a maintained drop-in fork of `minio/minio` — the official image was pulled from Docker Hub and `quay.io/minio/minio` now requires auth. Same binary, same env vars, same `mc` client; swap back to `minio/minio` if it ever returns to Docker Hub.
 
+### Email digest
+
+There's no cron in this project (demo scale). Instead, `POST /api/digest/run` is an admin-free trigger an external scheduler calls on whatever cadence you like (e.g. hourly) — the route itself decides who's actually due: each user who set **Settings → Notifications → Email digest** to Daily or Weekly gets mailed (via `sendMail`, same dev-console behavior) only once their chosen period has elapsed since their `last_digest_at`, and only with their *unread* notifications created since then. Calling it more often than anyone's period is a no-op for everyone not yet due.
+
+Set `DIGEST_SECRET` in the env (leave empty to disable the route — it 404s). Call it with:
+
+```bash
+curl -X POST https://your-host/api/digest/run -H "Authorization: Bearer $DIGEST_SECRET"
+```
+
+A crontab entry (hourly is enough to serve both daily and weekly subscribers promptly):
+
+```cron
+0 * * * * curl -fsS -X POST https://your-host/api/digest/run -H "Authorization: Bearer $DIGEST_SECRET"
+```
+
 ### Tests
 
 ```bash

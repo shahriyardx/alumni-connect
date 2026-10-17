@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { FeedList } from "@/components/feed-list";
-import { TagFollowButton } from "@/components/follow-button";
+import { TagBell } from "@/components/follow-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { normalizeTag } from "@/lib/tags";
 
@@ -16,7 +16,7 @@ async function Inner({ params }: { params: Promise<{ tag: string }> }) {
           #{tag}
         </h1>
         <div data-slot="tag-follow">
-          <TagFollowButton tag={tag} />
+          <TagBell tag={tag} />
         </div>
       </header>
       <FeedList

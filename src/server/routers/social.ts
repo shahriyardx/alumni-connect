@@ -208,7 +208,14 @@ export const socialRouter = router({
     }),
 
   followTag: memberProcedure
-    .input(z.object({ tag: z.string().min(1), on: z.boolean() }))
+    .input(
+      z.object({
+        tag: z.string().min(1),
+        on: z.boolean(),
+        /** Only meaningful when `on: true` — the tag-page bell's 3rd state. */
+        notify: z.boolean().default(true),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const name = normalizeTags([input.tag])[0];
       if (!name) throw new TRPCError({ code: "BAD_REQUEST" });
@@ -251,18 +258,21 @@ export const socialRouter = router({
           universityId: ctx.me.universityId,
           userId: ctx.me.id,
           tagId: tagRow.id,
+          notify: input.notify,
         })
-        .onConflictDoNothing({ target: [followTag.userId, followTag.tagId] });
-      return { following: true };
+        .onConflictDoUpdate({
+          target: [followTag.userId, followTag.tagId],
+          set: { notify: input.notify },
+        });
+      return { following: true, notify: input.notify };
     }),
 
   followedTags: memberProcedure.query(async ({ ctx }) => {
-    const rows = await ctx.db
-      .select({ name: tag.name })
+    return ctx.db
+      .select({ name: tag.name, notify: followTag.notify })
       .from(followTag)
       .innerJoin(tag, eq(tag.id, followTag.tagId))
       .where(eq(followTag.userId, ctx.me.id))
       .orderBy(asc(tag.name));
-    return rows.map((r) => r.name);
   }),
 });

@@ -1,6 +1,11 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { notification, post, user } from "@/db/schema";
+import {
+  EMAIL_DIGEST_FREQUENCIES,
+  notification,
+  post,
+  user,
+} from "@/db/schema";
 import { memberProcedure, router } from "../trpc";
 
 const PAGE_SIZE = 30;
@@ -72,6 +77,32 @@ export const notificationRouter = router({
         .update(notification)
         .set({ readAt: new Date() })
         .where(and(...conds));
+      return { ok: true as const };
+    }),
+
+  /** `ctx.me` already carries these columns — no extra query. */
+  prefs: memberProcedure.query(({ ctx }) => ({
+    notifyReplyPost: ctx.me.notifyReplyPost,
+    notifyReplyComment: ctx.me.notifyReplyComment,
+    notifyAnnouncements: ctx.me.notifyAnnouncements,
+    notifyFollowedTag: ctx.me.notifyFollowedTag,
+    notifyAcceptedAnswer: ctx.me.notifyAcceptedAnswer,
+    emailDigest: ctx.me.emailDigest,
+  })),
+
+  updatePrefs: memberProcedure
+    .input(
+      z.object({
+        notifyReplyPost: z.boolean(),
+        notifyReplyComment: z.boolean(),
+        notifyAnnouncements: z.boolean(),
+        notifyFollowedTag: z.boolean(),
+        notifyAcceptedAnswer: z.boolean(),
+        emailDigest: z.enum(EMAIL_DIGEST_FREQUENCIES),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.update(user).set(input).where(eq(user.id, ctx.me.id));
       return { ok: true as const };
     }),
 });

@@ -126,6 +126,21 @@ export const commentRouter = router({
       }
       if (recipient === ctx.me.id) recipient = null;
 
+      if (recipient) {
+        const [r] = await ctx.db
+          .select({
+            notifyReplyPost: user.notifyReplyPost,
+            notifyReplyComment: user.notifyReplyComment,
+          })
+          .from(user)
+          .where(
+            and(eq(user.id, recipient), eq(user.universityId, p.universityId)),
+          );
+        const wants =
+          type === "REPLY_POST" ? r?.notifyReplyPost : r?.notifyReplyComment;
+        if (!wants) recipient = null;
+      }
+
       const [row] = await ctx.db
         .insert(comment)
         .values({

@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import { publish } from "../events";
 import { assertCanPostLinks } from "../links";
+import { ANNOUNCEMENTS_PREF_SQL } from "../notification-prefs";
 import { hasAlumniReplySQL, listPosts } from "../queries/posts";
 import { normalizeTags } from "../tags";
 import { audit, isMod, isStaff, memberProcedure, router } from "../trpc";
@@ -228,6 +229,7 @@ export const postRouter = router({
             and status = 'ACTIVE'
             and role in ('STUDENT', 'ALUMNUS')
             and id <> ${ctx.me.id}
+            and ${ANNOUNCEMENTS_PREF_SQL}
           returning user_id
         `);
         await publish(ctx.db, {
@@ -263,7 +265,20 @@ export const postRouter = router({
         const tagFollowers = await ctx.db
           .select({ userId: followTag.userId })
           .from(followTag)
-          .where(inArray(followTag.tagId, tagIds));
+          .innerJoin(
+            user,
+            and(
+              eq(user.id, followTag.userId),
+              eq(user.universityId, universityId),
+            ),
+          )
+          .where(
+            and(
+              inArray(followTag.tagId, tagIds),
+              eq(followTag.notify, true),
+              eq(user.notifyFollowedTag, true),
+            ),
+          );
         for (const { userId } of tagFollowers) {
           if (userId !== ctx.me.id && !recipients.has(userId)) {
             recipients.set(userId, "FOLLOWED_TAG_POST");
@@ -390,7 +405,18 @@ export const postRouter = router({
         if (!c || c.postId !== input.postId || c.deletedAt) {
           throw new TRPCError({ code: "BAD_REQUEST" });
         }
-        if (c.authorId !== ctx.me.id) notifyUserId = c.authorId;
+        if (c.authorId !== ctx.me.id) {
+          const [author] = await ctx.db
+            .select({ pref: user.notifyAcceptedAnswer })
+            .from(user)
+            .where(
+              and(
+                eq(user.id, c.authorId),
+                eq(user.universityId, p.universityId),
+              ),
+            );
+          if (author?.pref) notifyUserId = c.authorId;
+        }
       }
 
       await ctx.db

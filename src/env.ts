@@ -23,6 +23,12 @@ const schema = z.object({
     .optional()
     .transform((v) => v || undefined),
   MAIL_FROM: z.string().default("Alumni Connect <no-reply@alumni.local>"),
+  // Bearer secret for POST /api/digest/run (external scheduler trigger).
+  // Unset = route returns 404.
+  DIGEST_SECRET: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
 });
 
 export const env = schema.parse(process.env);
