@@ -173,9 +173,9 @@ export function FeedView() {
   const showUnansweredTab = staff || me?.role === "ALUMNUS";
   const requested: TabValue = TAB_VALUES.includes(tabParam as TabValue)
     ? (tabParam as TabValue)
-    : "new";
+    : "relevant";
   const tab: TabValue =
-    requested === "unanswered" && !showUnansweredTab ? "new" : requested;
+    requested === "unanswered" && !showUnansweredTab ? "relevant" : requested;
   const feedInput =
     tab === "top"
       ? { sort: "top" as const }
@@ -214,12 +214,12 @@ export function FeedView() {
           <TabsRoot
             value={tab}
             onValueChange={(v) =>
-              router.replace(v === "new" ? "/feed" : `/feed?tab=${v}`)
+              router.replace(v === "relevant" ? "/feed" : `/feed?tab=${v}`)
             }
           >
             <TabsList>
-              <Tab value="new">New</Tab>
               <Tab value="relevant">Most relevant</Tab>
+              <Tab value="new">New</Tab>
               <Tab value="top">Top</Tab>
               <Tab value="announcements">Announcements</Tab>
               {showUnansweredTab && <Tab value="unanswered">Unanswered</Tab>}
