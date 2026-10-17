@@ -11,6 +11,7 @@ import { Markdown } from "./markdown";
 import { ReportDialog } from "./report-dialog";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent } from "./ui/dialog";
+import { Icon } from "./ui/icon";
 import { useToast } from "./ui/toast";
 import { useMe } from "./user-menu";
 import { VoteButtons } from "./vote-buttons";
@@ -21,15 +22,35 @@ type Node = TreeNode<CommentItem>;
 export function CommentThread({
   postId,
   comments,
+  isQuestion,
+  isAuthor,
+  acceptedCommentId,
 }: {
   postId: string;
   comments: CommentItem[];
+  isQuestion: boolean;
+  isAuthor: boolean;
+  acceptedCommentId: string | null;
 }) {
   const roots = buildTree(comments);
+  // Pin the accepted reply first among top-level replies.
+  const ordered = acceptedCommentId
+    ? [...roots].sort((a, b) =>
+        a.id === acceptedCommentId ? -1 : b.id === acceptedCommentId ? 1 : 0,
+      )
+    : roots;
+  const canAccept = isQuestion && isAuthor;
   return (
     <div className="flex flex-col gap-1">
-      {roots.map((n) => (
-        <Comment key={n.id} node={n} depth={0} postId={postId} />
+      {ordered.map((n) => (
+        <Comment
+          key={n.id}
+          node={n}
+          depth={0}
+          postId={postId}
+          canAccept={canAccept}
+          accepted={n.id === acceptedCommentId}
+        />
       ))}
     </div>
   );
@@ -40,11 +61,15 @@ function Comment({
   depth,
   postId,
   replyingTo,
+  canAccept,
+  accepted,
 }: {
   node: Node;
   depth: number;
   postId: string;
   replyingTo?: string;
+  canAccept: boolean;
+  accepted: boolean;
 }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
@@ -61,6 +86,12 @@ function Comment({
       onError: (e) => toast.error(e.message),
     }),
   );
+  const accept = useMutation(
+    trpc.post.accept.mutationOptions({
+      onSuccess: () => void qc.invalidateQueries(trpc.post.pathFilter()),
+      onError: (e) => toast.error(e.message),
+    }),
+  );
 
   // Below MAX_DEPTH, replies stop indenting and render flat with a pointer.
   const nested = depth < MAX_DEPTH;
@@ -71,6 +102,8 @@ function Comment({
       depth={nested ? depth + 1 : depth}
       postId={postId}
       replyingTo={nested ? undefined : (node.author?.name ?? "[removed]")}
+      canAccept={false}
+      accepted={false}
     />
   ));
   const alumnus = node.author?.role === "ALUMNUS";
@@ -93,6 +126,12 @@ function Comment({
           <AuthorLine author={node.author} at={node.createdAt} size={32} />
         ) : (
           <span className="text-sm text-muted-foreground">Removed comment</span>
+        )}
+        {accepted && (
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <Icon name="check_circle" filled size={14} />
+            Accepted
+          </span>
         )}
         {mode === "edit" ? (
           <CommentForm
@@ -130,6 +169,27 @@ function Comment({
             >
               Reply
             </Button>
+            {canAccept && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={accepted ? "cancel" : "check_circle"}
+                className={
+                  accepted
+                    ? "text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }
+                loading={accept.isPending}
+                onClick={() =>
+                  accept.mutate({
+                    postId,
+                    commentId: accepted ? null : node.id,
+                  })
+                }
+              >
+                {accepted ? "Unaccept" : "Accept"}
+              </Button>
+            )}
             {node.author && me?.id !== node.author.id && (
               <ReportDialog
                 targetType="COMMENT"

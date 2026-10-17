@@ -1,9 +1,10 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "@/db";
 import {
   attachment,
+  comment,
   followTag,
   followUser,
   notification,
@@ -11,6 +12,7 @@ import {
   post,
   postTag,
   tag,
+  user,
 } from "@/db/schema";
 import { publish } from "../events";
 import { assertCanPostLinks } from "../links";
@@ -100,17 +102,47 @@ export const postRouter = router({
     .input(
       z.object({
         q: z.string().min(1).max(200),
+        tag: z.string().optional(),
+        department: z.string().optional(),
+        hasAlumniAnswer: z.boolean().optional(),
+        solved: z.boolean().optional(),
+        kind: z.enum(POST_KINDS).optional(),
+        range: z.enum(["any", "week", "month", "year"]).default("any"),
         cursor: z.number().int().min(0).default(0),
       }),
     )
-    .query(({ ctx, input }) =>
-      listPosts(ctx.db, ctx.me.id, {
-        where: sql`${post.search} @@ websearch_to_tsquery('english', ${input.q})`,
+    .query(({ ctx, input }) => {
+      const conds = [
+        sql`${post.search} @@ websearch_to_tsquery('english', ${input.q})`,
+      ];
+      if (input.tag) {
+        conds.push(
+          sql`exists (select 1 from post_tag pt join tag t on t.id = pt.tag_id where pt.post_id = post.id and t.name = ${input.tag})`,
+        );
+      }
+      if (input.department) {
+        conds.push(sql`lower(${user.department}) = lower(${input.department})`);
+      }
+      if (input.hasAlumniAnswer) {
+        conds.push(
+          sql`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`,
+        );
+      }
+      if (input.solved) conds.push(sql`${post.acceptedCommentId} is not null`);
+      if (input.kind) conds.push(eq(post.kind, input.kind));
+      if (input.range !== "any") {
+        const days = { week: 7, month: 30, year: 365 }[input.range];
+        conds.push(
+          gte(post.createdAt, new Date(Date.now() - days * 86_400_000)),
+        );
+      }
+      return listPosts(ctx.db, ctx.me.id, {
+        where: and(...conds),
         orderBy: "rank",
         rankQuery: input.q,
         offset: input.cursor,
-      }),
-    ),
+      });
+    }),
 
   byId: memberProcedure
     .input(z.object({ id: z.string().uuid() }))
@@ -322,6 +354,77 @@ export const postRouter = router({
 
       if (removed && p.authorId !== ctx.me.id) {
         await audit(ctx.db, p.universityId, ctx.me.id, "post.remove", p.id);
+      }
+
+      return { ok: true as const };
+    }),
+
+  /** Only the asker, on a QUESTION. `commentId: null` un-accepts. */
+  accept: memberProcedure
+    .input(
+      z.object({
+        postId: z.string().uuid(),
+        commentId: z.string().uuid().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [p] = await ctx.db
+        .select()
+        .from(post)
+        .where(and(eq(post.id, input.postId), isNull(post.deletedAt)));
+      if (!p) throw new TRPCError({ code: "NOT_FOUND" });
+      if (p.authorId !== ctx.me.id) throw new TRPCError({ code: "FORBIDDEN" });
+      if (p.kind !== "QUESTION") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only questions can have an accepted answer",
+        });
+      }
+
+      let notifyUserId: string | null = null;
+      if (input.commentId) {
+        const [c] = await ctx.db
+          .select({
+            postId: comment.postId,
+            authorId: comment.authorId,
+            deletedAt: comment.deletedAt,
+          })
+          .from(comment)
+          .where(eq(comment.id, input.commentId));
+        if (!c || c.postId !== input.postId || c.deletedAt) {
+          throw new TRPCError({ code: "BAD_REQUEST" });
+        }
+        if (c.authorId !== ctx.me.id) notifyUserId = c.authorId;
+      }
+
+      await ctx.db
+        .update(post)
+        .set({ acceptedCommentId: input.commentId })
+        .where(eq(post.id, input.postId));
+
+      if (notifyUserId) {
+        await ctx.db.insert(notification).values({
+          universityId: p.universityId,
+          userId: notifyUserId,
+          type: "ACCEPTED_ANSWER",
+          actorId: ctx.me.id,
+          postId: input.postId,
+          commentId: input.commentId,
+        });
+      }
+
+      await publish(ctx.db, {
+        universityId: p.universityId,
+        kind: "post",
+        postId: input.postId,
+        authorId: ctx.me.id,
+      });
+      if (notifyUserId) {
+        await publish(ctx.db, {
+          universityId: p.universityId,
+          kind: "notification",
+          userId: notifyUserId,
+        });
       }
 
       return { ok: true as const };

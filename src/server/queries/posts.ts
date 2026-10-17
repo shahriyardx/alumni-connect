@@ -25,6 +25,7 @@ export type PostListItem = {
   myVote: -1 | 0 | 1;
   bookmarked: boolean;
   hasAlumnusReply: boolean;
+  acceptedCommentId: string | null;
 };
 
 const excerptOf = (body: string) =>
@@ -48,8 +49,9 @@ export async function listPosts(
       : opts.orderBy === "top"
         ? [desc(post.score), desc(post.createdAt)]
         : [
+            // Solved posts get a small boost over plain text rank.
             desc(
-              sql`ts_rank(${post.search}, websearch_to_tsquery('english', ${opts.rankQuery ?? ""}))`,
+              sql`ts_rank(${post.search}, websearch_to_tsquery('english', ${opts.rankQuery ?? ""})) + (case when ${post.acceptedCommentId} is not null then 0.05 else 0 end)`,
             ),
           ];
 
@@ -63,6 +65,7 @@ export async function listPosts(
       updatedAt: post.updatedAt,
       score: post.score,
       commentCount: post.commentCount,
+      acceptedCommentId: post.acceptedCommentId,
       author: {
         id: user.id,
         name: user.name,
@@ -104,6 +107,7 @@ export async function listPosts(
     myVote: (r.myVote ?? 0) as -1 | 0 | 1,
     bookmarked: !!r.bookmarked,
     hasAlumnusReply: !!r.hasAlumnusReply,
+    acceptedCommentId: r.acceptedCommentId,
   }));
 
   return {

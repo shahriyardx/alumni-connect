@@ -191,7 +191,13 @@ export function PostView({ id }: { id: string }) {
         </h2>
         <CommentForm postId={p.id} />
         {comments.data ? (
-          <CommentThread postId={p.id} comments={comments.data} />
+          <CommentThread
+            postId={p.id}
+            comments={comments.data}
+            isQuestion={p.kind === "QUESTION"}
+            isAuthor={me?.id === p.author.id}
+            acceptedCommentId={p.acceptedCommentId}
+          />
         ) : (
           <div className="grid place-items-center py-8">
             <Spinner />

@@ -48,6 +48,12 @@ function Text({ n }: { n: Item }) {
           {actor} posted an announcement: {title}
         </>
       );
+    case "ACCEPTED_ANSWER":
+      return (
+        <>
+          {actor} accepted your answer on {title}
+        </>
+      );
   }
 }
 

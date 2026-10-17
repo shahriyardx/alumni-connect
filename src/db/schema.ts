@@ -359,6 +359,11 @@ export const post = pgTable(
     body: text("body").notNull(),
     score: integer("score").default(0).notNull(),
     commentCount: integer("comment_count").default(0).notNull(),
+    // QUESTION only; set by the post's author via post.accept. The FK's
+    // ON DELETE SET NULL is scoped to this column alone in the migration SQL
+    // (a plain composite SET NULL would also null university_id, which is
+    // NOT NULL — see the same note on `attachment`'s post FK).
+    acceptedCommentId: uuid("accepted_comment_id"),
     createdAt: created(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -381,6 +386,11 @@ export const post = pgTable(
       name: "post_author_fk",
       columns: [t.authorId, t.universityId],
       foreignColumns: [user.id, user.universityId],
+    }),
+    foreignKey({
+      name: "post_accepted_comment_fk",
+      columns: [t.acceptedCommentId, t.universityId],
+      foreignColumns: [comment.id, comment.universityId],
     }),
     tenantPolicy("post", t.universityId),
   ],
@@ -563,6 +573,7 @@ export const NOTIFICATION_TYPES = [
   "FOLLOWED_USER_POST",
   "FOLLOWED_TAG_POST",
   "ANNOUNCEMENT",
+  "ACCEPTED_ANSWER",
 ] as const;
 export const notification = pgTable(
   "notification",

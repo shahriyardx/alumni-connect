@@ -453,6 +453,224 @@ describe("announcements", () => {
   });
 });
 
+describe("post.accept", () => {
+  test("only the author can accept, and only on a QUESTION", async () => {
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Which supervisor for ML thesis?",
+      body: "b",
+      tags: [],
+    });
+    const { id: commentId } = await callerFor(bob.id).comment.create({
+      postId,
+      body: "Try Dr. X",
+    });
+
+    await expect(
+      callerFor(bob.id).post.accept({ postId, commentId }),
+    ).rejects.toThrow(/FORBIDDEN/);
+
+    const staff = await makeUser(uniId, { role: "STAFF", createdAt: old });
+    const { id: annId } = await callerFor(staff.id).post.create({
+      title: "Campus closed Friday",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    const { id: annCommentId } = await callerFor(alice.id).comment.create({
+      postId: annId,
+      body: "noted",
+    });
+    await expect(
+      callerFor(staff.id).post.accept({ postId: annId, commentId: annCommentId }),
+    ).rejects.toThrow(/Only questions/);
+  });
+
+  test("the comment must belong to the post and not be deleted", async () => {
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Post with a comment",
+      body: "b",
+      tags: [],
+    });
+    const other = await callerFor(alice.id).post.create({
+      title: "A different post entirely",
+      body: "b",
+      tags: [],
+    });
+    const { id: otherComment } = await callerFor(bob.id).comment.create({
+      postId: other.id,
+      body: "wrong post",
+    });
+    await expect(
+      callerFor(alice.id).post.accept({ postId, commentId: otherComment }),
+    ).rejects.toThrow(/BAD_REQUEST/);
+
+    const { id: deletedComment } = await callerFor(bob.id).comment.create({
+      postId,
+      body: "will be removed",
+    });
+    await callerFor(bob.id).comment.remove({ id: deletedComment });
+    await expect(
+      callerFor(alice.id).post.accept({ postId, commentId: deletedComment }),
+    ).rejects.toThrow(/BAD_REQUEST/);
+  });
+
+  test("accept, un-accept, notifies the comment author, tenant-isolated", async () => {
+    const { id: postId } = await callerFor(alice.id).post.create({
+      title: "Who can review my CV?",
+      body: "b",
+      tags: [],
+    });
+    const { id: commentId } = await callerFor(alum.id).comment.create({
+      postId,
+      body: "I can take a look",
+    });
+
+    // A comment id from another tenant: RLS hides it, so this looks like
+    // "no such comment" rather than leaking a FORBIDDEN/NOT_FOUND distinction.
+    const otherUniId = (await makeUniversity()).id;
+    const otherUser = await makeUser(otherUniId, { createdAt: old });
+    const otherPost = await callerFor(otherUser.id).post.create({
+      title: "Other tenant post",
+      body: "b",
+      tags: [],
+    });
+    const otherComment = await callerFor(otherUser.id).comment.create({
+      postId: otherPost.id,
+      body: "other tenant comment",
+    });
+    await expect(
+      callerFor(alice.id).post.accept({
+        postId,
+        commentId: otherComment.id,
+      }),
+    ).rejects.toThrow(/BAD_REQUEST/);
+
+    await callerFor(alice.id).post.accept({ postId, commentId });
+    expect((await callerFor(bob.id).post.byId({ id: postId })).acceptedCommentId).toBe(
+      commentId,
+    );
+    const notif = await adminDb
+      .select()
+      .from(notification)
+      .where(eq(notification.type, "ACCEPTED_ANSWER"));
+    expect(notif).toHaveLength(1);
+    expect(notif[0]).toMatchObject({
+      userId: alum.id,
+      actorId: alice.id,
+      postId,
+      commentId,
+    });
+
+    await callerFor(alice.id).post.accept({ postId, commentId: null });
+    expect(
+      (await callerFor(bob.id).post.byId({ id: postId })).acceptedCommentId,
+    ).toBeNull();
+  });
+});
+
+describe("post.search filters", () => {
+  test("tag, department, hasAlumniAnswer, solved, kind, date range, combined", async () => {
+    const staff = await makeUser(uniId, {
+      role: "STAFF",
+      department: "Admin",
+      createdAt: old,
+    });
+    const { id: annId } = await callerFor(staff.id).post.create({
+      title: "Announce internship search deadline",
+      body: "b",
+      kind: "ANNOUNCEMENT",
+      tags: [],
+    });
+    const cs = await makeUser(uniId, { department: "CSE", createdAt: old });
+    const ee = await makeUser(uniId, { department: "EEE", createdAt: old });
+    const solvedQ = await callerFor(cs.id).post.create({
+      title: "Internship search tips for CSE",
+      body: "b",
+      tags: ["career"],
+    });
+    const { id: answerId } = await callerFor(alum.id).comment.create({
+      postId: solvedQ.id,
+      body: "Here is my advice",
+    });
+    await callerFor(cs.id).post.accept({ postId: solvedQ.id, commentId: answerId });
+
+    const unsolvedQ = await callerFor(ee.id).post.create({
+      title: "Internship search tips for EEE",
+      body: "b",
+      tags: ["career"],
+    });
+    await callerFor(bob.id).comment.create({
+      postId: unsolvedQ.id,
+      body: "no alumni reply here",
+    });
+
+    const otherUser = await makeUser((await makeUniversity()).id, {
+      createdAt: old,
+    });
+    await callerFor(otherUser.id).post.create({
+      title: "Internship search in another tenant",
+      body: "b",
+      tags: [],
+    });
+
+    const byTag = await callerFor(bob.id).post.search({
+      q: "internship",
+      tag: "career",
+    });
+    expect(byTag.items.map((i) => i.id).sort()).toEqual(
+      [solvedQ.id, unsolvedQ.id].sort(),
+    );
+
+    const byDept = await callerFor(bob.id).post.search({
+      q: "internship",
+      department: "CSE",
+    });
+    expect(byDept.items.map((i) => i.id)).toEqual([solvedQ.id]);
+
+    const byAlumni = await callerFor(bob.id).post.search({
+      q: "internship",
+      hasAlumniAnswer: true,
+    });
+    expect(byAlumni.items.map((i) => i.id)).toEqual([solvedQ.id]);
+
+    const bySolved = await callerFor(bob.id).post.search({
+      q: "internship",
+      solved: true,
+    });
+    expect(bySolved.items.map((i) => i.id)).toEqual([solvedQ.id]);
+
+    const byKind = await callerFor(bob.id).post.search({
+      q: "internship",
+      kind: "ANNOUNCEMENT",
+    });
+    expect(byKind.items.map((i) => i.title)).toEqual([
+      "Announce internship search deadline",
+    ]);
+
+    const byRange = await callerFor(bob.id).post.search({
+      q: "internship",
+      range: "week",
+    });
+    expect(byRange.items.map((i) => i.id).sort()).toEqual(
+      [solvedQ.id, unsolvedQ.id, annId].sort(),
+    );
+
+    const combined = await callerFor(bob.id).post.search({
+      q: "internship",
+      tag: "career",
+      solved: true,
+      hasAlumniAnswer: true,
+      department: "CSE",
+      kind: "QUESTION",
+      range: "week",
+    });
+    expect(combined.items.map((i) => i.id)).toEqual([solvedQ.id]);
+
+    // Solved posts rank slightly above an equally-matching unsolved one.
+    expect(byTag.items[0]?.id).toBe(solvedQ.id);
+  });
+});
+
 test("link gate matches what the markdown renderer turns into links", () => {
   const fresh = { createdAt: new Date() } as Me;
   for (const t of [

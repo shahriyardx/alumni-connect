@@ -14,7 +14,15 @@ type FeedInput =
       kind?: "QUESTION" | "ANNOUNCEMENT";
       unanswered?: boolean;
     }
-  | { q: string }
+  | {
+      q: string;
+      tag?: string;
+      department?: string;
+      hasAlumniAnswer?: boolean;
+      solved?: boolean;
+      kind?: "QUESTION" | "ANNOUNCEMENT";
+      range?: "any" | "week" | "month" | "year";
+    }
   | { bookmarks: true };
 
 export function FeedList({

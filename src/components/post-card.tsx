@@ -99,13 +99,22 @@ export function PostCard({ post }: { post: PostListItem }) {
           <Icon name="chat_bubble" size={16} />
           {post.commentCount}
         </span>
-        {post.hasAlumnusReply && (
+        {post.acceptedCommentId ? (
           <span
-            className={`${pill} border border-border text-muted-foreground`}
+            className={`${pill} bg-emerald-500/15 text-emerald-600 dark:text-emerald-400`}
           >
-            <Icon name="school" size={16} />
-            Alumni replied
+            <Icon name="check_circle" filled size={16} />
+            Solved
           </span>
+        ) : (
+          post.hasAlumnusReply && (
+            <span
+              className={`${pill} border border-border text-muted-foreground`}
+            >
+              <Icon name="school" size={16} />
+              Alumni replied
+            </span>
+          )
         )}
         {post.tags.length > 0 && (
           <span className="relative z-10 ml-auto flex flex-wrap gap-x-2.5 gap-y-1 text-xs max-sm:w-full max-sm:pt-1">
