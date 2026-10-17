@@ -18,6 +18,30 @@ const field = <T extends "string" | "number" | "date" | "boolean">(type: T) =>
 const hidden = <T extends "string" | "boolean">(type: T) =>
   ({ ...field(type), returned: false }) as const;
 
+/**
+ * True once a non-STUDENT/ALUMNUS account's invite/application grant can no
+ * longer be trusted: still unverified, and sitting past the same grace
+ * window every other "still mid-signup?" check in this app uses. Its invite
+ * may since have been revoked (see invites.revoke, which deletes the row
+ * outright instead — this is the backstop for the window before a revoke,
+ * or for an invite that simply outlived its own TTL) — nothing else
+ * re-checks the grant once the user row exists, so every path that can flip
+ * `emailVerified` must consult this. STUDENT/ALUMNUS accounts carry no such
+ * grant and are never affected.
+ */
+function grantExpired(row: {
+  role: schema.Role;
+  createdAt: Date;
+  emailVerified: boolean;
+}) {
+  return (
+    row.role !== "STUDENT" &&
+    row.role !== "ALUMNUS" &&
+    !row.emailVerified &&
+    row.createdAt < graceCutoff()
+  );
+}
+
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
@@ -29,21 +53,16 @@ export const auth = betterAuth({
   },
   emailVerification: {
     autoSignInAfterVerification: true,
-    // A STAFF/ADMIN/MODERATOR/OWNER role is granted by an invite or
-    // application at sign-up, before OTP (see the create.before hook
-    // below) — nothing re-checks that grant at verification time. Once such
-    // an account has sat unverified past the same grace window every other
-    // "still mid-signup?" check in this app uses, treat it as abandoned: its
-    // invite may since have been revoked, or simply outlived its own TTL,
-    // and verifying would hand out the role regardless. (STUDENT/ALUMNUS
-    // accounts carry no such grant, so they're unaffected.)
+    // Gives the main /email-otp/verify-email path a check before the OTP
+    // itself is even consumed. Not the only guard — see databaseHooks.user
+    // .update.before below, which is the one every path routes through.
     beforeEmailVerification: async (u) => {
-      const row = u as unknown as { role: schema.Role; createdAt: Date };
-      if (
-        row.role !== "STUDENT" &&
-        row.role !== "ALUMNUS" &&
-        row.createdAt < graceCutoff()
-      ) {
+      const row = u as unknown as {
+        role: schema.Role;
+        createdAt: Date;
+        emailVerified: boolean;
+      };
+      if (grantExpired(row)) {
         throw new APIError("FORBIDDEN", {
           message: "This invitation has expired, ask for a new one",
         });
@@ -242,6 +261,37 @@ export const auth = betterAuth({
           await db
             .delete(schema.pendingSignup)
             .where(eq(schema.pendingSignup.email, u.email));
+        },
+      },
+      update: {
+        // The root guard: better-auth calls this on *every*
+        // internalAdapter.updateUser, whichever endpoint triggers it —
+        // /email-otp/verify-email, /sign-in/email-otp (an existing
+        // unverified row gets promoted straight to a session), and
+        // /email-otp/reset-password all flip emailVerified this way, and
+        // none of them re-check an invite/application grant on their own.
+        // Our app's own user writes (role changes, status, etc.) go through
+        // plain Drizzle, never better-auth's adapter, so this never fires
+        // for them.
+        before: async (data, ctx) => {
+          if (data.emailVerified !== true) return;
+          const email = (
+            ctx?.body as { email?: string } | undefined
+          )?.email?.toLowerCase?.();
+          if (!email) return;
+          const [existing] = await db
+            .select({
+              role: schema.user.role,
+              createdAt: schema.user.createdAt,
+              emailVerified: schema.user.emailVerified,
+            })
+            .from(schema.user)
+            .where(eq(schema.user.email, email));
+          if (existing && grantExpired(existing)) {
+            throw new APIError("FORBIDDEN", {
+              message: "This invitation has expired, ask for a new one",
+            });
+          }
         },
       },
     },

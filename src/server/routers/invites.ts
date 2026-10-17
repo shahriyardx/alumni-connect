@@ -237,6 +237,19 @@ export const invitesRouter = router({
           code: "FORBIDDEN",
           message: "Only the owner can revoke admin invites",
         });
+      // An unverified account this invite already created (accept() ran,
+      // sign-up ran, OTP never did) is revoked too, not just the invite —
+      // otherwise it could still complete verification through a path the
+      // auth.ts update.before guard's grace window doesn't close (e.g.
+      // inside the 15 minutes). No age check here: an explicit revoke kills
+      // it outright, however fresh.
+      const staleCards = await clearStaleUnverified(
+        ctx.db,
+        and(
+          eq(user.email, inv.email),
+          eq(user.universityId, ctx.me.universityId),
+        ) as SQL,
+      );
       // Cascades to any pending_signup row this invite had started.
       await ctx.db
         .delete(invite)
@@ -246,6 +259,7 @@ export const invitesRouter = router({
             eq(invite.universityId, ctx.me.universityId),
           ),
         );
+      await removeAll(staleCards);
       await audit(
         ctx.db,
         ctx.me.universityId,

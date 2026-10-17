@@ -53,15 +53,16 @@ const signUp = (email: string, name = "New Member") =>
 /**
  * There's no SMTP in tests (see src/server/mail.ts), so the OTP is printed
  * to the console instead of sent — capture it the same way a developer
- * reads it in dev.
+ * reads it in dev. Works for any call that ends up triggering
+ * sendVerificationOTP (sign-up, send-verification-otp, request-password-reset).
  */
-async function signUpAndCaptureOtp(email: string, name: string) {
+async function captureOtp(send: () => Promise<unknown>) {
   const logs: string[] = [];
   const logSpy = spyOn(console, "log").mockImplementation((msg?: unknown) => {
     logs.push(String(msg));
   });
   try {
-    await signUp(email, name);
+    await send();
   } finally {
     logSpy.mockRestore();
   }
@@ -69,6 +70,9 @@ async function signUpAndCaptureOtp(email: string, name: string) {
   if (!otp) throw new Error("OTP was not printed to the console");
   return otp;
 }
+
+const signUpAndCaptureOtp = (email: string, name: string) =>
+  captureOtp(() => signUp(email, name));
 
 describe("invites.create", () => {
   test("admin creates a MODERATOR invite; a dup open invite is replaced, not stacked", async () => {
@@ -578,5 +582,102 @@ describe("the sign-up hook's own invite guards (not just invites.* NOT_FOUND)", 
       body: { email: "fresh-verify@x.edu", otp },
     });
     expect((await userByEmail("fresh-verify@x.edu")).emailVerified).toBe(true);
+  });
+
+  test("I1: a never-verified STUDENT account is unaffected by the update.before guard, even when stale", async () => {
+    await adminDb.insert(pendingSignup).values({
+      email: "stale-student@x.edu",
+      universityId: uniId,
+      department: "CSE",
+      role: "STUDENT",
+      status: "PENDING",
+      idCardKey: "dummy-card-key",
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+    });
+    const otp = await signUpAndCaptureOtp(
+      "stale-student@x.edu",
+      "Stale Student",
+    );
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(user.email, "stale-student@x.edu"));
+
+    await auth.api.verifyEmailOTP({
+      body: { email: "stale-student@x.edu", otp },
+    });
+    expect((await userByEmail("stale-student@x.edu")).emailVerified).toBe(true);
+  });
+
+  test("I1 (security follow-up): a stale invited account can't be verified via reset-password OTP", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "resetpw@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "Reset PW" });
+    await signUp("resetpw@x.edu", "Reset PW");
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(user.email, "resetpw@x.edu"));
+
+    const otp = await captureOtp(() =>
+      auth.api.requestPasswordResetEmailOTP({
+        body: { email: "resetpw@x.edu" },
+      }),
+    );
+    await expect(
+      auth.api.resetPasswordEmailOTP({
+        body: { email: "resetpw@x.edu", otp, password: "newpassword123" },
+      }),
+    ).rejects.toThrow();
+    expect((await userByEmail("resetpw@x.edu")).emailVerified).toBe(false);
+  });
+
+  test("I1 (security follow-up): a stale invited account can't be verified via sign-in OTP", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "signinotp@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "Sign In OTP" });
+    await signUp("signinotp@x.edu", "Sign In OTP");
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(user.email, "signinotp@x.edu"));
+
+    const otp = await captureOtp(() =>
+      auth.api.sendVerificationOTP({
+        body: { email: "signinotp@x.edu", type: "sign-in" },
+      }),
+    );
+    await expect(
+      auth.api.signInEmailOTP({
+        body: { email: "signinotp@x.edu", otp },
+      }),
+    ).rejects.toThrow();
+    expect((await userByEmail("signinotp@x.edu")).emailVerified).toBe(false);
+  });
+
+  test("I1 (security follow-up): revoking an invite inside the grace window still removes the unverified account", async () => {
+    const r = await callerFor(admin.id).invites.create({
+      email: "revokegrace@x.edu",
+      role: "STAFF",
+      department: "CSE",
+    });
+    const token = tokenOf(r);
+    await callerFor(null).invites.accept({ token, name: "Revoke Grace" });
+    await signUp("revokegrace@x.edu", "Revoke Grace"); // fresh, well within 15 min
+    expect(await userByEmail("revokegrace@x.edu")).toBeDefined();
+
+    const row = await inviteByEmail("revokegrace@x.edu");
+    await callerFor(admin.id).invites.revoke({ id: row.id });
+
+    // Gone outright, not just the invite, even though nothing aged out.
+    expect(await userByEmail("revokegrace@x.edu")).toBeUndefined();
   });
 });
