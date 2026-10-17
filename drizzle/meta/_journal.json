@@ -15,6 +15,13 @@
       "when": 1792255677063,
       "tag": "0001_drop_email_digest",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792255788723,
+      "tag": "0002_follow_post",
+      "breakpoints": true
     }
   ]
 }

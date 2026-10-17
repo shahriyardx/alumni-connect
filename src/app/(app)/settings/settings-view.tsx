@@ -209,6 +209,7 @@ const PREF_ROWS = [
   { key: "notifyAnnouncements", label: "Announcements" },
   { key: "notifyFollowedTag", label: "Activity on followed tags" },
   { key: "notifyAcceptedAnswer", label: "Accepted answer" },
+  { key: "notifyFollowedPost", label: "New comments on posts I follow" },
 ] as const;
 
 function NotificationPrefs() {

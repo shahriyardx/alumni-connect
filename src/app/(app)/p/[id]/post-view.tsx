@@ -7,6 +7,7 @@ import { AuthorLine } from "@/components/author-line";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { CommentForm } from "@/components/comment-form";
 import { CommentThread } from "@/components/comment-thread";
+import { FollowPostButton } from "@/components/follow-post-button";
 import { Markdown } from "@/components/markdown";
 import { ReportDialog } from "@/components/report-dialog";
 import { AnnouncementBadge } from "@/components/ui/badge";
@@ -108,6 +109,7 @@ export function PostView({ id }: { id: string }) {
             </span>
           </div>
           <div className="ml-auto flex items-center">
+            <FollowPostButton postId={p.id} following={p.following} />
             <BookmarkButton postId={p.id} bookmarked={p.bookmarked} />
             <Menu.Root>
               <Menu.Trigger

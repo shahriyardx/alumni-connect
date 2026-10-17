@@ -85,6 +85,7 @@ export const notificationRouter = router({
     notifyAnnouncements: ctx.me.notifyAnnouncements,
     notifyFollowedTag: ctx.me.notifyFollowedTag,
     notifyAcceptedAnswer: ctx.me.notifyAcceptedAnswer,
+    notifyFollowedPost: ctx.me.notifyFollowedPost,
   })),
 
   updatePrefs: memberProcedure
@@ -95,6 +96,7 @@ export const notificationRouter = router({
         notifyAnnouncements: z.boolean(),
         notifyFollowedTag: z.boolean(),
         notifyAcceptedAnswer: z.boolean(),
+        notifyFollowedPost: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

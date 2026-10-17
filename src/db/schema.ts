@@ -113,6 +113,7 @@ export const user = pgTable(
     notifyAcceptedAnswer: boolean("notify_accepted_answer")
       .default(true)
       .notNull(),
+    notifyFollowedPost: boolean("notify_followed_post").default(true).notNull(),
     // Platform-only: the status a platform ban replaced, restored on unban.
     statusBeforeBan: text("status_before_ban", { enum: STATUSES }),
     // Set only by a platform ban, cleared only by the platform unban; while
@@ -546,6 +547,31 @@ export const bookmark = pgTable(
   ],
 );
 
+/** Notified on every new comment. The author follows their own post on create. */
+export const followPost = pgTable(
+  "follow_post",
+  {
+    universityId: universityRef(),
+    userId: text("user_id").notNull(),
+    postId: uuid("post_id").notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.postId] }),
+    index("follow_post_post_idx").on(t.postId),
+    foreignKey({
+      name: "follow_post_user_fk",
+      columns: [t.userId, t.universityId],
+      foreignColumns: [user.id, user.universityId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "follow_post_post_fk",
+      columns: [t.postId, t.universityId],
+      foreignColumns: [post.id, post.universityId],
+    }).onDelete("cascade"),
+  ],
+);
+
 export const followUser = pgTable(
   "follow_user",
   {
@@ -600,6 +626,7 @@ export const NOTIFICATION_TYPES = [
   "REPLY_COMMENT",
   "FOLLOWED_USER_POST",
   "FOLLOWED_TAG_POST",
+  "FOLLOWED_POST_COMMENT",
   "ANNOUNCEMENT",
   "ACCEPTED_ANSWER",
   "PLATFORM_ANNOUNCEMENT",

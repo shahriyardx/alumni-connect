@@ -1,7 +1,14 @@
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachment, comment, notification, post, user } from "@/db/schema";
+import {
+  attachment,
+  comment,
+  followPost,
+  notification,
+  post,
+  user,
+} from "@/db/schema";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import {
   type AttachmentItem,
@@ -159,6 +166,8 @@ export const commentRouter = router({
         type = "REPLY_POST";
       }
       if (recipient === ctx.me.id) recipient = null;
+      // Gets REPLY_* (or opted out of it): never also FOLLOWED_POST_COMMENT.
+      const directTarget = recipient;
 
       if (recipient) {
         const [r] = await ctx.db
@@ -205,16 +214,49 @@ export const commentRouter = router({
         });
       }
 
+      const followers = await ctx.db
+        .select({ userId: followPost.userId })
+        .from(followPost)
+        .innerJoin(
+          user,
+          and(
+            eq(user.id, followPost.userId),
+            eq(user.universityId, followPost.universityId),
+          ),
+        )
+        .where(
+          and(
+            eq(followPost.postId, input.postId),
+            eq(user.notifyFollowedPost, true),
+            eq(user.status, "ACTIVE"),
+          ),
+        );
+      const watchers = followers
+        .map((f) => f.userId)
+        .filter((id) => id !== ctx.me.id && id !== directTarget);
+      if (watchers.length > 0) {
+        await ctx.db.insert(notification).values(
+          watchers.map((userId) => ({
+            universityId: p.universityId,
+            userId,
+            type: "FOLLOWED_POST_COMMENT" as const,
+            actorId: ctx.me.id,
+            postId: input.postId,
+            commentId: row.id,
+          })),
+        );
+      }
+
       await publish(ctx.db, {
         universityId: p.universityId,
         kind: "comment",
         postId: input.postId,
       });
-      if (recipient) {
+      for (const userId of [...(recipient ? [recipient] : []), ...watchers]) {
         await publish(ctx.db, {
           universityId: p.universityId,
           kind: "notification",
-          userId: recipient,
+          userId,
         });
       }
 

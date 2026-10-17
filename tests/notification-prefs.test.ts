@@ -176,6 +176,7 @@ describe("notification.prefs / updatePrefs", () => {
       notifyAnnouncements: true,
       notifyFollowedTag: true,
       notifyAcceptedAnswer: true,
+      notifyFollowedPost: true,
     });
     await c.notification.updatePrefs({
       notifyReplyPost: false,
@@ -183,6 +184,7 @@ describe("notification.prefs / updatePrefs", () => {
       notifyAnnouncements: true,
       notifyFollowedTag: true,
       notifyAcceptedAnswer: true,
+      notifyFollowedPost: true,
     });
     expect(await c.notification.prefs()).toMatchObject({
       notifyReplyPost: false,

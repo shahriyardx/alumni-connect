@@ -5,6 +5,7 @@ import type { Tx } from "@/db";
 import {
   attachment,
   comment,
+  followPost,
   followTag,
   followUser,
   notification,
@@ -164,8 +165,23 @@ export const postRouter = router({
         .from(attachment)
         .where(eq(attachment.postId, input.id))
         .orderBy(attachment.createdAt);
+      const [follow] = await ctx.db
+        .select({ x: followPost.postId })
+        .from(followPost)
+        .where(
+          and(
+            eq(followPost.userId, ctx.me.id),
+            eq(followPost.postId, input.id),
+          ),
+        );
       const canEdit = row.authorId === ctx.me.id || isMod(ctx.me.role);
-      return { ...item, body: row.body, attachments, canEdit };
+      return {
+        ...item,
+        body: row.body,
+        attachments,
+        canEdit,
+        following: !!follow,
+      };
     }),
 
   create: memberProcedure
@@ -205,6 +221,9 @@ export const postRouter = router({
           body: input.body,
         })
         .returning({ id: post.id });
+      await ctx.db
+        .insert(followPost)
+        .values({ universityId, userId: ctx.me.id, postId: row.id });
 
       const tagIds = await setPostTags(ctx.db, universityId, row.id, names);
 

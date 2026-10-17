@@ -5,6 +5,7 @@ import type { Tx } from "@/db";
 import {
   bookmark,
   comment,
+  followPost,
   followTag,
   followUser,
   post,
@@ -182,6 +183,45 @@ export const socialRouter = router({
           );
       }
       return { bookmarked: input.on };
+    }),
+
+  /** Get a FOLLOWED_POST_COMMENT notification for each new comment. */
+  followPost: memberProcedure
+    .input(z.object({ postId: z.string().uuid(), on: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const [p] = await ctx.db
+        .select({ id: post.id })
+        .from(post)
+        .where(
+          and(
+            eq(post.id, input.postId),
+            eq(post.universityId, ctx.me.universityId),
+            isNull(post.deletedAt),
+          ),
+        );
+      if (!p) throw new TRPCError({ code: "NOT_FOUND" });
+      if (input.on) {
+        await ctx.db
+          .insert(followPost)
+          .values({
+            universityId: ctx.me.universityId,
+            userId: ctx.me.id,
+            postId: input.postId,
+          })
+          .onConflictDoNothing({
+            target: [followPost.userId, followPost.postId],
+          });
+      } else {
+        await ctx.db
+          .delete(followPost)
+          .where(
+            and(
+              eq(followPost.userId, ctx.me.id),
+              eq(followPost.postId, input.postId),
+            ),
+          );
+      }
+      return { following: input.on };
     }),
 
   bookmarks: memberProcedure

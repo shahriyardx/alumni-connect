@@ -7,7 +7,7 @@ export async function truncateAll(db: {
 }) {
   await db.execute(sql`
     truncate university, "user", session, account, verification, rate_limit, pending_signup,
-      roster_entry, post, comment, tag, post_tag, vote, bookmark, follow_user, follow_tag,
+      roster_entry, post, comment, tag, post_tag, vote, bookmark, follow_user, follow_tag, follow_post,
       notification, attachment, report, batch, invite, department restart identity cascade`);
   // audit_log/platform_audit: trigger blocks DELETE but TRUNCATE skips row triggers.
   await db.execute(sql`truncate audit_log, platform_audit`);
