@@ -280,6 +280,7 @@ NUB_USERS.push(
     dept: "CSE",
     status: "PENDING",
     rosterMatch: true,
+    fresh: true,
   },
   {
     email: "pending2@nub.ac.bd",
@@ -289,6 +290,7 @@ NUB_USERS.push(
     dept: "EEE",
     status: "PENDING",
     rosterMatch: false,
+    fresh: true,
   },
 );
 
