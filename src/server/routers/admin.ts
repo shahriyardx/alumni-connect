@@ -15,6 +15,7 @@ import {
 import type { AuthorInfo } from "../queries/posts";
 import { parseRosterCsv } from "../roster-csv";
 import { hashStudentId } from "../student-id";
+import { assertNotPlatformAdmin } from "../super-admin";
 import { adminProcedure, audit, router } from "../trpc";
 
 // Stay under Postgres's ~65535 bind-parameter limit on a single multi-row insert.
@@ -178,6 +179,7 @@ export const adminRouter = router({
           ),
         );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertNotPlatformAdmin(ctx.db, target.id);
       // A PENDING account is invisible to Approvals once it has any staff
       // role (pendingStudents only lists STUDENT/ALUMNUS) — decide it first.
       if (target.status === "PENDING")

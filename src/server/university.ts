@@ -54,8 +54,8 @@ export async function insertUniversity(
 /**
  * Makes targetId (an ACTIVE, verified member) the OWNER; the current OWNER
  * becomes ADMIN. With `from`, only that account may be the one demoted (the
- * owner handing over); the row lock + role check makes a concurrent second
- * transfer fail cleanly. Returns the target's previous role.
+ * owner handing over). A university row lock serializes concurrent
+ * transfers, so exactly one OWNER remains. Returns the target's previous role.
  */
 export async function transferOwner(
   tx: Tx,
@@ -63,6 +63,13 @@ export async function transferOwner(
   targetId: string,
   from?: string,
 ) {
+  // Serialize every transfer for this university (platform and workspace):
+  // the second one waits here, then re-reads owner and target below.
+  await tx
+    .select({ id: university.id })
+    .from(university)
+    .where(eq(university.id, universityId))
+    .for("update");
   const [target] = await tx
     .select({ id: user.id, role: user.role })
     .from(user)

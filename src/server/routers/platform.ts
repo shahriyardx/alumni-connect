@@ -39,7 +39,11 @@ import {
   newInviteToken,
 } from "../invite-token";
 import { sendMail } from "../mail";
-import { envPlatformAdmins, lockPlatformAdmin } from "../super-admin";
+import {
+  envPlatformAdmins,
+  lockPlatformAdmin,
+  platformAdminWhere,
+} from "../super-admin";
 import { audit, platformProcedure, router } from "../trpc";
 import { insertUniversity, transferOwner } from "../university";
 import { escapeLike } from "./admin";
@@ -96,15 +100,6 @@ async function setStatus(
     .returning({ id: university.id });
   if (!row) throw new TRPCError({ code: "BAD_REQUEST", message });
 }
-
-/** Env-listed, or holds a platform_admin row (verified or not). */
-const adminFilter = () =>
-  or(
-    envPlatformAdmins.size
-      ? inArray(sql`lower(${user.email})`, [...envPlatformAdmins])
-      : sql`false`,
-    sql`exists (select 1 from platform_admin pa where pa.user_id = ${user.id})`,
-  );
 
 const roleCounts = (rows: { role: Role; n: number }[]) => {
   const out = Object.fromEntries(ROLES.map((r) => [r, 0])) as Record<
@@ -328,17 +323,20 @@ export const platformRouter = router({
     .input(uniInput)
     .mutation(async ({ ctx, input }) => {
       const uni = await getUniversity(input.universityId);
-      const [admin] = await db
-        .select({ id: user.id })
-        .from(user)
-        .where(and(eq(user.universityId, uni.id), adminFilter()))
-        .limit(1);
-      if (admin)
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "A platform admin belongs to this university",
-        });
       await withTenant(uni.id, async (tx) => {
+        // Under the platform_admin lock: an addAdmin can't slip a member of
+        // this university in between the check and the suspension.
+        await lockPlatformAdmin(tx);
+        const [admin] = await tx
+          .select({ id: user.id })
+          .from(user)
+          .where(and(eq(user.universityId, uni.id), platformAdminWhere()))
+          .limit(1);
+        if (admin)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "A platform admin belongs to this university",
+          });
         await setStatus(
           tx,
           uni.id,
@@ -520,7 +518,7 @@ export const platformRouter = router({
           createdAt: user.createdAt,
           universityId: user.universityId,
           universityName: university.name,
-          isPlatformAdmin: sql<boolean>`${adminFilter()}`,
+          isPlatformAdmin: sql<boolean>`${platformAdminWhere()}`,
         })
         .from(user)
         .leftJoin(university, eq(university.id, user.universityId))
@@ -552,7 +550,7 @@ export const platformRouter = router({
           email: user.email,
           status: user.status,
           universityId: user.universityId,
-          isAdmin: sql<boolean>`${adminFilter()}`,
+          isAdmin: sql<boolean>`${platformAdminWhere()}`,
         })
         .from(user)
         .where(eq(user.id, input.userId));
@@ -568,17 +566,42 @@ export const platformRouter = router({
           code: "BAD_REQUEST",
           message: input.banned ? "Already banned" : "Not banned",
         });
-      const status = input.banned ? "BANNED" : "ACTIVE";
-      await withTenant(target.universityId, async (tx) => {
-        await tx
+      const uni = target.universityId;
+      await withTenant(uni, async (tx) => {
+        // Keyed by id + university_id like every tenant user write. Ban keeps
+        // the old status (and suspended_until) so unban restores exactly it,
+        // e.g. a banned PENDING applicant goes back to PENDING.
+        const [row] = await tx
           .update(user)
-          .set({ status, suspendedUntil: null })
-          .where(eq(user.id, target.id));
+          .set(
+            input.banned
+              ? { status: "BANNED", statusBeforeBan: sql`${user.status}` }
+              : {
+                  status: sql`coalesce(${user.statusBeforeBan}, 'ACTIVE')`,
+                  statusBeforeBan: null,
+                },
+          )
+          .where(
+            and(
+              eq(user.id, target.id),
+              eq(user.universityId, uni),
+              input.banned
+                ? sql`${user.status} <> 'BANNED'`
+                : eq(user.status, "BANNED"),
+            ),
+          )
+          .returning({ status: user.status });
+        if (!row)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: input.banned ? "Already banned" : "Not banned",
+          });
+        const status = row.status;
         if (input.banned)
           await tx.delete(session).where(eq(session.userId, target.id));
         await audit(
           tx,
-          target.universityId as string,
+          uni,
           ctx.me.id,
           "user.status",
           target.id,
@@ -692,7 +715,7 @@ export const platformRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const [target] = await db
-        .select({ id: user.id, isAdmin: sql<boolean>`${adminFilter()}` })
+        .select({ id: user.id, isAdmin: sql<boolean>`${platformAdminWhere()}` })
         .from(user)
         .where(and(eq(user.email, input.email), eq(user.emailVerified, true)));
       if (!target)
@@ -703,6 +726,19 @@ export const platformRouter = router({
       if (target.isAdmin)
         throw new TRPCError({ code: "CONFLICT", message: "Already an admin" });
       await db.transaction(async (tx) => {
+        await lockPlatformAdmin(tx);
+        // A suspended university's member can't become an admin (they
+        // would be locked out of /platform by its status).
+        const [uni] = await tx
+          .select({ status: university.status })
+          .from(user)
+          .innerJoin(university, eq(university.id, user.universityId))
+          .where(eq(user.id, target.id));
+        if (uni && uni.status !== "ACTIVE" && uni.status !== "PENDING")
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Their university isn't active",
+          });
         await tx
           .insert(platformAdmin)
           .values({ userId: target.id })
@@ -747,7 +783,7 @@ export const platformRouter = router({
           .where(
             and(
               eq(user.emailVerified, true),
-              adminFilter(),
+              platformAdminWhere(),
               sql`${user.id} <> ${input.userId}`,
             ),
           );

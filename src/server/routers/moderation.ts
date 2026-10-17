@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Tx } from "@/db";
 import { comment, post, type Role, report, session, user } from "@/db/schema";
 import type { AuthorInfo } from "../queries/posts";
+import { assertNotPlatformAdmin } from "../super-admin";
 import {
   audit,
   isAdmin,
@@ -328,6 +329,7 @@ export const moderationRouter = router({
           );
         if (!targetUser) throw new TRPCError({ code: "NOT_FOUND" });
         assertCanAct(ctx.me, targetUser);
+        await assertNotPlatformAdmin(ctx.db, targetUser.id);
         if (targetUser.status === "PENDING") {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -426,6 +428,7 @@ export const moderationRouter = router({
         );
       if (!target) throw new TRPCError({ code: "NOT_FOUND" });
       assertCanAct(ctx.me, target);
+      await assertNotPlatformAdmin(ctx.db, target.id);
 
       // PENDING accounts are an admin-approval concern (workspace.decide),
       // not something a moderator can flip straight to ACTIVE.

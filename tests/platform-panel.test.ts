@@ -388,3 +388,99 @@ describe("platform audit", () => {
     expect(future.items).toHaveLength(0);
   });
 });
+
+describe("fix round 1", () => {
+  const owners = (uniId: string) =>
+    adminDb
+      .select({ id: user.id })
+      .from(user)
+      .where(and(eq(user.universityId, uniId), eq(user.role, "OWNER")));
+
+  test("concurrent transfers (platform+platform, platform+workspace) leave exactly one OWNER", async () => {
+    for (let round = 0; round < 3; round++) {
+      const uni = await makeUniversity(`Race ${round}`);
+      const owner = await makeUser(uni.id, { role: "OWNER" });
+      const x = await makeUser(uni.id, { role: "ADMIN" });
+      const y = await makeUser(uni.id, { role: "STAFF" });
+      await Promise.allSettled([
+        platform.platform.transferOwnership({
+          universityId: uni.id,
+          userId: x.id,
+        }),
+        platform.platform.transferOwnership({
+          universityId: uni.id,
+          userId: y.id,
+        }),
+        callerFor(owner.id).workspace.transferOwnership({ userId: y.id }),
+      ]);
+      expect(await owners(uni.id)).toHaveLength(1);
+    }
+  });
+
+  test("tenant OWNER/ADMIN can't ban, suspend or re-role a platform admin", async () => {
+    const owner = await makeUser(home.id, { role: "OWNER" });
+    const rowAdmin = await makeUser(home.id, { role: "STUDENT" });
+    await adminDb.insert(platformAdmin).values({ userId: rowAdmin.id });
+    const asOwner = callerFor(owner.id);
+    for (const target of [envAdmin.id, rowAdmin.id]) {
+      for (const status of ["BANNED", "SUSPENDED"] as const)
+        await expect(
+          asOwner.moderation.setUserStatus({
+            userId: target,
+            status,
+            days: 3,
+          }),
+        ).rejects.toThrow(/Platform admins can't be moderated/);
+      await expect(
+        asOwner.admin.setRole({ userId: target, role: "MODERATOR" }),
+      ).rejects.toThrow(/Platform admins can't be moderated/);
+    }
+    expect((await userRow(rowAdmin.id)).status).toBe("ACTIVE");
+    expect((await userRow(envAdmin.id)).role).toBe("STUDENT");
+  });
+
+  test("unban restores the status before the ban", async () => {
+    const uni = await makeUniversity("Restore");
+    const applicant = await makeUser(uni.id, { status: "PENDING" });
+    await platform.platform.setBanned({ userId: applicant.id, banned: true });
+    expect(await userRow(applicant.id)).toMatchObject({
+      status: "BANNED",
+      statusBeforeBan: "PENDING",
+    });
+    await platform.platform.setBanned({ userId: applicant.id, banned: false });
+    expect(await userRow(applicant.id)).toMatchObject({
+      status: "PENDING",
+      statusBeforeBan: null,
+    });
+  });
+
+  test("a suspended university's member can't be made an admin", async () => {
+    const uni = await makeUniversity("Susp2");
+    const m = await makeUser(uni.id, { email: "m@susp2.edu" });
+    await platform.platform.suspend({ universityId: uni.id });
+    await expect(
+      platform.platform.addAdmin({ email: "m@susp2.edu" }),
+    ).rejects.toThrow(/isn't active/);
+    expect(await adminDb.select().from(platformAdmin)).toHaveLength(0);
+    expect(m.id).toBeTruthy();
+  });
+
+  test("two admins removing each other at once: one admin remains", async () => {
+    await adminDb.delete(user).where(eq(user.id, envAdmin.id));
+    for (let round = 0; round < 3; round++) {
+      await adminDb.delete(platformAdmin);
+      const uni = await makeUniversity(`Mutual ${round}`);
+      const a = await makeUser(uni.id);
+      const b = await makeUser(uni.id);
+      await adminDb
+        .insert(platformAdmin)
+        .values([{ userId: a.id }, { userId: b.id }]);
+      const r = await Promise.allSettled([
+        callerFor(a.id).platform.removeAdmin({ userId: b.id }),
+        callerFor(b.id).platform.removeAdmin({ userId: a.id }),
+      ]);
+      expect(r.filter((x) => x.status === "fulfilled")).toHaveLength(1);
+      expect(await adminDb.select().from(platformAdmin)).toHaveLength(1);
+    }
+  });
+});

@@ -117,6 +117,8 @@ export const user = pgTable(
     avatarKey: text("avatar_key"),
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
     suspendedUntil: timestamp("suspended_until"),
+    // Set by a platform ban, restored by the platform unban.
+    statusBeforeBan: text("status_before_ban", { enum: STATUSES }),
   },
   (t) => [
     index("user_university_idx").on(t.universityId),
