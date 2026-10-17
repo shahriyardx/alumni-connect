@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun src/db/migrate.ts",
     "db:seed": "bun src/db/seed.ts",
+    "db:demo": "bun src/db/demo-content.ts",
     "test": "bun test"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@trpc/tanstack-react-query": "11.19.0",
     "better-auth": "1.7.10",
     "drizzle-orm": "0.45.4",
+    "highlight.js": "^11.12.0",
     "material-symbols": "^0.48.0",
     "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-gfm": "^3.1.0",
@@ -34,6 +36,7 @@
     "react-dom": "19.3.0",
     "react-markdown": "10",
     "read-excel-file": "^9.3.12",
+    "rehype-highlight": "^7.0.2",
     "remark-gfm": "4",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.7.0",
