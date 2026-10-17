@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { user } from "@/db/schema";
+import { auditLog, user } from "@/db/schema";
 import { auth } from "@/server/auth";
 import { hashStudentId } from "@/server/student-id";
 import {
@@ -38,8 +38,8 @@ const banned = (email: string, over = {}) =>
 const stillThere = async (id: string) =>
   (await adminDb.select().from(user).where(eq(user.id, id))).length === 1;
 
-const signupInput = (email: string) => ({
-  universityId: uniId,
+const signupInput = (email: string, universityId = uniId) => ({
+  universityId,
   email,
   studentId: "2019-1-60-001",
   batchNumber: 42,
@@ -106,5 +106,59 @@ describe("banned unverified accounts can't be swept and re-registered", () => {
       callerFor(null).invites.accept({ token, name: "Staff Again" }),
     ).rejects.toThrow(/NOT_FOUND/);
     expect(await stillThere(u.id)).toBe(true);
+  });
+});
+
+// Ruling on cross-tenant squatting: a tenant ban of a never-verified account
+// only holds inside that tenant. Otherwise any owner could sign up a
+// victim's email at their own university, ban it, and lock the victim out
+// of the whole platform. A platform ban holds everywhere.
+describe("tenant bans of unverified accounts stay inside their tenant", () => {
+  const tenantBanned = (email: string, over = {}) =>
+    banned(email, { platformBanned: false, ...over });
+
+  test("doesn't block startSignup at another university; the row is cleared and audited at A", async () => {
+    const b = await tenantBanned("victim@x.edu", { studentIdHash: "a-id" });
+    const otherUni = (await makeUniversity()).id;
+    const r = await callerFor(null).auth.startSignup(
+      signupInput("victim@x.edu", otherUni),
+    );
+    expect(r.signupToken).toBeString();
+    expect(await stillThere(b.id)).toBe(false);
+    const rows = await adminDb
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.target, b.id));
+    expect(rows).toMatchObject([
+      { universityId: uniId, action: "user.purge", actorId: null },
+    ]);
+  });
+
+  test("doesn't block registerUniversity", async () => {
+    const b = await tenantBanned("rep2@x.edu");
+    await callerFor(null).auth.registerUniversity({
+      universityName: "Victim U",
+      name: "Rep",
+      title: "Registrar",
+      email: "rep2@x.edu",
+    });
+    expect(await stillThere(b.id)).toBe(false);
+  });
+
+  test("still blocks re-sign-up at the same university by email", async () => {
+    const b = await tenantBanned("again@x.edu", { studentIdHash: "a-id" });
+    await expect(
+      callerFor(null).auth.startSignup(signupInput("again@x.edu")),
+    ).rejects.toThrow(/already registered/);
+    expect(await stillThere(b.id)).toBe(true);
+  });
+
+  test("a platform ban blocks startSignup at another university too", async () => {
+    const b = await banned("pb@x.edu", { studentIdHash: "a-id" });
+    const otherUni = (await makeUniversity()).id;
+    await expect(
+      callerFor(null).auth.startSignup(signupInput("pb@x.edu", otherUni)),
+    ).rejects.toThrow(/already registered/);
+    expect(await stillThere(b.id)).toBe(true);
   });
 });

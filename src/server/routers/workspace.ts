@@ -254,6 +254,7 @@ export const workspaceRouter = router({
           inArray(user.role, ["STUDENT", "ALUMNUS"]),
           lt(user.createdAt, new Date(Date.now() - CARD_TTL_MS)),
         ) as SQL,
+        uni,
       ),
     );
     return ctx.db

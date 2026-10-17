@@ -40,8 +40,8 @@ const ROLE_WORD: Record<(typeof INVITABLE_ROLES)[number], string> = {
 };
 
 /** See holdsAccount: verified, mid-signup (<15min) or banned. */
-const blocksSignup = (targetEmail: string) =>
-  and(eq(user.email, targetEmail), holdsAccount()) as SQL;
+const blocksSignup = (targetEmail: string, into: string) =>
+  and(eq(user.email, targetEmail), holdsAccount(into)) as SQL;
 
 /**
  * Finds the invite matching `token`'s hash, regardless of tenant: the
@@ -73,7 +73,7 @@ async function findInvite(token: string) {
     const [live] = await tx
       .select({ id: user.id })
       .from(user)
-      .where(blocksSignup(row.email));
+      .where(blocksSignup(row.email, row.universityId));
     if (live) return undefined; // genuinely, currently in use
     // Compare-and-set: loses cleanly if another request already recovered
     // (or re-accepted) it between the read above and this update.
@@ -129,7 +129,7 @@ export const invitesRouter = router({
       const [blocking] = await ctx.db
         .select({ id: user.id })
         .from(user)
-        .where(blocksSignup(input.email));
+        .where(blocksSignup(input.email, ctx.me.universityId));
       if (blocking)
         throw new TRPCError({
           code: "CONFLICT",
@@ -144,6 +144,7 @@ export const invitesRouter = router({
           lt(user.createdAt, graceCutoff()),
           eq(user.email, input.email),
         ) as SQL,
+        ctx.me.universityId,
       );
       await removeAll(staleCards);
 
@@ -253,6 +254,7 @@ export const invitesRouter = router({
           eq(user.email, inv.email),
           eq(user.universityId, ctx.me.universityId),
         ) as SQL,
+        ctx.me.universityId,
       );
       // Cascades to any pending_signup row this invite had started.
       await ctx.db
@@ -318,7 +320,7 @@ export const invitesRouter = router({
       const [blocking] = await db
         .select({ id: user.id })
         .from(user)
-        .where(blocksSignup(inv.email));
+        .where(blocksSignup(inv.email, inv.universityId));
       if (blocking)
         throw new TRPCError({
           code: "CONFLICT",
@@ -335,6 +337,7 @@ export const invitesRouter = router({
             lt(user.createdAt, graceCutoff()),
             eq(user.email, inv.email),
           ) as SQL,
+          inv.universityId,
         );
         const replaced = await upsertPending(tx, {
           ...BLANK_PENDING,

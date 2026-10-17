@@ -234,46 +234,72 @@ export const BLANK_PENDING = {
   platformAdmin: false,
 } satisfies Partial<typeof pendingSignup.$inferInsert>;
 
-/** A ban outlives verification: banned rows are never swept, always block. */
-const banned = () =>
-  or(eq(user.status, "BANNED"), eq(user.platformBanned, true)) as SQL;
-
 /**
- * Accounts that hold their email / student ID against a new sign-up:
- * verified, still mid-signup (inside the grace window), or banned.
+ * Bans that hold an account against a sign-up into university `into`
+ * (null = a new application or the super admin claim): a platform ban
+ * everywhere; a tenant ban only inside its own tenant. Otherwise an owner
+ * could sign up a victim's email at their university, ban the unverified
+ * row and lock the victim out of the whole platform. (A verified account
+ * holds its email anyway: user.email is unique.)
  */
-export const holdsAccount = () =>
+const bannedFor = (into: string | null) =>
   or(
-    eq(user.emailVerified, true),
-    gt(user.createdAt, graceCutoff()),
-    banned(),
+    eq(user.platformBanned, true),
+    into
+      ? and(eq(user.status, "BANNED"), eq(user.universityId, into))
+      : undefined,
   ) as SQL;
 
 /**
- * Deletes stale (unverified) accounts matching `where`. One that owned a
- * still-PENDING application gets that university REJECTED first, audited in
- * its own tenant (audit rows are append-only, so universities are never
- * deleted). Runs in the caller's transaction and restores its tenant.
- * Returns the deleted users' ID card keys.
+ * Accounts that hold their email / student ID against a sign-up into
+ * `into`: verified, still mid-signup (inside the grace window), or banned
+ * there (see bannedFor).
+ */
+export const holdsAccount = (into: string | null) =>
+  or(
+    eq(user.emailVerified, true),
+    gt(user.createdAt, graceCutoff()),
+    bannedFor(into),
+  ) as SQL;
+
+/**
+ * Deletes stale (unverified) accounts matching `where`, except ones banned
+ * for a sign-up into `into` (see bannedFor). One that owned a
+ * still-PENDING application gets that university REJECTED first, and a
+ * tenant-banned one reclaimed for another university gets a user.purge
+ * row, each audited in its own tenant (audit rows are append-only, so
+ * universities are never deleted). Runs in the caller's transaction and
+ * restores its tenant. Returns the deleted users' ID card keys.
  */
 export async function clearStaleUnverified(
   tx: Tx,
   where: SQL,
+  into: string | null,
 ): Promise<string[]> {
   const stale = await tx
     .select({
       id: user.id,
       universityId: user.universityId,
       role: user.role,
+      status: user.status,
       idCardKey: user.idCardKey,
     })
     .from(user)
-    .where(and(eq(user.emailVerified, false), not(banned()), where));
+    .where(and(eq(user.emailVerified, false), not(bannedFor(into)), where));
   if (stale.length === 0) return [];
   const [{ tenant }] = await tx.execute<{ tenant: string | null }>(
     sql`select current_setting('app.university_id', true) as tenant`,
   );
   for (const s of stale) {
+    if (s.status === "BANNED" && s.universityId) {
+      await tx.execute(
+        sql`select set_config('app.university_id', ${s.universityId}, true)`,
+      );
+      await audit(tx, s.universityId, null, "user.purge", s.id, {
+        reason: "banned-unverified-reclaimed",
+        into,
+      });
+    }
     if (s.role !== "OWNER" || !s.universityId) continue;
     const [abandoned] = await tx
       .update(university)
@@ -317,7 +343,7 @@ async function assertEmailFree(address: string) {
   const [dup] = await db
     .select({ id: user.id })
     .from(user)
-    .where(and(eq(user.email, address), holdsAccount()));
+    .where(and(eq(user.email, address), holdsAccount(null)));
   if (dup)
     throw new TRPCError({
       code: "CONFLICT",
@@ -416,6 +442,7 @@ export const authRouter = router({
         const stale = await clearStaleUnverified(
           tx,
           eq(user.email, input.email),
+          null,
         );
         const replaced = await upsertPending(tx, values);
         return [...stale, ...(await unreferenced(tx, replaced))];
@@ -471,6 +498,7 @@ export const authRouter = router({
             eq(user.email, input.email),
             and(isNull(user.universityId), lt(user.createdAt, graceCutoff())),
           ) as SQL,
+          null,
         );
         if (await superAdminTaken(tx)) throw alreadySetUp();
         const replaced = await upsertPending(tx, {
@@ -722,7 +750,7 @@ export const authRouter = router({
           .where(
             and(
               or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
-              holdsAccount(),
+              holdsAccount(uni.id),
             ),
           );
         if (dup)
@@ -783,6 +811,7 @@ export const authRouter = router({
             lt(user.createdAt, unverifiedGraceCutoff),
             or(eq(user.email, input.email), eq(user.studentIdHash, idHash)),
           ) as SQL,
+          uni.id,
         );
 
         const signupToken = randomBytes(32).toString("base64url");
