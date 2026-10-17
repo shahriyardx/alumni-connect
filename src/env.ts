@@ -12,11 +12,10 @@ const schema = z.object({
   S3_SECRET_KEY: z.string().default("minioadmin"),
   S3_BUCKET: z.string().default("alumni"),
   // Mailroom instance; both unset = mail is printed to the server log.
-  MAILROOM_BASE_URL: z
-    .string()
-    .url()
-    .optional()
-    .transform((v) => v || undefined),
+  MAILROOM_BASE_URL: z.preprocess(
+    (v) => v || undefined,
+    z.string().url().optional(),
+  ),
   MAILROOM_API_KEY: z
     .string()
     .optional()
@@ -28,12 +27,6 @@ const schema = z.object({
     .optional()
     .transform((v) => v || undefined),
   MAIL_FROM: z.string().default("Alumni Connect <no-reply@alumni.local>"),
-  // Bearer secret for POST /api/digest/run (external scheduler trigger).
-  // Unset = route returns 404.
-  DIGEST_SECRET: z
-    .string()
-    .optional()
-    .transform((v) => v || undefined),
 });
 
 export const env = schema.parse(process.env);

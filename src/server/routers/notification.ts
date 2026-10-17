@@ -1,12 +1,6 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  broadcast,
-  EMAIL_DIGEST_FREQUENCIES,
-  notification,
-  post,
-  user,
-} from "@/db/schema";
+import { broadcast, notification, post, user } from "@/db/schema";
 import { memberProcedure, router } from "../trpc";
 
 const PAGE_SIZE = 30;
@@ -91,7 +85,6 @@ export const notificationRouter = router({
     notifyAnnouncements: ctx.me.notifyAnnouncements,
     notifyFollowedTag: ctx.me.notifyFollowedTag,
     notifyAcceptedAnswer: ctx.me.notifyAcceptedAnswer,
-    emailDigest: ctx.me.emailDigest,
   })),
 
   updatePrefs: memberProcedure
@@ -102,7 +95,6 @@ export const notificationRouter = router({
         notifyAnnouncements: z.boolean(),
         notifyFollowedTag: z.boolean(),
         notifyAcceptedAnswer: z.boolean(),
-        emailDigest: z.enum(EMAIL_DIGEST_FREQUENCIES),
       }),
     )
     .mutation(async ({ ctx, input }) => {

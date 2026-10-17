@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { runDigest } from "@/app/api/digest/run/route";
 import { notification, user } from "@/db/schema";
 import {
   adminDb,
@@ -169,7 +168,7 @@ describe("notification prefs gate notification creation", () => {
 });
 
 describe("notification.prefs / updatePrefs", () => {
-  test("defaults are all-on, digest off; update round-trips", async () => {
+  test("defaults are all-on; update round-trips", async () => {
     const c = callerFor(alice.id);
     expect(await c.notification.prefs()).toEqual({
       notifyReplyPost: true,
@@ -177,7 +176,6 @@ describe("notification.prefs / updatePrefs", () => {
       notifyAnnouncements: true,
       notifyFollowedTag: true,
       notifyAcceptedAnswer: true,
-      emailDigest: "off",
     });
     await c.notification.updatePrefs({
       notifyReplyPost: false,
@@ -185,108 +183,9 @@ describe("notification.prefs / updatePrefs", () => {
       notifyAnnouncements: true,
       notifyFollowedTag: true,
       notifyAcceptedAnswer: true,
-      emailDigest: "daily",
     });
     expect(await c.notification.prefs()).toMatchObject({
       notifyReplyPost: false,
-      emailDigest: "daily",
     });
-  });
-});
-
-describe("POST /api/digest/run", () => {
-  test("refuses a bad secret", async () => {
-    expect(await runDigest("not-the-secret")).toEqual({
-      ok: false,
-      status: 401,
-    });
-    expect(await runDigest(null)).toEqual({ ok: false, status: 401 });
-  });
-
-  test("sends only to opted-in users, and only new items since last digest", async () => {
-    await adminDb
-      .update(user)
-      .set({ emailDigest: "daily" })
-      .where(eq(user.id, alice.id));
-    // bob stays "off" — must not receive anything.
-    const { id: postId } = await callerFor(alice.id).post.create({
-      title: "Question for bob",
-      body: "b",
-      tags: [],
-    });
-    await callerFor(bob.id).comment.create({ postId, body: "first reply" });
-
-    const r1 = await runDigest("test-digest-secret");
-    expect(r1).toMatchObject({ ok: true, sent: 1 });
-    const [aliceAfter1] = await adminDb
-      .select({ lastDigestAt: user.lastDigestAt })
-      .from(user)
-      .where(eq(user.id, alice.id));
-    expect(aliceAfter1.lastDigestAt).not.toBeNull();
-
-    // Calling again immediately: daily period hasn't elapsed, so no re-send
-    // even though nothing was marked read.
-    const r2 = await runDigest("test-digest-secret");
-    expect(r2).toMatchObject({ ok: true, sent: 0 });
-
-    // Force the period to look elapsed again: a fresh notification since
-    // the (forced) last digest triggers exactly one more send to alice.
-    await adminDb
-      .update(user)
-      .set({ lastDigestAt: new Date(Date.now() - 2 * 86_400_000) })
-      .where(eq(user.id, alice.id));
-    await callerFor(bob.id).comment.create({ postId, body: "second reply" });
-    const r3 = await runDigest("test-digest-secret");
-    expect(r3).toMatchObject({ ok: true, sent: 1 });
-  });
-
-  test("two concurrent runs send exactly one digest per user (no double-send race)", async () => {
-    await adminDb
-      .update(user)
-      .set({ emailDigest: "daily" })
-      .where(eq(user.id, alice.id));
-    const { id: postId } = await callerFor(alice.id).post.create({
-      title: "Question for bob, racily digested",
-      body: "b",
-      tags: [],
-    });
-    await callerFor(bob.id).comment.create({ postId, body: "a reply" });
-
-    const [r1, r2] = await Promise.all([
-      runDigest("test-digest-secret"),
-      runDigest("test-digest-secret"),
-    ]);
-    const totalSent = (r1.ok ? r1.sent : 0) + (r2.ok ? r2.sent : 0);
-    expect(totalSent).toBe(1);
-  });
-
-  test("tenant isolation: opted-in users in different universities both get digested in one call", async () => {
-    const uniB = (await makeUniversity()).id;
-    const carol = await makeUser(uniId, {
-      createdAt: old,
-      emailDigest: "daily",
-    });
-    const dave = await makeUser(uniB, { createdAt: old, emailDigest: "daily" });
-    const daveFriend = await makeUser(uniB, { createdAt: old });
-
-    const { id: postId } = await callerFor(carol.id).post.create({
-      title: "Question from carol",
-      body: "b",
-      tags: [],
-    });
-    await callerFor(alice.id).comment.create({ postId, body: "reply" });
-
-    const { id: postIdB } = await callerFor(dave.id).post.create({
-      title: "Question from dave",
-      body: "b",
-      tags: [],
-    });
-    await callerFor(daveFriend.id).comment.create({
-      postId: postIdB,
-      body: "reply",
-    });
-
-    const r = await runDigest("test-digest-secret");
-    expect(r).toMatchObject({ ok: true, sent: 2 });
   });
 });

@@ -35,13 +35,11 @@ export const UNIVERSITY_STATUSES = [
   "SUSPENDED",
 ] as const;
 export const POST_KINDS = ["QUESTION", "ANNOUNCEMENT"] as const;
-export const EMAIL_DIGEST_FREQUENCIES = ["off", "daily", "weekly"] as const;
 export type Role = (typeof ROLES)[number];
 export type StaffRole = (typeof STAFF_ROLES)[number];
 export type Status = (typeof STATUSES)[number];
 export type UniversityStatus = (typeof UNIVERSITY_STATUSES)[number];
 export type PostKind = (typeof POST_KINDS)[number];
-export type EmailDigestFrequency = (typeof EMAIL_DIGEST_FREQUENCIES)[number];
 
 // Shared with client components (trpc.ts re-exports them for server code).
 export const isMod = (r: Role) =>
@@ -104,7 +102,7 @@ export const user = pgTable(
     avatarKey: text("avatar_key"),
     status: text("status", { enum: STATUSES }).default("ACTIVE").notNull(),
     suspendedUntil: timestamp("suspended_until"),
-    // Notification preferences (F3). All on, digest off by default; columns
+    // Notification preferences (F3). All on by default; columns
     // on `user` rather than a separate table since they're 1:1 per account.
     notifyReplyPost: boolean("notify_reply_post").default(true).notNull(),
     notifyReplyComment: boolean("notify_reply_comment").default(true).notNull(),
@@ -115,10 +113,6 @@ export const user = pgTable(
     notifyAcceptedAnswer: boolean("notify_accepted_answer")
       .default(true)
       .notNull(),
-    emailDigest: text("email_digest", { enum: EMAIL_DIGEST_FREQUENCIES })
-      .default("off")
-      .notNull(),
-    lastDigestAt: timestamp("last_digest_at"),
     // Platform-only: the status a platform ban replaced, restored on unban.
     statusBeforeBan: text("status_before_ban", { enum: STATUSES }),
     // Set only by a platform ban, cleared only by the platform unban; while

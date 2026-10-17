@@ -6,7 +6,6 @@ import { ImageUploader } from "@/components/image-uploader";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { TextField } from "@/components/ui/text-field";
@@ -204,12 +203,6 @@ function FollowedTags() {
   );
 }
 
-const DIGEST_ITEMS = [
-  { value: "off", label: "Off" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-] as const;
-
 const PREF_ROWS = [
   { key: "notifyReplyPost", label: "Replies to my posts" },
   { key: "notifyReplyComment", label: "Replies to my comments" },
@@ -251,12 +244,6 @@ function NotificationPrefs() {
           </div>
         ))}
       </div>
-      <Select
-        label="Email digest"
-        value={current.emailDigest}
-        onValueChange={(v) => update.mutate({ ...current, emailDigest: v })}
-        items={DIGEST_ITEMS}
-      />
     </Section>
   );
 }
