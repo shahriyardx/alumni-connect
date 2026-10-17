@@ -417,7 +417,7 @@ function Row({
         <IconButton
           icon="close"
           label="Reject"
-          className="size-8 text-destructive hover:bg-destructive/10"
+          className="size-8 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive dark:bg-destructive/20 dark:hover:bg-destructive/30"
           disabled={decide.isPending}
           onClick={onRejectRequest}
         />
