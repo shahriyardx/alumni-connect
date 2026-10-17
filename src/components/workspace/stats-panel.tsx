@@ -14,12 +14,12 @@ import { PageHeader } from "./workspace-shell";
 type Week = RouterOutputs["admin"]["stats"]["postsPerWeek"][number];
 
 const ROLE_LABEL = {
-  OWNER: "Owners",
-  STAFF: "Faculty",
-  STUDENT: "Students",
-  ALUMNUS: "Alumni",
-  MODERATOR: "Moderators",
-  ADMIN: "Admins",
+  OWNER: ["Owner", "Owners"],
+  STAFF: ["Faculty", "Faculty"],
+  STUDENT: ["Student", "Students"],
+  ALUMNUS: ["Alumnus", "Alumni"],
+  MODERATOR: ["Moderator", "Moderators"],
+  ADMIN: ["Admin", "Admins"],
 } as const;
 
 // Series colors: posts = brand primary; comments = validated orange
@@ -79,7 +79,9 @@ export function StatsPanel() {
                 <span className="font-semibold tabular-nums">
                   {s.members[r]}
                 </span>{" "}
-                <span className="text-muted-foreground">{ROLE_LABEL[r]}</span>
+                <span className="text-muted-foreground">
+                  {ROLE_LABEL[r][s.members[r] === 1 ? 0 : 1]}
+                </span>
               </span>
             ))}
           </div>
