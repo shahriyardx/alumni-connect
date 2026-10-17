@@ -309,16 +309,96 @@ test("resolve: suspend does not downgrade an already-banned user", async () => {
     .where(eq(report.id, rSuspend.id));
   expect(reportRow.status).toBe("RESOLVED");
 
-  // F2 fix round 1: the no-op suspend wrote no audit row (it would
-  // otherwise inflate countStrikes with a strike that never happened).
+  // F2 fix round 2: the no-op suspend still writes a `report.suspend`
+  // audit row (a moderator's decision is never left un-logged, even when
+  // it didn't change anything) — but with `statusChanged: false` and no
+  // `authorId`, so it can't be counted as a strike.
   const suspendAudits = await adminDb
     .select()
     .from(auditLog)
     .where(eq(auditLog.action, "report.suspend"));
-  expect(suspendAudits).toHaveLength(0);
+  expect(suspendAudits).toHaveLength(1);
+  expect(suspendAudits[0].actorId).toBe(mod.id);
+  expect(suspendAudits[0].meta).toMatchObject({ statusChanged: false });
+  expect(suspendAudits[0].meta).not.toHaveProperty("authorId");
   const q = await callerFor(mod.id).moderation.queue({ status: "RESOLVED" });
   const strikesRow = q.items.find((i) => i.id === rSuspend.id);
   expect(strikesRow?.priorStrikes).toBe(1); // only the ban, not a phantom suspend too
+});
+
+// F2 fix round 2: every resolve() call is audited, even a no-op one — a
+// moderator's decision must never be left un-logged (repudiation gap).
+test("resolve: a no-op ban (already banned) and a no-op remove (already removed) are both audited without a phantom strike", async () => {
+  // Resolving a report auto-resolves every other OPEN report on the exact
+  // same target, so to reach each no-op branch legitimately, use a second
+  // report on a *different* target that resolves to the same account —
+  // same shape as the existing already-banned/suspend test above.
+  const rBan = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "serious abuse",
+  });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rBan.id,
+    action: "ban",
+  });
+
+  const p1 = await makePost(uniId, spammer.id);
+  const rBanAgain = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p1.id,
+    reason: "still at it",
+  });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rBanAgain.id,
+    action: "ban",
+  });
+  const banAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.ban"));
+  expect(banAudits).toHaveLength(2); // both decisions logged
+  const noopBan = banAudits.find((a) => a.meta?.reportId === rBanAgain.id);
+  expect(noopBan?.meta).toMatchObject({ statusChanged: false });
+  expect(noopBan?.meta).not.toHaveProperty("authorId");
+
+  // A post already removed some other way (e.g. a moderator used the
+  // plain post.remove tool), then a mod resolves an older, still-open
+  // report against it as "remove" — a genuine no-op. (The already-banned
+  // spammer can't call post.remove themselves — a banned account can't
+  // use any procedure — so another mod removes it here.)
+  const p2 = await makePost(uniId, spammer.id);
+  const rRemove = await callerFor(student.id).moderation.report({
+    targetType: "POST",
+    targetId: p2.id,
+    reason: "obvious spam",
+  });
+  await callerFor(admin.id).post.remove({ id: p2.id });
+  await callerFor(mod.id).moderation.resolve({
+    reportId: rRemove.id,
+    action: "remove",
+  });
+  const removeAudits = await adminDb
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.action, "report.remove"));
+  expect(removeAudits).toHaveLength(1);
+  expect(removeAudits[0].meta).toMatchObject({ statusChanged: false });
+  expect(removeAudits[0].meta).not.toHaveProperty("authorId");
+
+  // Only the first ban counts as a strike — the no-op ban and the no-op
+  // remove don't add any more.
+  const r3 = await callerFor(student.id).moderation.report({
+    targetType: "USER",
+    targetId: spammer.id,
+    reason: "once more",
+  });
+  const q2 = await callerFor(mod.id).moderation.queue({});
+  expect(q2.items[0].priorStrikes).toBe(1);
+  await callerFor(mod.id).moderation.resolve({
+    reportId: r3.id,
+    action: "dismiss",
+  });
 });
 
 test("admin.importRoster dedupes duplicate student IDs and reports bad rows", async () => {

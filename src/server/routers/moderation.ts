@@ -214,30 +214,35 @@ function assertCanAct(me: Me, target: { id: string; role: Role }) {
   }
 }
 
-/** Soft-delete the reported post/comment, keeping comment counts consistent. */
+/**
+ * Soft-delete the reported post/comment, keeping comment counts consistent.
+ * Returns whether it actually removed something — a second open report on
+ * content another report already got removed is a no-op, not a new strike.
+ */
 async function removeTarget(
   tx: Tx,
   targetType: "POST" | "COMMENT",
   targetId: string,
-) {
+): Promise<boolean> {
   if (targetType === "POST") {
-    await tx
+    const removed = await tx
       .update(post)
       .set({ deletedAt: new Date() })
-      .where(and(eq(post.id, targetId), isNull(post.deletedAt)));
-    return;
+      .where(and(eq(post.id, targetId), isNull(post.deletedAt)))
+      .returning({ id: post.id });
+    return removed.length > 0;
   }
   const [removed] = await tx
     .update(comment)
     .set({ deletedAt: new Date() })
     .where(and(eq(comment.id, targetId), isNull(comment.deletedAt)))
     .returning({ postId: comment.postId });
-  if (removed) {
-    await tx
-      .update(post)
-      .set({ commentCount: sql`${post.commentCount} - 1` })
-      .where(eq(post.id, removed.postId));
-  }
+  if (!removed) return false;
+  await tx
+    .update(post)
+    .set({ commentCount: sql`${post.commentCount} - 1` })
+    .where(eq(post.id, removed.postId));
+  return true;
 }
 
 export const moderationRouter = router({
@@ -414,17 +419,20 @@ export const moderationRouter = router({
       }
 
       // The content/account author, recorded on the audit entry below so
-      // `countStrikes` can tally prior violations without a new table.
+      // `countStrikesMany` can tally prior violations without a new table.
       let authorId: string | null = null;
-      // False only for a "suspend" that was a no-op (target already
-      // BANNED) — skip the audit row so a repeat/ineffective suspend can't
-      // inflate `countStrikes` with a strike that didn't actually happen.
+      // Whether this call actually changed anything — e.g. a "suspend" (or
+      // "ban") on an already-banned account, or a "remove" on content a
+      // different OPEN report already got removed. The moderator's decision
+      // is ALWAYS audited below regardless (a resolve() call must never be
+      // silently un-logged, no-op or not); this flag only controls whether
+      // that audit row also counts as a strike.
       let didChange = true;
 
       if (input.action === "remove") {
         if (rpt.targetType === "USER")
           throw new TRPCError({ code: "BAD_REQUEST" });
-        await removeTarget(ctx.db, rpt.targetType, rpt.targetId);
+        didChange = await removeTarget(ctx.db, rpt.targetType, rpt.targetId);
         authorId = await resolveTargetUserId(
           ctx.db,
           rpt.targetType,
@@ -478,16 +486,25 @@ export const moderationRouter = router({
             didChange = false;
           }
         } else {
-          await ctx.db
-            .update(user)
-            .set({ status: "BANNED", suspendedUntil: null })
-            .where(
-              and(
-                eq(user.id, targetUserId),
-                eq(user.universityId, ctx.me.universityId),
-              ),
-            );
-          await ctx.db.delete(session).where(eq(session.userId, targetUserId));
+          // A second report resolved as "ban" against an already-banned
+          // account doesn't re-apply anything new, so it isn't a strike —
+          // but it's still a real decision, still audited, below.
+          if (targetUser.status !== "BANNED") {
+            await ctx.db
+              .update(user)
+              .set({ status: "BANNED", suspendedUntil: null })
+              .where(
+                and(
+                  eq(user.id, targetUserId),
+                  eq(user.universityId, ctx.me.universityId),
+                ),
+              );
+            await ctx.db
+              .delete(session)
+              .where(eq(session.userId, targetUserId));
+          } else {
+            didChange = false;
+          }
         }
       }
 
@@ -507,21 +524,26 @@ export const moderationRouter = router({
           ),
         );
 
-      if (didChange) {
-        await audit(
-          ctx.db,
-          ctx.me.universityId,
-          ctx.me.id,
-          `report.${input.action}`,
-          `${rpt.targetType}:${rpt.targetId}`,
-          {
-            reportId: rpt.id,
-            days: input.days,
-            note: input.note,
-            authorId: authorId ?? undefined,
-          },
-        );
-      }
+      // Always: a moderator's decision on a report must never go un-logged,
+      // whether or not it changed anything (e.g. you can't suspend an
+      // account that's already banned). `authorId` — the only field
+      // `countStrikesMany` matches on — is omitted when `didChange` is
+      // false, so a no-op can't be counted as a strike while still leaving
+      // a complete, truthful record that the action was taken.
+      await audit(
+        ctx.db,
+        ctx.me.universityId,
+        ctx.me.id,
+        `report.${input.action}`,
+        `${rpt.targetType}:${rpt.targetId}`,
+        {
+          reportId: rpt.id,
+          days: input.days,
+          note: input.note,
+          statusChanged: didChange,
+          authorId: didChange ? (authorId ?? undefined) : undefined,
+        },
+      );
 
       return { ok: true as const };
     }),
