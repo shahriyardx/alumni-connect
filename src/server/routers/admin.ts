@@ -113,6 +113,7 @@ export const adminRouter = router({
       z.object({
         q: z.string().min(1).max(200).optional(),
         role: z.enum(ROLES).optional(),
+        department: z.string().min(1).max(80).optional(),
         cursor: z.number().int().min(0).default(0),
       }),
     )
@@ -120,6 +121,8 @@ export const adminRouter = router({
       const limit = 50;
       const conds = [eq(user.universityId, ctx.me.universityId)];
       if (input.role) conds.push(eq(user.role, input.role));
+      if (input.department)
+        conds.push(sql`lower(${user.department}) = lower(${input.department})`);
       if (input.q) {
         const needle = `%${escapeLike(input.q)}%`;
         const textMatch = or(

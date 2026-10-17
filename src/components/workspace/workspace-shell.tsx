@@ -50,6 +50,12 @@ const SECTIONS: Section[] = [
     need: "admin",
   },
   {
+    href: "/workspace/departments",
+    label: "Departments",
+    icon: "apartment",
+    need: "admin",
+  },
+  {
     href: "/workspace/moderation",
     label: "Moderation",
     icon: "shield",

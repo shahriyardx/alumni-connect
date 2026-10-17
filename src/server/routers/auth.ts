@@ -17,6 +17,7 @@ import { db, type Tx, withTenant } from "@/db";
 import {
   auditLog,
   batch,
+  department,
   pendingSignup,
   rateLimit,
   rosterEntry,
@@ -35,6 +36,7 @@ import {
 } from "../storage";
 import { hashStudentId, normalizeStudentId, roleFor } from "../student-id";
 import { audit, isPlatformAdmin, publicProcedure, router } from "../trpc";
+import { resolveDepartment } from "./departments";
 import { optionalUrl } from "./platform";
 
 const email = z
@@ -411,6 +413,28 @@ export const authRouter = router({
       );
     }),
 
+  departments: publicProcedure
+    .input(z.object({ universityId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const [uni] = await db
+        .select({ id: university.id })
+        .from(university)
+        .where(
+          and(
+            eq(university.id, input.universityId),
+            eq(university.status, "ACTIVE"),
+          ),
+        );
+      if (!uni) return [];
+      const rows = await withTenant(uni.id, (tx) =>
+        tx
+          .select({ name: department.name })
+          .from(department)
+          .orderBy(department.name),
+      );
+      return rows.map((r) => r.name);
+    }),
+
   confirmIdCard: publicProcedure
     .input(
       z.object({
@@ -645,6 +669,11 @@ export const authRouter = router({
             : [];
         const rosterMatch = hit ? true : anyRoster ? false : null;
         const role = roleFor({ graduationYear });
+        const departmentName = await resolveDepartment(
+          tx,
+          uni.id,
+          input.department,
+        );
 
         // Clear any *stale* unverified account squatting on this email or ID
         // (e.g. an attacker who started sign-up with the victim's roster ID
@@ -666,7 +695,7 @@ export const authRouter = router({
           universityId: uni.id,
           batchNumber: input.batchNumber,
           graduationYear,
-          department: input.department,
+          department: departmentName,
           studentIdHash: idHash,
           signupTokenHash: sha256(signupToken),
           rosterMatch,

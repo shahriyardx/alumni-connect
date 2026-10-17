@@ -57,6 +57,13 @@
       "when": 1792143927564,
       "tag": "0007_old_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792146047373,
+      "tag": "0008_departments",
+      "breakpoints": true
     }
   ]
 }

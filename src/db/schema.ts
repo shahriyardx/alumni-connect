@@ -194,6 +194,25 @@ export const batch = pgTable(
   ],
 ).enableRLS();
 
+/** Admin-curated picklist; `user`/`invite`/`pendingSignup`.department stay free text (no FK). */
+export const department = pgTable(
+  "department",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: universityRef(),
+    name: text("name").notNull(),
+    createdAt: created(),
+  },
+  (t) => [
+    unique("department_id_uni_uq").on(t.id, t.universityId),
+    uniqueIndex("department_uni_lower_name_uq").on(
+      t.universityId,
+      sql`lower(${t.name})`,
+    ),
+    tenantPolicy("department", t.universityId),
+  ],
+).enableRLS();
+
 export const rosterEntry = pgTable(
   "roster_entry",
   {
