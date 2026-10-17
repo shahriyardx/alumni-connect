@@ -2,7 +2,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { timeAgo } from "@/components/author-line";
 import { FeedList } from "@/components/feed-list";
 import { FeedRail } from "@/components/feed-rail";
@@ -24,37 +24,130 @@ import { useTRPC } from "@/lib/trpc";
 type TabValue = "new" | "top" | "announcements" | "unanswered";
 const TAB_VALUES: TabValue[] = ["new", "top", "announcements", "unanswered"];
 
+/** Newest announcements as a swipeable, auto-advancing slider. */
 function AnnouncementStrip() {
   const trpc = useTRPC();
-  const { data } = useQuery(trpc.post.announcements.queryOptions({ limit: 3 }));
-  if (!data?.items.length) return null;
+  const { data } = useQuery(trpc.post.announcements.queryOptions({ limit: 5 }));
+  const track = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const items = data?.items ?? [];
+  const n = items.length;
+
+  const go = useCallback((i: number) => {
+    const el = track.current;
+    if (!el) return;
+    el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+  }, []);
+
+  // Auto-advance; off when paused, single slide, or reduced motion.
+  useEffect(() => {
+    if (paused || n < 2) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t = setInterval(() => go((index + 1) % n), 6000);
+    return () => clearInterval(t);
+  }, [paused, n, index, go]);
+
+  if (!n) return null;
   return (
-    <div className="flex flex-col gap-2">
-      {data.items.map((a) => (
-        <Link
-          key={a.id}
-          href={`/p/${a.id}`}
-          className={cn(
-            focusRing,
-            "flex items-start gap-3 rounded-2xl bg-primary/8 p-4 outline-none transition-colors hover:bg-primary/12",
-          )}
-        >
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-            <Icon name="campaign" size={18} filled />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+    <section
+      aria-roledescription="carousel"
+      aria-label="Announcements"
+      className="relative"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
+      <div
+        ref={track}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setIndex(Math.round(el.scrollLeft / el.clientWidth));
+        }}
+        className="flex snap-x snap-mandatory overflow-x-auto rounded-3xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {items.map((a, i) => (
+          <Link
+            key={a.id}
+            href={`/p/${a.id}`}
+            aria-roledescription="slide"
+            aria-label={`${i + 1} of ${n}: ${a.title}`}
+            className={cn(
+              focusRing,
+              "relative isolate flex w-full shrink-0 snap-start flex-col gap-2 overflow-hidden rounded-3xl bg-primary/10 p-5 pb-9 outline-none transition-colors hover:bg-primary/14 sm:p-6 sm:pr-28 sm:pb-9",
+            )}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-16 -right-10 -z-10 size-48 rounded-full bg-primary/15 blur-2xl"
+            />
             <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 font-medium text-primary-foreground">
+                <Icon name="campaign" size={13} filled />
+                Announcement
+              </span>
               <span className="font-medium text-foreground">
                 {a.author.name}
               </span>
               <RoleBadge role={a.author.role} />
               <span>· {timeAgo(a.createdAt)}</span>
             </span>
-            <span className="truncate text-sm font-semibold">{a.title}</span>
-          </span>
-        </Link>
-      ))}
-    </div>
+            <span className="line-clamp-1 text-base font-semibold tracking-tight sm:text-lg">
+              {a.title}
+            </span>
+            {a.excerpt && (
+              <span className="line-clamp-2 text-sm text-muted-foreground">
+                {a.excerpt}
+              </span>
+            )}
+          </Link>
+        ))}
+      </div>
+
+      {n > 1 && (
+        <>
+          <div className="absolute top-5 right-5 hidden items-center gap-1 sm:flex">
+            {(["prev", "next"] as const).map((dir) => (
+              <button
+                key={dir}
+                type="button"
+                aria-label={
+                  dir === "prev" ? "Previous announcement" : "Next announcement"
+                }
+                onClick={() =>
+                  go(dir === "prev" ? (index - 1 + n) % n : (index + 1) % n)
+                }
+                className={cn(
+                  focusRing,
+                  "grid size-8 cursor-pointer place-items-center rounded-full bg-surface/80 text-foreground backdrop-blur-sm transition-colors hover:bg-surface",
+                )}
+              >
+                <Icon
+                  name={dir === "prev" ? "chevron_left" : "chevron_right"}
+                  size={18}
+                />
+              </button>
+            ))}
+          </div>
+          <div className="absolute right-5 bottom-4 flex gap-1.5 sm:right-6 sm:bottom-5">
+            {items.map((a, i) => (
+              <button
+                key={a.id}
+                type="button"
+                aria-label={`Go to announcement ${i + 1}`}
+                aria-current={i === index}
+                onClick={() => go(i)}
+                className={cn(
+                  "h-1.5 cursor-pointer rounded-full transition-[width,background-color] duration-300",
+                  i === index ? "w-5 bg-primary" : "w-1.5 bg-primary/30",
+                )}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

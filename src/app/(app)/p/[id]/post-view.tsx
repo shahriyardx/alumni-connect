@@ -75,6 +75,11 @@ export function PostView({ id }: { id: string }) {
         <h1 className="text-2xl leading-tight font-semibold tracking-tight">
           {p.title}
         </h1>
+        <Markdown>{p.body}</Markdown>
+
+        <AttachmentList items={p.attachments} />
+
+        {/* Tags read as metadata: after the content, quiet like on feed cards. */}
         {p.tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {p.tags.map((t) => (
@@ -82,9 +87,6 @@ export function PostView({ id }: { id: string }) {
             ))}
           </div>
         )}
-        <Markdown>{p.body}</Markdown>
-
-        <AttachmentList items={p.attachments} />
 
         <div className="flex items-center gap-2">
           <div
