@@ -295,6 +295,7 @@ function UsersPanel({ meId, meRole }: { meId: string; meRole: Role }) {
     <div className="flex flex-col gap-4">
       <TextField
         label="Search members"
+        hideLabel
         type="search"
         placeholder="Name or email"
         value={q}
