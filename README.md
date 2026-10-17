@@ -40,6 +40,17 @@ Open `http://localhost:3000/admin` to create the first admin. If SMTP is not con
 | `bun test` | Tests |
 | `bun run lint` | Lint |
 
+## Docker
+
+```bash
+docker build -t alumni-connect .
+docker run -p 3000:3000 --env-file .env alumni-connect
+```
+
+When the container starts, it applies pending migrations and then serves on port 3000. It needs:
+- Postgres with an `app_user` role (see `docker/initdb/01-init.sql`)
+- an S3-compatible bucket
+
 ## Production
 
 - Set `SETUP_TOKEN`, so `/admin` can't be claimed by anyone else.
