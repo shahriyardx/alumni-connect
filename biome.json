@@ -14,7 +14,8 @@
       "!dist",
       "!build",
       "!drizzle",
-      "!docs/superpowers/plans/refs"
+      "!docs/superpowers/plans/refs",
+      "!!.claude"
     ]
   },
   "formatter": {
