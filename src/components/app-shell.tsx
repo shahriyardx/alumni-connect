@@ -9,7 +9,7 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
 import { useLiveEvents } from "@/lib/live";
 import { useTRPC } from "@/lib/trpc";
-import { Button, ButtonLink } from "./ui/button";
+import { Button } from "./ui/button";
 import { EmptyState } from "./ui/empty-state";
 import { Fab } from "./ui/fab";
 import { Icon } from "./ui/icon";
@@ -25,24 +25,73 @@ type Dest = {
   roles?: Role[];
   platform?: boolean;
   badge?: number;
+  /** Icon tile color: [solid when active, tint when idle]. */
+  tone: [string, string];
 };
+
+// Same playful palette as the landing perk tiles.
+const T = {
+  blue: ["bg-primary text-white", "bg-primary/12 text-primary"],
+  teal: [
+    "bg-[#0f766e] text-white",
+    "bg-[#0f766e]/15 text-[#0f766e] dark:text-[#2dd4bf]",
+  ],
+  orange: [
+    "bg-[#c2410c] text-white",
+    "bg-[#c2410c]/15 text-[#c2410c] dark:text-[#fb923c]",
+  ],
+  violet: [
+    "bg-[#6d28d9] text-white",
+    "bg-[#6d28d9]/15 text-[#6d28d9] dark:text-[#a78bfa]",
+  ],
+  pink: [
+    "bg-[#be185d] text-white",
+    "bg-[#be185d]/15 text-[#be185d] dark:text-[#f472b6]",
+  ],
+  cyan: [
+    "bg-[#0e7490] text-white",
+    "bg-[#0e7490]/15 text-[#0e7490] dark:text-[#22d3ee]",
+  ],
+  indigo: [
+    "bg-[#4338ca] text-white",
+    "bg-[#4338ca]/15 text-[#4338ca] dark:text-[#818cf8]",
+  ],
+  amber: [
+    "bg-[#b45309] text-white",
+    "bg-[#b45309]/15 text-[#b45309] dark:text-[#fbbf24]",
+  ],
+} satisfies Record<string, [string, string]>;
 
 function destinations(meId: string | undefined, unread: number): Dest[] {
   return [
-    { href: "/feed", match: "/feed", label: "Feed", icon: "home" },
-    { href: "/search", match: "/search", label: "Search", icon: "search" },
+    {
+      href: "/feed",
+      match: "/feed",
+      label: "Feed",
+      icon: "home",
+      tone: T.blue,
+    },
+    {
+      href: "/search",
+      match: "/search",
+      label: "Search",
+      icon: "search",
+      tone: T.teal,
+    },
     {
       href: "/notifications",
       match: "/notifications",
       label: "Alerts",
       icon: "notifications",
       badge: unread,
+      tone: T.orange,
     },
     {
       href: "/bookmarks",
       match: "/bookmarks",
       label: "Saved",
       icon: "bookmark",
+      tone: T.violet,
     },
     {
       href: "/people/alumni",
@@ -50,12 +99,14 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       label: "Alumni",
       icon: "groups",
       roles: ["STUDENT"],
+      tone: T.pink,
     },
     {
       href: meId ? `/u/${meId}` : "/settings",
       match: meId ? `/u/${meId}` : "/settings",
       label: "Profile",
       icon: "person",
+      tone: T.cyan,
     },
     {
       href: "/workspace",
@@ -63,6 +114,7 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       label: "Workspace",
       icon: "space_dashboard",
       roles: ["MODERATOR", "ADMIN", "OWNER"],
+      tone: T.indigo,
     },
     {
       href: "/platform",
@@ -70,6 +122,7 @@ function destinations(meId: string | undefined, unread: number): Dest[] {
       label: "Platform",
       icon: "domain",
       platform: true,
+      tone: T.amber,
     },
   ];
 }
@@ -88,7 +141,7 @@ function Badge({ n, className }: { n?: number; className?: string }) {
   );
 }
 
-/** Desktop sidebar row: icon + label, active row is a tonal pill. */
+/** Desktop sidebar row: colored icon tile + label; active tile goes solid. */
 function SideItem({ d, active }: { d: Dest; active: boolean }) {
   return (
     <Link
@@ -96,18 +149,20 @@ function SideItem({ d, active }: { d: Dest; active: boolean }) {
       aria-current={active ? "page" : undefined}
       className={cn(
         focusRing,
-        "flex h-10 items-center gap-3 rounded-full px-3.5 text-sm font-medium transition-colors duration-150",
+        "group flex h-11 items-center gap-3 rounded-2xl px-2 text-sm font-medium transition-colors duration-150",
         active
-          ? "bg-primary/12 font-semibold text-primary"
-          : "text-foreground/80 hover:bg-primary/6 hover:text-foreground",
+          ? "bg-muted font-semibold text-foreground"
+          : "text-foreground/80 hover:bg-muted/60 hover:text-foreground",
       )}
     >
-      <Icon
-        name={d.icon}
-        filled={active}
-        size={20}
-        className={active ? undefined : "text-muted-foreground"}
-      />
+      <span
+        className={cn(
+          "grid size-8 shrink-0 place-items-center rounded-xl transition-transform duration-300 group-hover:-rotate-6",
+          active ? d.tone[0] : d.tone[1],
+        )}
+      >
+        <Icon name={d.icon} filled={active} size={18} />
+      </span>
       <span className="flex-1 truncate">{d.label}</span>
       <Badge n={d.badge} />
     </Link>
@@ -207,13 +262,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar (≥ 840px) */}
       <aside className="fixed inset-y-3 left-3 z-30 hidden w-60 flex-col gap-6 rounded-[2rem] bg-surface px-3 py-4 shadow-sm shadow-black/5 min-[840px]:flex">
         <Logo className="px-2 py-1" />
-        <ButtonLink
+        <Link
           href="/new"
-          icon={staff ? "campaign" : "edit"}
-          className="mx-1"
+          className={cn(
+            focusRing,
+            "group relative isolate mx-1 flex h-12 items-center gap-2.5 overflow-hidden rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-md shadow-primary/25 transition-transform duration-200 active:scale-[0.98] dark:bg-[color-mix(in_srgb,var(--primary)_70%,#020617)]",
+          )}
         >
-          {staff ? "Announce" : "Ask"}
-        </ButtonLink>
+          <span
+            aria-hidden
+            className="lp-drift pointer-events-none absolute -top-8 -right-6 -z-10 size-24 rounded-full bg-violet-500/60 blur-2xl"
+          />
+          <Icon name={staff ? "campaign" : "edit"} size={20} />
+          {staff ? "Announce" : "Ask a question"}
+          <Icon
+            name="arrow_forward"
+            size={18}
+            className="ml-auto transition-transform group-hover:translate-x-0.5"
+          />
+        </Link>
         <nav aria-label="Primary" className="flex flex-col gap-0.5">
           {items.map((d) => (
             <SideItem key={d.label} d={d} active={isActive(d)} />
