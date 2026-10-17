@@ -308,20 +308,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             {/* Children mount only once the role is known and allowed, so no
                 forbidden query fires (e.g. a moderator on the overview). */}
             {!me || toQueue ? null : !ok ? (
-              <EmptyState
-                icon="block"
-                title="Staff only"
-                body={
-                  isMod(me.role)
-                    ? "This section needs a higher role."
-                    : "The workspace is for your university's staff."
-                }
-                action={
-                  <ButtonLink href="/feed" variant="tonal" icon="forum">
-                    Go to the feed
-                  </ButtonLink>
-                }
-              />
+              <Forbidden role={me.role} />
             ) : (
               <div className="flex flex-col gap-6">{children}</div>
             )}
@@ -329,5 +316,47 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
     </div>
+  );
+}
+
+const FORBIDDEN = {
+  MODERATOR: {
+    title: "Admins only",
+    body: "Moderators work from the report queue.",
+    href: "/workspace/moderation",
+    icon: "shield",
+    cta: "Open moderation",
+  },
+  ADMIN: {
+    title: "Owner only",
+    body: "Only the owner can change university settings.",
+    href: "/workspace",
+    icon: "dashboard",
+    cta: "Back to overview",
+  },
+} as const;
+
+function Forbidden({ role }: { role: Role }) {
+  const f =
+    role === "MODERATOR" || role === "ADMIN"
+      ? FORBIDDEN[role]
+      : {
+          title: "Staff only",
+          body: "The workspace is for your university's staff.",
+          href: "/feed",
+          icon: "forum",
+          cta: "Go to the feed",
+        };
+  return (
+    <EmptyState
+      icon="block"
+      title={f.title}
+      body={f.body}
+      action={
+        <ButtonLink href={f.href} variant="tonal" icon={f.icon}>
+          {f.cta}
+        </ButtonLink>
+      }
+    />
   );
 }
