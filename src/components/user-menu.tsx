@@ -5,9 +5,10 @@ import { useEffect } from "react";
 import { isAdmin, isMod, type Role } from "@/db/schema";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
+import { ThemeMenuItems } from "./theme-menu";
 import { Avatar } from "./ui/avatar";
 import { RoleBadge } from "./ui/badge";
-import { Menu, MenuContent, MenuItem } from "./ui/menu";
+import { Menu, MenuContent, MenuItem, MenuSeparator } from "./ui/menu";
 import { focusRing } from "./ui/styles";
 
 export function useMe() {
@@ -111,6 +112,9 @@ export function UserMenu() {
             Settings
           </MenuItem>
         )}
+        <MenuSeparator />
+        <ThemeMenuItems />
+        <MenuSeparator />
         <MenuItem icon="logout" onClick={signOut}>
           Sign out
         </MenuItem>

@@ -21,8 +21,20 @@ const MAX_TAGS = 5;
 
 type Initial = { id: string; title: string; body: string; tags: string[] };
 
-/** `/new` when no postId; `/p/[id]/edit` loads the post first. */
-export function Composer({ postId }: { postId?: string }) {
+/**
+ * `/new` when no postId; `/p/[id]/edit` loads the post first. `initialTag`
+ * and `initialMention` (from /people/alumni's "Ask them" link) only seed a
+ * fresh post — never applied when editing an existing one.
+ */
+export function Composer({
+  postId,
+  initialTag,
+  initialMention,
+}: {
+  postId?: string;
+  initialTag?: string;
+  initialMention?: string;
+}) {
   const trpc = useTRPC();
   const existing = useQuery({
     ...trpc.post.byId.queryOptions({ id: postId ?? "" }),
@@ -50,10 +62,24 @@ export function Composer({ postId }: { postId?: string }) {
         />
       );
   }
-  return <ComposerForm initial={existing.data} />;
+  return (
+    <ComposerForm
+      initial={existing.data}
+      initialTag={initialTag}
+      initialMention={initialMention}
+    />
+  );
 }
 
-function ComposerForm({ initial }: { initial?: Initial }) {
+function ComposerForm({
+  initial,
+  initialTag,
+  initialMention,
+}: {
+  initial?: Initial;
+  initialTag?: string;
+  initialMention?: string;
+}) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const router = useRouter();
@@ -61,8 +87,13 @@ function ComposerForm({ initial }: { initial?: Initial }) {
   const { me } = useMe();
   const staff = !!me && isStaff(me.role);
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [body, setBody] = useState(initial?.body ?? "");
-  const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
+  const [body, setBody] = useState(
+    initial?.body ?? (initialMention ? `@${initialMention} ` : ""),
+  );
+  const [tags, setTags] = useState<string[]>(
+    initial?.tags ??
+      (initialTag ? [normalizeTag(initialTag)].filter(Boolean) : []),
+  );
   const [draftTag, setDraftTag] = useState("");
   const [attachments, setAttachments] = useState<{ id: string; key: string }[]>(
     [],

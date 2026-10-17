@@ -37,6 +37,12 @@ export function MenuContent({
   );
 }
 
+export function MenuSeparator({ className }: { className?: string }) {
+  return (
+    <BaseMenu.Separator className={cn("my-1 h-px bg-border", className)} />
+  );
+}
+
 export function MenuItem({
   icon,
   onClick,

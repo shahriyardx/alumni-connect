@@ -4,6 +4,7 @@ import Link from "next/link";
 import { isMod, type Role } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { useTRPC } from "@/lib/trpc";
+import { Avatar } from "./ui/avatar";
 import { Icon } from "./ui/icon";
 import { focusRing } from "./ui/styles";
 import { useMe } from "./user-menu";
@@ -108,6 +109,40 @@ function tilesFor(
     default:
       return [];
   }
+}
+
+/** STUDENT-only side-rail tile: a stacked avatar row linking to /people/alumni. */
+function AlumniRailTile({ enabled }: { enabled: boolean }) {
+  const trpc = useTRPC();
+  const { data } = useQuery(
+    trpc.people.alumniInMyDepartment.queryOptions({ cursor: 0 }, { enabled }),
+  );
+  if (!enabled || !data || data.items.length === 0) return null;
+  return (
+    <Link
+      href="/people/alumni"
+      className={cn(
+        focusRing,
+        "flex items-center gap-3 rounded-3xl bg-surface p-4 outline-none transition-colors hover:bg-surface-high",
+      )}
+    >
+      <div className="flex -space-x-2">
+        {data.items.slice(0, 4).map((u) => (
+          <Avatar
+            key={u.id}
+            name={u.name}
+            src={u.avatarKey ? `/api/files/${u.avatarKey}` : null}
+            size={28}
+            className="ring-2 ring-surface"
+          />
+        ))}
+      </div>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        Your department's alumni
+      </span>
+      <Icon name="arrow_forward" size={18} className="text-muted-foreground" />
+    </Link>
+  );
 }
 
 function PrimaryTile({ tile }: { tile: Tile }) {
@@ -220,6 +255,7 @@ export function FeedRail({ variant }: { variant: "aside" | "row" }) {
           <CountTile key={t.key} tile={t} />
         ),
       )}
+      <AlumniRailTile enabled={me?.role === "STUDENT"} />
     </div>
   );
 }

@@ -275,8 +275,17 @@ export function SignUpWizard() {
                       value={u.id}
                       className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-surface-high p-2.5 pr-4 text-left text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 data-[checked]:bg-tonal data-[checked]:text-tonal-fg"
                     >
-                      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface text-sm font-semibold group-data-[checked]:bg-primary group-data-[checked]:text-primary-foreground">
-                        {u.name.charAt(0).toUpperCase()}
+                      <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-surface text-sm font-semibold group-data-[checked]:bg-primary group-data-[checked]:text-primary-foreground">
+                        {u.hasLogo ? (
+                          // biome-ignore lint/performance/noImgElement: public logo route, not a static/optimizable asset
+                          <img
+                            src={`/api/universities/${u.id}/logo`}
+                            alt=""
+                            className="size-full bg-white object-contain"
+                          />
+                        ) : (
+                          u.name.charAt(0).toUpperCase()
+                        )}
                       </span>
                       <span className="flex-1 truncate">{u.name}</span>
                       <Radio.Indicator className="flex text-primary">

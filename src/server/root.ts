@@ -6,6 +6,7 @@ import { filesRouter } from "./routers/files";
 import { invitesRouter } from "./routers/invites";
 import { moderationRouter } from "./routers/moderation";
 import { notificationRouter } from "./routers/notification";
+import { peopleRouter } from "./routers/people";
 import { platformRouter } from "./routers/platform";
 import { postRouter } from "./routers/post";
 import { profileRouter } from "./routers/profile";
@@ -20,6 +21,7 @@ export const appRouter = router({
   files: filesRouter,
   social: socialRouter,
   notification: notificationRouter,
+  people: peopleRouter,
   profile: profileRouter,
   moderation: moderationRouter,
   admin: adminRouter,
