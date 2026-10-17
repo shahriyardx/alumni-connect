@@ -37,7 +37,7 @@ export function DepartmentsPanel() {
     <>
       <PageHeader
         title="Departments"
-        sub="Once the list isn't empty, sign-up, invites and settings pick from it instead of free text."
+        sub="Sign-up, invites and profiles pick from this list."
       />
       <Card className="p-4 sm:p-5">
         <form
@@ -167,8 +167,16 @@ function DepartmentRow({ d }: { d: DepartmentRow }) {
         >
           <span className="truncate font-medium">{d.name}</span>
           <span className="text-xs text-muted-foreground">
-            {total} member{total === 1 ? "" : "s"} · {d.students} students ·{" "}
-            {d.alumni} alumni · {d.faculty} faculty
+            {[
+              `${total} member${total === 1 ? "" : "s"}`,
+              d.students &&
+                `${d.students} student${d.students === 1 ? "" : "s"}`,
+              d.alumni &&
+                `${d.alumni} ${d.alumni === 1 ? "alumnus" : "alumni"}`,
+              d.faculty && `${d.faculty} faculty`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         </Link>
       )}

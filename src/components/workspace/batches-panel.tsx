@@ -73,7 +73,7 @@ export function BatchesPanel() {
       )}
 
       <Card className="flex flex-wrap items-center gap-x-6 gap-y-3 p-5 text-sm">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-64 flex-1 flex-col gap-1">
           <span className="font-medium">Roster files</span>
           <span className="text-muted-foreground">
             Excel (.xlsx) or CSV with columns{" "}
@@ -149,7 +149,7 @@ function BatchRow({ b, onEdit }: { b: Batch; onEdit: () => void }) {
   return (
     <Card className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex min-w-36 flex-1 items-center gap-3">
+        <div className="flex flex-1 items-center gap-3">
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-surface-high text-lg font-semibold tracking-tight tabular-nums">
             {b.number}
           </span>
@@ -157,7 +157,7 @@ function BatchRow({ b, onEdit }: { b: Batch; onEdit: () => void }) {
             <span className="font-semibold tracking-tight">
               Batch {b.number}
             </span>
-            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex items-center gap-2 text-sm whitespace-nowrap text-muted-foreground">
               Class of {b.graduationYear}
               <span
                 className={cn(
