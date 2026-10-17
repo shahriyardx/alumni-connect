@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@/db/schema";
 import { notification, user } from "@/db/schema";
-import { env } from "@/env";
+import { adminUrl, env } from "@/env";
 import { sendMail } from "@/server/mail";
 
 // Cross-tenant by nature (every opted-in user, every university), so this
@@ -13,8 +13,7 @@ import { sendMail } from "@/server/mail";
 // pool in src/db/index.ts.
 const g = globalThis as unknown as { pgDigest?: postgres.Sql };
 const adminClient =
-  g.pgDigest ??
-  postgres(env.DATABASE_ADMIN_URL, { max: 2, onnotice: () => {} });
+  g.pgDigest ?? postgres(adminUrl, { max: 2, onnotice: () => {} });
 if (process.env.NODE_ENV !== "production") g.pgDigest = adminClient;
 const adminDb = drizzle(adminClient, { schema });
 

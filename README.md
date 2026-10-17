@@ -48,7 +48,7 @@ docker run -p 3000:3000 --env-file .env alumni-connect
 ```
 
 When the container starts, it applies pending migrations and then serves on port 3000. It needs:
-- Postgres with an `app_user` role (see `docker/initdb/01-init.sql`)
+- Postgres; `DATABASE_URL` can be the owner login, since migrations create the `app_user` role the app switches to
 - an S3-compatible bucket
 
 ## Production

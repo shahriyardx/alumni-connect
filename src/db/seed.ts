@@ -6,12 +6,12 @@ import { hashPassword } from "better-auth/crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { env } from "@/env";
+import { adminUrl } from "@/env";
 import { hashStudentId } from "@/server/student-id";
 import { truncateAll } from "./reset";
 import * as schema from "./schema";
 
-const client = postgres(env.DATABASE_ADMIN_URL, { max: 1, onnotice: () => {} });
+const client = postgres(adminUrl, { max: 1, onnotice: () => {} });
 const db = drizzle(client, { schema });
 
 const PASSWORD = "password123";

@@ -5,7 +5,15 @@ import { env } from "@/env";
 import * as schema from "./schema";
 
 const g = globalThis as unknown as { pg?: postgres.Sql };
-export const client = g.pg ?? postgres(env.DATABASE_URL, { max: 10 });
+// Every app connection switches to the low-privilege role at startup, so RLS
+// holds even if DATABASE_URL is the owner. ponytail: the session user could
+// RESET ROLE; the app never runs caller-supplied SQL, so that needs an injection.
+export const client =
+  g.pg ??
+  postgres(env.DATABASE_URL, {
+    max: 10,
+    connection: { role: env.DATABASE_APP_ROLE } as Record<string, string>,
+  });
 if (process.env.NODE_ENV !== "production") g.pg = client;
 
 export const db = drizzle(client, { schema });
