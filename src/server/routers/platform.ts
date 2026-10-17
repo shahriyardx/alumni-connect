@@ -577,7 +577,8 @@ export const platformRouter = router({
             input.banned
               ? { status: "BANNED", statusBeforeBan: sql`${user.status}` }
               : {
-                  status: sql`coalesce(${user.statusBeforeBan}, 'ACTIVE')`,
+                  // No snapshot (a tenant path wrote status since): verified → ACTIVE, else PENDING.
+                  status: sql`coalesce(${user.statusBeforeBan}, case when ${user.emailVerified} then 'ACTIVE' else 'PENDING' end)`,
                   statusBeforeBan: null,
                 },
           )

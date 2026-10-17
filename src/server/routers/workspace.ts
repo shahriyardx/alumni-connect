@@ -297,7 +297,11 @@ export const workspaceRouter = router({
       if (input.action === "approve") {
         await ctx.db
           .update(user)
-          .set({ status: "ACTIVE", decidedAt: new Date() })
+          .set({
+            status: "ACTIVE",
+            statusBeforeBan: null,
+            decidedAt: new Date(),
+          })
           .where(target);
       } else {
         // Sessions/accounts cascade; the person can sign up again.

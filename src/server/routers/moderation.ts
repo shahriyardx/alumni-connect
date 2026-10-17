@@ -345,6 +345,7 @@ export const moderationRouter = router({
               .update(user)
               .set({
                 status: "SUSPENDED",
+                statusBeforeBan: null,
                 suspendedUntil: new Date(
                   Date.now() + (input.days as number) * 86_400_000,
                 ),
@@ -359,7 +360,11 @@ export const moderationRouter = router({
         } else {
           await ctx.db
             .update(user)
-            .set({ status: "BANNED", suspendedUntil: null })
+            .set({
+              status: "BANNED",
+              statusBeforeBan: null,
+              suspendedUntil: null,
+            })
             .where(
               and(
                 eq(user.id, targetUserId),
@@ -468,7 +473,8 @@ export const moderationRouter = router({
           : null;
       await ctx.db
         .update(user)
-        .set({ status: input.status, suspendedUntil })
+        // Clear any platform-ban snapshot so a later platform unban never restores it.
+        .set({ status: input.status, statusBeforeBan: null, suspendedUntil })
         .where(
           and(
             eq(user.id, input.userId),

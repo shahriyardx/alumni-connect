@@ -484,3 +484,40 @@ describe("fix round 1", () => {
     }
   });
 });
+
+describe("fix round 2: no stale pre-ban status", () => {
+  test("platform ban → tenant unban → tenant ban → platform unban ends ACTIVE", async () => {
+    const uni = await makeUniversity("Drift");
+    const owner = await makeUser(uni.id, { role: "OWNER" });
+    // Starts SUSPENDED: a stale snapshot would wrongly restore SUSPENDED.
+    const m = await makeUser(uni.id, {
+      status: "SUSPENDED",
+      suspendedUntil: new Date(Date.now() + 86_400_000),
+    });
+    const asOwner = callerFor(owner.id);
+    await platform.platform.setBanned({ userId: m.id, banned: true });
+    expect((await userRow(m.id)).statusBeforeBan).toBe("SUSPENDED");
+    await asOwner.moderation.setUserStatus({ userId: m.id, status: "ACTIVE" });
+    expect(await userRow(m.id)).toMatchObject({
+      status: "ACTIVE",
+      statusBeforeBan: null,
+    });
+    await asOwner.moderation.setUserStatus({ userId: m.id, status: "BANNED" });
+    expect((await userRow(m.id)).statusBeforeBan).toBeNull();
+    await platform.platform.setBanned({ userId: m.id, banned: false });
+    expect(await userRow(m.id)).toMatchObject({
+      status: "ACTIVE",
+      statusBeforeBan: null,
+    });
+  });
+
+  test("no snapshot: an unverified account is unbanned to PENDING", async () => {
+    const uni = await makeUniversity("Unv");
+    const m = await makeUser(uni.id, {
+      status: "BANNED",
+      emailVerified: false,
+    });
+    await platform.platform.setBanned({ userId: m.id, banned: false });
+    expect((await userRow(m.id)).status).toBe("PENDING");
+  });
+});
