@@ -609,6 +609,23 @@ describe("the sign-up hook's own invite guards (not just invites.* NOT_FOUND)", 
     expect((await userByEmail("stale-student@x.edu")).emailVerified).toBe(true);
   });
 
+  test("a rep's own university application still verifies after the grace window", async () => {
+    await callerFor(null).auth.registerUniversity({
+      universityName: "Late Verifier College",
+      name: "Late Rep",
+      title: "Registrar",
+      email: "late-rep@lvc.edu",
+    });
+    const otp = await signUpAndCaptureOtp("late-rep@lvc.edu", "Late Rep");
+    await adminDb
+      .update(user)
+      .set({ createdAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(user.email, "late-rep@lvc.edu"));
+
+    await auth.api.verifyEmailOTP({ body: { email: "late-rep@lvc.edu", otp } });
+    expect((await userByEmail("late-rep@lvc.edu")).emailVerified).toBe(true);
+  });
+
   test("I1 (security follow-up): a stale invited account can't be verified via reset-password OTP", async () => {
     const r = await callerFor(admin.id).invites.create({
       email: "resetpw@x.edu",

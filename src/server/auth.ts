@@ -19,8 +19,8 @@ const hidden = <T extends "string" | "boolean">(type: T) =>
   ({ ...field(type), returned: false }) as const;
 
 /**
- * True once a non-STUDENT/ALUMNUS account's invite/application grant can no
- * longer be trusted: still unverified, and sitting past the same grace
+ * Refuses verification once a non-STUDENT/ALUMNUS account's invite grant can
+ * no longer be trusted: still unverified, and sitting past the same grace
  * window every other "still mid-signup?" check in this app uses. Its invite
  * may since have been revoked (see invites.revoke, which deletes the row
  * outright instead — this is the backstop for the window before a revoke,
@@ -29,17 +29,33 @@ const hidden = <T extends "string" | "boolean">(type: T) =>
  * `emailVerified` must consult this. STUDENT/ALUMNUS accounts carry no such
  * grant and are never affected.
  */
-function grantExpired(row: {
-  role: schema.Role;
-  createdAt: Date;
-  emailVerified: boolean;
-}) {
-  return (
+async function assertGrantFresh(email: string) {
+  const [row] = await db
+    .select({
+      role: schema.user.role,
+      createdAt: schema.user.createdAt,
+      emailVerified: schema.user.emailVerified,
+      universityStatus: schema.university.status,
+    })
+    .from(schema.user)
+    .innerJoin(
+      schema.university,
+      eq(schema.university.id, schema.user.universityId),
+    )
+    .where(eq(schema.user.email, email.toLowerCase()));
+  if (
+    row &&
     row.role !== "STUDENT" &&
     row.role !== "ALUMNUS" &&
+    // A rep's own application (OWNER of a still-PENDING university) is not
+    // someone else's grant that can be revoked, so it never goes stale.
+    !(row.role === "OWNER" && row.universityStatus === "PENDING") &&
     !row.emailVerified &&
     row.createdAt < graceCutoff()
-  );
+  )
+    throw new APIError("FORBIDDEN", {
+      message: "This invitation has expired, ask for a new one",
+    });
 }
 
 export const auth = betterAuth({
@@ -53,20 +69,10 @@ export const auth = betterAuth({
   },
   emailVerification: {
     autoSignInAfterVerification: true,
-    // Gives the main /email-otp/verify-email path a check before the OTP
-    // itself is even consumed. Not the only guard — see databaseHooks.user
+    // Friendlier early check on /email-otp/verify-email. Not the only guard — see databaseHooks.user
     // .update.before below, which is the one every path routes through.
     beforeEmailVerification: async (u) => {
-      const row = u as unknown as {
-        role: schema.Role;
-        createdAt: Date;
-        emailVerified: boolean;
-      };
-      if (grantExpired(row)) {
-        throw new APIError("FORBIDDEN", {
-          message: "This invitation has expired, ask for a new one",
-        });
-      }
+      await assertGrantFresh(u.email);
     },
   },
   user: {
@@ -275,23 +281,9 @@ export const auth = betterAuth({
         // for them.
         before: async (data, ctx) => {
           if (data.emailVerified !== true) return;
-          const email = (
-            ctx?.body as { email?: string } | undefined
-          )?.email?.toLowerCase?.();
+          const email = (ctx?.body as { email?: string } | undefined)?.email;
           if (!email) return;
-          const [existing] = await db
-            .select({
-              role: schema.user.role,
-              createdAt: schema.user.createdAt,
-              emailVerified: schema.user.emailVerified,
-            })
-            .from(schema.user)
-            .where(eq(schema.user.email, email));
-          if (existing && grantExpired(existing)) {
-            throw new APIError("FORBIDDEN", {
-              message: "This invitation has expired, ask for a new one",
-            });
-          }
+          await assertGrantFresh(email);
         },
       },
     },
