@@ -16,7 +16,6 @@ import { Icon } from "./ui/icon";
 import { Spinner } from "./ui/spinner";
 import { focusRing } from "./ui/styles";
 import { homeFor, UserMenu, useMe, useSignOut } from "./user-menu";
-import { UniversityMark } from "./workspace/workspace-shell";
 
 type Dest = {
   href: string;
@@ -220,26 +219,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SideItem key={d.label} d={d} active={isActive(d)} />
           ))}
         </nav>
-        {me?.universityName && (
-          <div className="mt-auto flex items-center gap-2.5 px-2.5">
-            <UniversityMark size={28} />
-            <span className="truncate text-xs text-muted-foreground">
-              {me.universityName}
-            </span>
-          </div>
-        )}
+        <div className="mt-auto">
+          <UserMenu variant="sidebar" />
+        </div>
       </aside>
 
       <div className="min-[840px]:pl-[16.5rem]">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 bg-background/85 px-4 backdrop-blur-xl min-[840px]:px-8">
-          <Logo className="min-[840px]:hidden" />
+        {/* Phones only: the sidebar carries the account menu on wide screens. */}
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 bg-background/85 px-4 backdrop-blur-xl min-[840px]:hidden">
+          <Logo />
           <div className="ml-auto">
             <UserMenu />
           </div>
         </header>
         <main
           className={cn(
-            "mx-auto w-full max-w-3xl px-4 pb-32 min-[840px]:px-8 min-[840px]:pb-16",
+            "mx-auto w-full max-w-3xl px-4 pb-32 min-[840px]:px-8 min-[840px]:pt-6 min-[840px]:pb-16",
             // The feed carries a side rail on wide screens.
             pathname === "/feed" && "xl:max-w-6xl",
           )}

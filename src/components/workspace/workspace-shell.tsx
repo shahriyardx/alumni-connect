@@ -219,9 +219,9 @@ function SidebarBody({
           );
         })}
       </nav>
-      <p className="mt-auto px-3.5 text-xs text-muted-foreground">
-        Alumni Connect
-      </p>{" "}
+      <div className="mt-auto">
+        <UserMenu variant="sidebar" />
+      </div>
     </>
   );
 }
@@ -298,7 +298,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               <ButtonLink href="/feed" variant="tonal" size="sm" icon="forum">
                 View feed
               </ButtonLink>
-              <UserMenu />
+              <div className="lg:hidden">
+                <UserMenu />
+              </div>
             </div>
           </div>
         </header>

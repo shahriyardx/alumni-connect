@@ -198,7 +198,8 @@ export function FeedView() {
         <FeedList key={tab} input={feedInput} empty={empty} />
       </div>
 
-      <aside className="sticky top-20 hidden flex-col gap-3 self-start xl:flex">
+      {/* mt-14 = header row (h-10 tabs) + gap-4, so the rail lines up with the composer. */}
+      <aside className="sticky top-6 mt-14 hidden flex-col gap-3 self-start xl:flex">
         <FeedRail variant="aside" />
 
         {!!tags.data?.length && (

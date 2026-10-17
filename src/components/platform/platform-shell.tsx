@@ -134,6 +134,9 @@ function SidebarBody() {
           );
         })}
       </nav>
+      <div className="mt-auto">
+        <UserMenu variant="sidebar" />
+      </div>
     </>
   );
 }
@@ -181,7 +184,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
           <div className="flex h-14 items-center gap-3 px-4 lg:px-8">
             {admin && <MobileNav />}
             <Logo href="/platform" className={cn(admin && "lg:hidden")} />
-            <div className="ml-auto">
+            <div className={cn("ml-auto", admin && "lg:hidden")}>
               <UserMenu />
             </div>
           </div>

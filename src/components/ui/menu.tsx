@@ -10,16 +10,19 @@ export function MenuContent({
   children,
   className,
   align = "end",
+  side = "bottom",
 }: {
   children: React.ReactNode;
   className?: string;
   align?: "start" | "center" | "end";
+  side?: "top" | "bottom";
 }) {
   return (
     <BaseMenu.Portal>
       <BaseMenu.Positioner
         sideOffset={6}
         align={align}
+        side={side}
         className="z-50 outline-none"
       >
         <BaseMenu.Popup
