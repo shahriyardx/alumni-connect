@@ -48,6 +48,11 @@ function SettingsForm({
   const [name, setName] = useState(initial.name);
   const [website, setWebsite] = useState(initial.website ?? "");
   const [logoKey, setLogoKey] = useState(initial.logoKey);
+  // The logo card has no button of its own, so flag unsaved changes here.
+  const dirty =
+    name !== initial.name ||
+    website !== (initial.website ?? "") ||
+    logoKey !== initial.logoKey;
   const save = useMutation(
     trpc.workspace.updateSettings.mutationOptions({
       onSuccess: () => toast.success("Settings saved"),
@@ -86,9 +91,16 @@ function SettingsForm({
         <p className="text-sm text-muted-foreground">
           {STATUS[initial.status]}
         </p>
-        <Button type="submit" className="self-start" loading={save.isPending}>
-          Save changes
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={!dirty} loading={save.isPending}>
+            Save changes
+          </Button>
+          {dirty && (
+            <span className="text-sm text-muted-foreground">
+              Unsaved changes
+            </span>
+          )}
+        </div>
       </Card>
       <Card className="flex flex-col gap-4 p-5">
         <span className="text-sm font-medium">Logo</span>
