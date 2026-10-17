@@ -6,7 +6,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(d.title, {
       body: d.body,
       tag: d.tag,
-      icon: "/favicon.ico",
+      icon: "/icon-192.png",
       data: { url: d.url },
     }),
   );
