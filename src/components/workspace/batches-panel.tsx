@@ -31,6 +31,11 @@ export function BatchesPanel() {
   const trpc = useTRPC();
   const batches = useQuery(trpc.workspace.batches.queryOptions());
   const [editing, setEditing] = useState<Batch | "new" | null>(null);
+  // Prefill "New batch" with the one after the newest.
+  const last = batches.data?.reduce<Batch | null>(
+    (a, b) => (!a || b.number > a.number ? b : a),
+    null,
+  );
 
   return (
     <>
@@ -97,6 +102,9 @@ export function BatchesPanel() {
       <BatchDialog
         key={editing === "new" ? "new" : (editing?.id ?? "closed")}
         batch={editing}
+        next={
+          last && { number: last.number + 1, year: last.graduationYear + 1 }
+        }
         onClose={() => setEditing(null)}
       />
     </>
@@ -275,18 +283,22 @@ function BatchRow({ b, onEdit }: { b: Batch; onEdit: () => void }) {
 
 function BatchDialog({
   batch,
+  next,
   onClose,
 }: {
   batch: Batch | "new" | null;
+  next?: { number: number; year: number } | null;
   onClose: () => void;
 }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const toast = useToast();
   const existing = batch && batch !== "new" ? batch : null;
-  const [number, setNumber] = useState(existing ? String(existing.number) : "");
+  const [number, setNumber] = useState(
+    String(existing?.number ?? next?.number ?? ""),
+  );
   const [year, setYear] = useState(
-    existing ? String(existing.graduationYear) : "",
+    String(existing?.graduationYear ?? next?.year ?? ""),
   );
   const valid =
     Number(number) >= 1 &&
