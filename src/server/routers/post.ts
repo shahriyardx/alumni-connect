@@ -61,7 +61,7 @@ export const postRouter = router({
   feed: memberProcedure
     .input(
       z.object({
-        sort: z.enum(["new", "top"]).default("new"),
+        sort: z.enum(["new", "top", "relevant"]).default("new"),
         tag: z.string().optional(),
         authorId: z.string().min(1).max(64).optional(),
         kind: z.enum(POST_KINDS).optional(),
@@ -85,6 +85,7 @@ export const postRouter = router({
       return listPosts(ctx.db, ctx.me.id, {
         where: conds.length ? and(...conds) : undefined,
         orderBy: input.sort,
+        department: ctx.me.department,
         offset: input.cursor,
       });
     }),

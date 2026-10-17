@@ -8,7 +8,7 @@ import { Spinner } from "./ui/spinner";
 
 type FeedInput =
   | {
-      sort?: "new" | "top";
+      sort?: "new" | "top" | "relevant";
       tag?: string;
       authorId?: string;
       kind?: "QUESTION" | "ANNOUNCEMENT";

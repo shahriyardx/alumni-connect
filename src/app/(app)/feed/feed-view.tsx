@@ -21,8 +21,14 @@ import { cn } from "@/lib/cn";
 import { useNewPosts } from "@/lib/live";
 import { useTRPC } from "@/lib/trpc";
 
-type TabValue = "new" | "top" | "announcements" | "unanswered";
-const TAB_VALUES: TabValue[] = ["new", "top", "announcements", "unanswered"];
+type TabValue = "new" | "relevant" | "top" | "announcements" | "unanswered";
+const TAB_VALUES: TabValue[] = [
+  "new",
+  "relevant",
+  "top",
+  "announcements",
+  "unanswered",
+];
 
 /** Newest announcements as a swipeable, auto-advancing slider. */
 function AnnouncementStrip() {
@@ -173,11 +179,13 @@ export function FeedView() {
   const feedInput =
     tab === "top"
       ? { sort: "top" as const }
-      : tab === "announcements"
-        ? { sort: "new" as const, kind: "ANNOUNCEMENT" as const }
-        : tab === "unanswered"
-          ? { sort: "new" as const, unanswered: true }
-          : { sort: "new" as const };
+      : tab === "relevant"
+        ? { sort: "relevant" as const }
+        : tab === "announcements"
+          ? { sort: "new" as const, kind: "ANNOUNCEMENT" as const }
+          : tab === "unanswered"
+            ? { sort: "new" as const, unanswered: true }
+            : { sort: "new" as const };
 
   const empty =
     tab === "announcements" ? (
@@ -211,6 +219,7 @@ export function FeedView() {
           >
             <TabsList>
               <Tab value="new">New</Tab>
+              <Tab value="relevant">Most relevant</Tab>
               <Tab value="top">Top</Tab>
               <Tab value="announcements">Announcements</Tab>
               {showUnansweredTab && <Tab value="unanswered">Unanswered</Tab>}

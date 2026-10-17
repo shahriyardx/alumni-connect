@@ -697,3 +697,43 @@ test("link gate matches what the markdown renderer turns into links", () => {
     expect(() => assertCanPostLinks(fresh, t)).not.toThrow();
   }
 });
+
+describe("feed: most relevant", () => {
+  test("ranks the viewer's department, followed authors and tags first", async () => {
+    const me = await makeUser(uniId, { department: "EEE", createdAt: old });
+    const sameDept = await makeUser(uniId, {
+      department: "eee",
+      createdAt: old,
+    });
+    const other = await makeUser(uniId, { department: "BBA", createdAt: old });
+    const followed = await makeUser(uniId, {
+      department: "LLB",
+      createdAt: old,
+    });
+    await adminDb.insert(followUser).values({
+      universityId: uniId,
+      followerId: me.id,
+      followeeId: followed.id,
+    });
+    // Created oldest-first, so "new" order is the reverse of relevance.
+    const a = await callerFor(sameDept.id).post.create({
+      title: "Same department question",
+      body: "From my department",
+      tags: [],
+    });
+    const b = await callerFor(followed.id).post.create({
+      title: "From someone I follow",
+      body: "Followed author",
+      tags: [],
+    });
+    const c = await callerFor(other.id).post.create({
+      title: "Unrelated and newest",
+      body: "Another department",
+      tags: [],
+    });
+    const feed = await callerFor(me.id).post.feed({ sort: "relevant" });
+    const order = feed.items.map((p) => p.id);
+    expect(order.indexOf(c.id)).toBeGreaterThan(order.indexOf(a.id));
+    expect(order.indexOf(c.id)).toBeGreaterThan(order.indexOf(b.id));
+  });
+});

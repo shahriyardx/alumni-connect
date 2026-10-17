@@ -40,13 +40,33 @@ const excerptOf = (body: string) =>
  */
 export const hasAlumniReplySQL = sql<boolean>`exists (select 1 from comment c join "user" u on u.id = c.author_id and u.university_id = c.university_id where c.post_id = post.id and c.deleted_at is null and u.role = 'ALUMNUS')`;
 
+/**
+ * "Most relevant" score for the viewer: same department as the author, a
+ * followed tag or author, a tag named after the viewer's department, plus a
+ * little score and a recency decay (~3 days) so it doesn't go stale.
+ * ponytail: computed per row at query time; precompute if the feed gets big.
+ */
+function relevanceSQL(meId: string, department: string | null) {
+  const dept = department?.trim().toLowerCase() || null;
+  return sql`(
+    (case when ${dept}::text is not null and lower(${user.department}) = ${dept} then 3 else 0 end)
+    + (case when exists (select 1 from follow_tag ft join post_tag pt on pt.tag_id = ft.tag_id where pt.post_id = post.id and ft.user_id = ${meId}) then 3 else 0 end)
+    + (case when exists (select 1 from follow_user fu where fu.followee_id = post.author_id and fu.follower_id = ${meId}) then 3 else 0 end)
+    + (case when ${dept}::text is not null and exists (select 1 from post_tag pt join tag t on t.id = pt.tag_id where pt.post_id = post.id and t.name = ${dept}) then 2 else 0 end)
+    + least(greatest(${post.score}, 0), 20) / 10.0
+    + 4 * exp(-extract(epoch from (now() - ${post.createdAt})) / 259200.0)
+  )`;
+}
+
 export async function listPosts(
   tx: Tx,
   meId: string,
   opts: {
     where?: SQL;
-    orderBy: "new" | "top" | "rank";
+    orderBy: "new" | "top" | "rank" | "relevant";
     rankQuery?: string;
+    /** The viewer's department, for orderBy "relevant". */
+    department?: string | null;
     offset: number;
     limit?: number;
   },
@@ -57,12 +77,17 @@ export async function listPosts(
       ? [desc(post.createdAt)]
       : opts.orderBy === "top"
         ? [desc(post.score), desc(post.createdAt)]
-        : [
-            // Solved posts get a small boost over plain text rank.
-            desc(
-              sql`ts_rank(${post.search}, websearch_to_tsquery('english', ${opts.rankQuery ?? ""})) + (case when ${post.acceptedCommentId} is not null then 0.05 else 0 end)`,
-            ),
-          ];
+        : opts.orderBy === "relevant"
+          ? [
+              desc(relevanceSQL(meId, opts.department ?? null)),
+              desc(post.createdAt),
+            ]
+          : [
+              // Solved posts get a small boost over plain text rank.
+              desc(
+                sql`ts_rank(${post.search}, websearch_to_tsquery('english', ${opts.rankQuery ?? ""})) + (case when ${post.acceptedCommentId} is not null then 0.05 else 0 end)`,
+              ),
+            ];
 
   const rows = await tx
     .select({
