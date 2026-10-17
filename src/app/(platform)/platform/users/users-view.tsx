@@ -12,6 +12,7 @@ import {
   Loading,
   StatusPill,
 } from "@/components/platform/platform-shell";
+import { Avatar } from "@/components/ui/avatar";
 import { RoleBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -60,6 +61,16 @@ export function UsersView() {
         <EmptyState icon="group" title="No one matches" />
       ) : (
         <Card className="flex flex-col p-2">
+          <div
+            aria-hidden
+            className={`${cols} hidden px-3 pt-2 pb-3 text-xs font-medium text-muted-foreground md:grid`}
+          >
+            <span>Person</span>
+            <span>University</span>
+            <span>Role</span>
+            <span>Status</span>
+            <span />
+          </div>
           {items.map((p) => (
             <Row key={p.id} p={p} />
           ))}
@@ -79,46 +90,73 @@ export function UsersView() {
   );
 }
 
+// One grid for header and rows so columns line up; stacks on phones.
+const cols =
+  "md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_7.5rem_6.5rem_6.5rem] md:gap-4";
+
 function Row({ p }: { p: Person }) {
+  const admin = p.isPlatformAdmin || !p.universityId;
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-3 py-3 hover:bg-muted/50">
-      <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 truncate text-sm font-semibold">
-          {p.name}
-          {p.verified && (
-            <span role="img" aria-label="Email verified" className="flex">
-              <Icon name="verified" size={14} filled className="text-primary" />
-            </span>
-          )}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {p.email}
-        </span>
+    <div
+      className={`${cols} grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-2xl px-3 py-3 hover:bg-muted/50`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar name={p.name} size={36} />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5 text-sm font-semibold">
+            <span className="truncate">{p.name}</span>
+            {p.verified && (
+              <span role="img" aria-label="Email verified" className="flex">
+                <Icon
+                  name="verified"
+                  size={14}
+                  filled
+                  className="text-primary"
+                />
+              </span>
+            )}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">
+            {p.email}
+          </span>
+        </div>
       </div>
-      <div className="flex min-w-0 basis-40 flex-col gap-0.5 text-xs">
-        <span className="truncate font-medium">
-          {p.universityName ?? "No university"}
+      <div className="col-span-2 flex min-w-0 flex-col gap-0.5 pl-12 text-xs md:col-span-1 md:pl-0">
+        <span
+          className={`truncate font-medium ${p.universityName ? "" : "text-muted-foreground"}`}
+          title={p.universityName ?? undefined}
+        >
+          {p.universityName ?? "—"}
         </span>
         <span className="text-muted-foreground">
           Joined {fmtDate.format(new Date(p.createdAt))}
           {p.verified ? "" : " · unverified"}
         </span>
       </div>
-      <div className="flex items-center gap-1.5">
-        <RoleBadge role={p.role} />
+      {/* Phone: role and status share one line under the university. */}
+      <div className="col-span-2 flex items-center gap-1.5 pl-12 md:hidden">
+        {admin ? <SuperAdminBadge /> : <RoleBadge role={p.role} />}
         <StatusPill status={p.status} />
       </div>
-      <div className="ml-auto">
-        {p.isPlatformAdmin || !p.universityId ? (
-          <span className="inline-flex h-8 items-center gap-1 px-2 text-xs font-medium text-muted-foreground">
-            <Icon name="admin_panel_settings" size={14} />
-            Platform admin
-          </span>
-        ) : (
-          <BanButton p={p} />
-        )}
+      <div className="max-md:hidden">
+        {admin ? <SuperAdminBadge /> : <RoleBadge role={p.role} />}
+      </div>
+      <div className="max-md:hidden">
+        <StatusPill status={p.status} />
+      </div>
+      <div className="col-start-2 row-start-1 justify-self-end md:col-start-auto md:row-start-auto">
+        {admin ? null : <BanButton p={p} />}
       </div>
     </div>
+  );
+}
+
+function SuperAdminBadge() {
+  return (
+    <span className="inline-flex h-6 items-center gap-1 rounded-full bg-primary/12 px-2.5 text-xs font-medium text-primary">
+      <Icon name="admin_panel_settings" size={13} filled />
+      Super admin
+    </span>
   );
 }
 
